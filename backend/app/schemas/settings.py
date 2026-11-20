@@ -49,6 +49,12 @@ LAN_SERVICE_URL_SETTINGS = (
 _COMPOSE_DIR_ALLOWED = re.compile(r"^[\w \-./\\:~]+$", re.UNICODE)
 _COMPOSE_DIR_MAX_LEN = 512
 
+# "Loaded filament first" maximum wait in hours (#3587): the default and the
+# accepted range, shared by the schema, the settings read-back and the scheduler.
+QUEUE_MAX_WAIT_HOURS_DEFAULT = 48
+QUEUE_MAX_WAIT_HOURS_MIN = 1
+QUEUE_MAX_WAIT_HOURS_MAX = 8760
+
 
 class AppSettings(BaseModel):
     """Application settings schema."""
@@ -491,6 +497,14 @@ class AppSettings(BaseModel):
         default=True,
         description="Enable user email notifications for print job events (requires Advanced Authentication)",
     )
+    notification_submitter_email_enabled: bool = Field(
+        default=False,
+        description=(
+            "Fill {submitted_by_email} in print notifications with the email of the user who sent the job. "
+            "Off, it stays empty: anyone who can edit templates or providers could otherwise send "
+            "every submitter's email to a server of their choosing."
+        ),
+    )
 
     # Default print options. bed_levelling / flow_cali / nozzle_offset_cali are
     # tri-state (off/on/auto), defaulting to "auto" per BambuStudio.
@@ -562,6 +576,22 @@ class AppSettings(BaseModel):
     queue_shortest_first: bool = Field(
         default=False,
         description="Shortest Job First — scheduler prioritizes shorter print jobs over longer ones",
+    )
+    queue_loaded_filament_first: bool = Field(
+        default=False,
+        description=(
+            "Skip a queued job whose filament is not loaded on its printer instead of holding it, "
+            "so jobs behind it that fit can run first (#3587)"
+        ),
+    )
+    queue_max_wait_hours: int | None = Field(
+        default=QUEUE_MAX_WAIT_HOURS_DEFAULT,
+        ge=QUEUE_MAX_WAIT_HOURS_MIN,
+        le=QUEUE_MAX_WAIT_HOURS_MAX,
+        description=(
+            "With loaded-filament-first: hours after which a skipped job gets priority and its printer is "
+            "kept free for it. null = no limit (#3587)"
+        ),
     )
     model_dispatch_order: Literal["fewest_hours", "most_hours", "least_recently_used", "priority"] = Field(
         default="fewest_hours",
@@ -975,6 +1005,7 @@ class AppSettingsUpdate(BaseModel):
     low_stock_threshold: float | None = Field(default=None, ge=0.1, le=99.9)
     session_max_hours: int | None = Field(default=None, ge=1, le=720)
     user_notifications_enabled: bool | None = None
+    notification_submitter_email_enabled: bool | None = None
     default_bed_levelling: TriState | None = None
     default_flow_cali: TriState | None = None
     default_vibration_cali: bool | None = None
@@ -992,6 +1023,8 @@ class AppSettingsUpdate(BaseModel):
     finance_budget_reset_timezone: str | None = None
     require_plate_clear: bool | None = None
     queue_shortest_first: bool | None = None
+    queue_loaded_filament_first: bool | None = None
+    queue_max_wait_hours: int | None = Field(default=None, ge=QUEUE_MAX_WAIT_HOURS_MIN, le=QUEUE_MAX_WAIT_HOURS_MAX)
     queue_max_concurrent_uploads: int | None = Field(default=None, ge=1, le=16)
     preheat_enabled: bool | None = None
     preheat_filament_targets: str | None = None
@@ -1335,8 +1368,8 @@ class AppSettingsUpdate(BaseModel):
 # Settings that decide who can sign in or where credential material goes: a
 # directory server that hands out groups, local sign-in, the session length,
 # the address password-reset and welcome links point at, the metrics
-# endpoint's token, and the folder full backups (every password hash) are
-# written to. Admin-only to change (routes/settings.update_settings, and a
+# endpoint's token, the folder full backups (every password hash) are
+# written to, and whether print notifications carry the submitter's email. Admin-only to change (routes/settings.update_settings, and a
 # GitHub restore by a non-admin skips them); the settings permissions keep
 # everything else.
 ADMIN_ONLY_SETTING_KEYS = frozenset(
@@ -1348,5 +1381,6 @@ ADMIN_ONLY_SETTING_KEYS = frozenset(
         "prometheus_enabled",
         "prometheus_token",
         "local_backup_path",
+        "notification_submitter_email_enabled",
     }
 )

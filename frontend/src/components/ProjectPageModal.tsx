@@ -13,6 +13,7 @@ import {
   ChevronLeft,
   ChevronRight,
 } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import { api, withMediaToken } from '../api/client';
 import { Button } from './Button';
 // Lazy: RichTextEditor pulls in all @tiptap/* packages — defer that bundle
@@ -35,6 +36,7 @@ interface ProjectPageModalProps {
 }
 
 export function ProjectPageModal({ archiveId, archiveName, onClose }: ProjectPageModalProps) {
+  const { t } = useTranslation();
   const queryClient = useQueryClient();
   const [isEditing, setIsEditing] = useState(false);
   const [selectedImageIndex, setSelectedImageIndex] = useState<number | null>(null);
@@ -140,7 +142,7 @@ export function ProjectPageModal({ archiveId, archiveName, onClose }: ProjectPag
           <div className="flex items-center gap-3">
             <FileText className="w-5 h-5 text-bambu-green" />
             <h2 className="text-lg font-semibold text-white">
-              Project Page
+              {t('projectPageModal.title')}
               {archiveName && <span className="text-bambu-gray ml-2">- {archiveName}</span>}
             </h2>
           </div>
@@ -148,13 +150,13 @@ export function ProjectPageModal({ archiveId, archiveName, onClose }: ProjectPag
             {!isEditing && hasContent && (
               <Button variant="ghost" size="sm" onClick={handleStartEdit}>
                 <Edit3 className="w-4 h-4 mr-1" />
-                Edit
+                {t('common.edit')}
               </Button>
             )}
             {isEditing && (
               <>
                 <Button variant="ghost" size="sm" onClick={handleCancelEdit}>
-                  Cancel
+                  {t('common.cancel')}
                 </Button>
                 <Button
                   variant="primary"
@@ -163,7 +165,7 @@ export function ProjectPageModal({ archiveId, archiveName, onClose }: ProjectPag
                   disabled={updateMutation.isPending}
                 >
                   <Save className="w-4 h-4 mr-1" />
-                  Save
+                  {t('common.save')}
                 </Button>
               </>
             )}
@@ -186,16 +188,16 @@ export function ProjectPageModal({ archiveId, archiveName, onClose }: ProjectPag
 
           {error && (
             <div className="text-red-700 dark:text-red-400 text-center py-12">
-              Failed to load project page data
+              {t('projectPageModal.loadFailed')}
             </div>
           )}
 
           {projectPage && !hasContent && (
             <div className="text-bambu-gray text-center py-12">
               <FileText className="w-12 h-12 mx-auto mb-4 opacity-50" />
-              <p>No project page data found in this 3MF file.</p>
+              <p>{t('projectPageModal.noData')}</p>
               <p className="text-sm mt-2">
-                Project pages are typically included in files downloaded from MakerWorld.
+                {t('projectPageModal.noDataHint')}
               </p>
             </div>
           )}
@@ -209,7 +211,7 @@ export function ProjectPageModal({ archiveId, archiveName, onClose }: ProjectPag
                     type="text"
                     value={editData.title || ''}
                     onChange={(e) => setEditData({ ...editData, title: e.target.value })}
-                    placeholder="Title"
+                    placeholder={t('projectPageModal.placeholders.title')}
                     className="w-full bg-bambu-dark border border-bambu-dark-tertiary rounded-lg px-4 py-2 text-white text-xl font-semibold"
                   />
                 ) : (
@@ -226,7 +228,7 @@ export function ProjectPageModal({ archiveId, archiveName, onClose }: ProjectPag
                         type="text"
                         value={editData.designer || ''}
                         onChange={(e) => setEditData({ ...editData, designer: e.target.value })}
-                        placeholder="Designer"
+                        placeholder={t('projectPageModal.placeholders.designer')}
                         className="bg-bambu-dark border border-bambu-dark-tertiary rounded px-2 py-1 text-white"
                       />
                     </div>
@@ -263,7 +265,7 @@ export function ProjectPageModal({ archiveId, archiveName, onClose }: ProjectPag
                         type="text"
                         value={editData.license || ''}
                         onChange={(e) => setEditData({ ...editData, license: e.target.value })}
-                        placeholder="License"
+                        placeholder={t('projectPageModal.placeholders.license')}
                         className="bg-bambu-dark border border-bambu-dark-tertiary rounded px-2 py-1 text-white"
                       />
                     </div>
@@ -288,13 +290,13 @@ export function ProjectPageModal({ archiveId, archiveName, onClose }: ProjectPag
               {(projectPage.description || isEditing) && (
                 <div className="space-y-2">
                   <h4 className="text-sm font-medium text-bambu-gray uppercase tracking-wide">
-                    Description
+                    {t('common.description')}
                   </h4>
                   {isEditing ? (
                     <RichTextEditor
                       content={editData.description || ''}
                       onChange={(html) => setEditData({ ...editData, description: html })}
-                      placeholder="Enter description..."
+                      placeholder={t('projectPageModal.placeholders.description')}
                     />
                   ) : (
                     <div
@@ -311,7 +313,7 @@ export function ProjectPageModal({ archiveId, archiveName, onClose }: ProjectPag
               {(projectPage.profile_title || projectPage.profile_description || isEditing) && (
                 <div className="space-y-2 p-4 bg-bambu-dark rounded-lg">
                   <h4 className="text-sm font-medium text-bambu-gray uppercase tracking-wide">
-                    Print Profile
+                    {t('projectPageModal.printProfile')}
                   </h4>
                   {isEditing ? (
                     <div className="space-y-2">
@@ -319,13 +321,13 @@ export function ProjectPageModal({ archiveId, archiveName, onClose }: ProjectPag
                         type="text"
                         value={editData.profile_title || ''}
                         onChange={(e) => setEditData({ ...editData, profile_title: e.target.value })}
-                        placeholder="Profile Title"
+                        placeholder={t('projectPageModal.placeholders.profileTitle')}
                         className="w-full bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded px-3 py-2 text-white"
                       />
                       <RichTextEditor
                         content={editData.profile_description || ''}
                         onChange={(html) => setEditData({ ...editData, profile_description: html })}
-                        placeholder="Profile description..."
+                        placeholder={t('projectPageModal.placeholders.profileDescription')}
                       />
                     </div>
                   ) : (
@@ -343,7 +345,7 @@ export function ProjectPageModal({ archiveId, archiveName, onClose }: ProjectPag
                       )}
                       {projectPage.profile_user_name && (
                         <p className="text-sm text-bambu-gray">
-                          by {projectPage.profile_user_name}
+                          {t('projectPageModal.byUser', { name: projectPage.profile_user_name })}
                         </p>
                       )}
                     </>
@@ -356,7 +358,7 @@ export function ProjectPageModal({ archiveId, archiveName, onClose }: ProjectPag
                 <div className="space-y-2">
                   <h4 className="text-sm font-medium text-bambu-gray uppercase tracking-wide flex items-center gap-2">
                     <Image className="w-4 h-4" />
-                    Images ({allImages.length})
+                    {t('projectPageModal.imagesCount', { count: allImages.length })}
                   </h4>
                   <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 gap-2">
                     {allImages.map((img, index) => (
@@ -386,7 +388,7 @@ export function ProjectPageModal({ archiveId, archiveName, onClose }: ProjectPag
                     className="inline-flex items-center gap-2 text-bambu-green hover:underline"
                   >
                     <ExternalLink className="w-4 h-4" />
-                    View on MakerWorld
+                    {t('archives.menu.viewOnMakerWorld')}
                   </a>
                 </div>
               )}

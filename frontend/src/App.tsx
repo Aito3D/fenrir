@@ -2,6 +2,7 @@ import { Component, Suspense, lazy, type ComponentType, type ReactNode, type Err
 import { createBrowserRouter, createRoutesFromElements, RouterProvider, Route, Navigate, useLocation } from 'react-router-dom';
 import type { Location } from 'react-router-dom';
 import { Loader2 } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { Layout } from './components/Layout';
 import { useWebSocket } from './hooks/useWebSocket';
@@ -129,6 +130,12 @@ const SpoolBuddyAmsPage = lazyWithReload(() => import('./pages/spoolbuddy/SpoolB
 const SpoolBuddySettingsPage = lazyWithReload(() => import('./pages/spoolbuddy/SpoolBuddySettingsPage').then(m => ({ default: m.SpoolBuddySettingsPage })));
 const SpoolBuddyWriteTagPage = lazyWithReload(() => import('./pages/spoolbuddy/SpoolBuddyWriteTagPage').then(m => ({ default: m.SpoolBuddyWriteTagPage })));
 const SpoolBuddyInventoryPage = lazyWithReload(() => import('./pages/spoolbuddy/SpoolBuddyInventoryPage').then(m => ({ default: m.SpoolBuddyInventoryPage })));
+// The error boundary is a class component and cannot call useTranslation.
+function CrashText({ textKey }: { textKey: string }) {
+  const { t } = useTranslation();
+  return <>{t(textKey)}</>;
+}
+
 class ErrorBoundary extends Component<{ children: ReactNode }, { error: Error | null; errorInfo: ErrorInfo | null }> {
   state = { error: null as Error | null, errorInfo: null as ErrorInfo | null };
 
@@ -145,7 +152,7 @@ class ErrorBoundary extends Component<{ children: ReactNode }, { error: Error | 
     if (this.state.error) {
       return (
         <div style={{ padding: 24, color: '#ef4444', backgroundColor: '#18181b', minHeight: '100vh', fontFamily: 'monospace' }}>
-          <h1 style={{ fontSize: 20, marginBottom: 12 }}>UI Crash</h1>
+          <h1 style={{ fontSize: 20, marginBottom: 12 }}><CrashText textKey="app.uiCrash" /></h1>
           <pre style={{ whiteSpace: 'pre-wrap', fontSize: 14 }}>{this.state.error.message}</pre>
           <pre style={{ whiteSpace: 'pre-wrap', fontSize: 12, color: '#a1a1aa', marginTop: 12 }}>
             {this.state.error.stack}
@@ -154,7 +161,7 @@ class ErrorBoundary extends Component<{ children: ReactNode }, { error: Error | 
             onClick={() => { this.setState({ error: null, errorInfo: null }); }}
             style={{ marginTop: 16, padding: '8px 16px', backgroundColor: '#3b82f6', color: '#fff', border: 'none', borderRadius: 8, cursor: 'pointer' }}
           >
-            Retry
+            <CrashText textKey="common.retry" />
           </button>
         </div>
       );

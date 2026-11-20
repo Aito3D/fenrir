@@ -3162,16 +3162,6 @@
                 }
             }
         ],
-        "./backend/app/services/archive_cost_estimate.py": [
-            {
-                "code": "reportArgumentType",
-                "range": {
-                    "startColumn": 25,
-                    "endColumn": 41,
-                    "lineCount": 1
-                }
-            }
-        ],
         "./backend/app/services/bambu_ftp.py": [
             {
                 "code": "reportAttributeAccessIssue",

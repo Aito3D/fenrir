@@ -503,7 +503,7 @@ export function StreamOverlayPage() {
             ref={attachImg}
             key={imageKey}
             onError={handleStreamError}
-            alt="Camera stream"
+            alt={t('camera.cameraStream')}
             className="absolute inset-0 w-full h-full object-contain"
             style={cameraStyle}
           />
