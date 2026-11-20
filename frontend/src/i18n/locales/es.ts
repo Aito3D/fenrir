@@ -199,7 +199,6 @@ export default {
     clientPhone: 'Teléfono',
     clientEmail: 'Correo electrónico',
     countryCode: 'Prefijo internacional',
-    phonePlaceholder: '87123456',
     emailPlaceholder: 'cliente@ejemplo.com',
     revertPhone: 'Revertir el teléfono',
     revertEmail: 'Revertir el correo',

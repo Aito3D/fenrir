@@ -9483,7 +9483,6 @@ export default {
     clientPhone: 'Telefon',
     clientEmail: 'E-mail',
     countryCode: 'Kod kraju',
-    phonePlaceholder: '87123456',
     emailPlaceholder: 'klient@example.com',
     revertPhone: 'Przywróć telefon',
     revertEmail: 'Przywróć e-mail',

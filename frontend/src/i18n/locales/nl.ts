@@ -9483,7 +9483,6 @@ export default {
     clientPhone: 'Telefoon',
     clientEmail: 'E-mail',
     countryCode: 'Landcode',
-    phonePlaceholder: '87123456',
     emailPlaceholder: 'client@voorbeeld.com',
     revertPhone: 'Telefoonnummer terugzetten',
     revertEmail: 'E-mailadres terugzetten',

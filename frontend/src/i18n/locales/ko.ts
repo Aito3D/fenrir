@@ -199,7 +199,6 @@ export default {
     clientPhone: '전화번호',
     clientEmail: '이메일',
     countryCode: '국가 번호',
-    phonePlaceholder: '87123456',
     emailPlaceholder: 'client@example.com',
     revertPhone: '전화번호 되돌리기',
     revertEmail: '이메일 되돌리기',

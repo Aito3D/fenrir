@@ -199,7 +199,6 @@ export default {
     clientPhone: 'Telefon',
     clientEmail: 'E-Mail',
     countryCode: 'Landesvorwahl',
-    phonePlaceholder: '87123456',
     emailPlaceholder: 'kunde@beispiel.de',
     revertPhone: 'Telefonnummer verwerfen',
     revertEmail: 'E-Mail verwerfen',

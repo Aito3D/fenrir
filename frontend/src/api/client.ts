@@ -10737,7 +10737,7 @@ export const api = {
   getZohoContact: (id: string) => request<ZohoContactDetail>(`/zoho/contacts/${encodeURIComponent(id)}`),
   updateZohoContact: (
     id: string,
-    data: { email?: string; phone?: string; phone_field?: 'phone' | 'mobile' },
+    data: { email?: string; phone?: string; phone_field?: 'phone' | 'mobile'; contact_person_id?: string },
   ) =>
     request<void>(`/zoho/contacts/${encodeURIComponent(id)}`, {
       method: 'PATCH',

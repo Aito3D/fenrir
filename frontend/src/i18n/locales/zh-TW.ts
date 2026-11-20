@@ -199,7 +199,6 @@ export default {
     clientPhone: '電話',
     clientEmail: '信箱',
     countryCode: '國碼',
-    phonePlaceholder: '87123456',
     emailPlaceholder: 'client@example.com',
     revertPhone: '復原電話變更',
     revertEmail: '復原信箱變更',

@@ -323,6 +323,30 @@ async def test_patch_contact_updates_primary_person(async_client):
 
 
 @pytest.mark.asyncio
+async def test_patch_contact_writes_to_the_named_person_not_the_primary(async_client):
+    await _configure(async_client)
+    await _card_for(async_client, "z1")
+    puts: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.method == "GET":
+            persons = [
+                {"contact_person_id": "cp1", "is_primary_contact": True},
+                {"contact_person_id": "cp2", "is_primary_contact": False},
+            ]
+            return httpx.Response(200, json={"contact": {"contact_id": "z1", "contact_persons": persons}})
+        puts.append(request.url.path)
+        return httpx.Response(200, json={"contact_person": {}})
+
+    zoho_service.transport = _token_then(handler)
+    r = await async_client.patch(
+        "/api/v1/zoho/contacts/z1", json={"phone": "+689-87000000", "phone_field": "mobile", "contact_person_id": "cp2"}
+    )
+    assert r.status_code == 204
+    assert [p.rsplit("/", 1)[-1] for p in puts] == ["cp2"]
+
+
+@pytest.mark.asyncio
 async def test_patch_contact_rejects_malformed_values(async_client):
     await _configure(async_client)
     # No card needed: body validation runs before the handler (and so before

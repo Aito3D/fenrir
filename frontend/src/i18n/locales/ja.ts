@@ -199,7 +199,6 @@ export default {
     clientPhone: '電話番号',
     clientEmail: 'メールアドレス',
     countryCode: '国番号',
-    phonePlaceholder: '87123456',
     emailPlaceholder: 'client@example.com',
     revertPhone: '電話番号を元に戻す',
     revertEmail: 'メールアドレスを元に戻す',

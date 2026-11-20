@@ -74,6 +74,8 @@ export function useAitoPageMutations() {
           ? { phone: formatPhone(draft), phone_field: draft.original.phoneField }
           : {}),
         ...(draft.touched.email ? { email: draft.email.trim() } : {}),
+        // A company card writes to the person it is for, not Books' primary.
+        ...(draft.isCompany && draft.contactPersonId ? { contact_person_id: draft.contactPersonId } : {}),
       });
     } catch {
       showToast(t('aito.clientSyncFailed'), 'warning');

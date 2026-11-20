@@ -199,7 +199,6 @@ export default {
     clientPhone: '电话',
     clientEmail: '邮箱',
     countryCode: '国家区号',
-    phonePlaceholder: '87123456',
     emailPlaceholder: 'client@example.com',
     revertPhone: '撤销电话修改',
     revertEmail: '撤销邮箱修改',

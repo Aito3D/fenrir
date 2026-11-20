@@ -9516,7 +9516,6 @@ errors: {
     clientPhone: 'Telefon',
     clientEmail: 'E-post',
     countryCode: 'Landskod',
-    phonePlaceholder: '87123456',
     emailPlaceholder: 'client@example.com',
     revertPhone: 'Återställ telefon',
     revertEmail: 'Återställ e-post',

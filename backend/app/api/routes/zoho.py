@@ -287,6 +287,8 @@ class ZohoContactPatch(BaseModel):
     email: str | None = Field(default=None, max_length=200)
     phone: str | None = Field(default=None, max_length=50)
     phone_field: Literal["phone", "mobile"] = "mobile"
+    # The company person the card is for; absent, Books' primary person.
+    contact_person_id: str | None = Field(default=None, max_length=100)
 
     @field_validator("email")
     @classmethod
@@ -341,7 +343,12 @@ async def patch_contact(
         raise HTTPException(status_code=404, detail="No active project for this contact")
     try:
         await zoho_service.update_contact_person(
-            db, contact_id, email=payload.email, phone=payload.phone, phone_field=payload.phone_field
+            db,
+            contact_id,
+            email=payload.email,
+            phone=payload.phone,
+            phone_field=payload.phone_field,
+            contact_person_id=payload.contact_person_id,
         )
     except (ZohoNotConfiguredError, ZohoUpstreamError) as e:
         _raise_zoho_http_error(e)

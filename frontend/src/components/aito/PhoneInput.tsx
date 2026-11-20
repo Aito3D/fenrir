@@ -89,7 +89,6 @@ export function PhoneInput({
           onChange(next, 'nationalNumber');
           onBlur?.(next);
         }}
-        placeholder={t('aito.phonePlaceholder')}
         aria-invalid={invalid ? true : undefined}
         aria-required={required ? true : undefined}
         className={invalid ? inputErrorCls : inputCls}

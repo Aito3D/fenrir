@@ -199,7 +199,6 @@ export default {
     clientPhone: 'Telefon',
     clientEmail: 'E-posta',
     countryCode: 'Ülke kodu',
-    phonePlaceholder: '87123456',
     emailPlaceholder: 'musteri@example.com',
     revertPhone: 'Telefon değişikliğini geri al',
     revertEmail: 'E-posta değişikliğini geri al',
