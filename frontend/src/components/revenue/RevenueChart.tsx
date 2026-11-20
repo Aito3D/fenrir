@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Bar, CartesianGrid, Cell, ComposedChart, Line, ResponsiveContainer, Tooltip, usePlotArea, XAxis, YAxis } from 'recharts';
 import type { RevenueCan, RevenueControls } from '../../pages/RevenuePage';
@@ -150,6 +150,26 @@ export function RevenueChart({ payload, controls, can, onStack, onDrill, drillDe
   ).map((d) => ({ id: d.id, label: t(`revenue.chart.stack.${d.id}`) }));
 
   const notes = useRevenueResource<AnnotationsResponse>('/api/v1/revenue/annotations', 0);
+
+  // A drill-down unmounts the focused column and the last « Retour » unmounts itself: focus would fall to the page.
+  const refocus = useRef(false);
+  const backRef = useRef<HTMLButtonElement>(null);
+  const groupRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!refocus.current) return;
+    const at = document.activeElement;
+    if (at && at !== document.body) {
+      if (at !== backRef.current && !groupRef.current?.contains(at)) refocus.current = false;
+      return;
+    }
+    // After the last « Retour » the columns come with the next payload: wait for them.
+    const target = backRef.current ?? groupRef.current?.querySelector<SVGGElement>('g[role="button"]');
+    if (!target) return;
+    refocus.current = false;
+    target.focus();
+  });
+  const drillFrom = onDrill && ((i: number) => { refocus.current = true; onDrill(i); });
+  const back = () => { refocus.current = drillDepth === 1; onBack(); };
   const annotations = notes.data?.annotations ?? [];
 
   const series = chartSeries(buckets, stack);
@@ -235,7 +255,7 @@ export function RevenueChart({ payload, controls, can, onStack, onDrill, drillDe
         <div className="flex flex-wrap items-center gap-3">
           <p className="text-xs uppercase tracking-wide text-bambu-gray">{t(`revenue.chart.title.${granularity}`)}</p>
           {drillDepth > 0 && (
-            <button type="button" onClick={onBack} className={`rounded text-sm text-bambu-green hover:text-white ${focusRingCls}`}>
+            <button ref={backRef} type="button" onClick={back} className={`rounded text-sm text-bambu-green hover:text-white ${focusRingCls}`}>
               {drillDepth > 1 ? t('revenue.chart.backLevels', { n: drillDepth }) : t('revenue.chart.back')}
             </button>
           )}
@@ -256,7 +276,7 @@ export function RevenueChart({ payload, controls, can, onStack, onDrill, drillDe
     >
       {/* A group, not an img: an image's children are presentational and the column buttons would go silent. */}
       {/* Bars, line and hover marks paint above the column buttons: clicks must pass through them to drill. */}
-      <div role="group" aria-label={chartLabel} aria-roledescription={t('revenue.chart.roleDescription')}
+      <div ref={groupRef} role="group" aria-label={chartLabel} aria-roledescription={t('revenue.chart.roleDescription')}
         className="[&_.recharts-active-dot]:pointer-events-none [&_.recharts-bar]:pointer-events-none [&_.recharts-line]:pointer-events-none [&_.recharts-tooltip-cursor]:pointer-events-none">
         <ResponsiveContainer width="100%" height={HEIGHT}>
           <ComposedChart data={rows} stackOffset="sign" accessibilityLayer={false} margin={{ top: 20, right: 0, left: -4, bottom: 0 }}>
@@ -278,7 +298,7 @@ export function RevenueChart({ payload, controls, can, onStack, onDrill, drillDe
             <ColumnMarks columns={columns} yMin={yMin} yMax={yMax} targets={targets} notes={notesOf} label={columnLabel}
               missingLabel={(n) => t('revenue.chart.missingDays', { n })}
               noteLabel={(ns) => t('revenue.chart.note', { label: ns.map((n) => n.label).join(' · ') })}
-              onDrill={onDrill} />
+              onDrill={drillFrom} />
           </ComposedChart>
         </ResponsiveContainer>
       </div>

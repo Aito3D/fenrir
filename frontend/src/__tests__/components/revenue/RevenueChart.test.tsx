@@ -137,6 +137,22 @@ describe('RevenueChart', () => {
     expect(tooltipContent?.({ active: true, payload: [{ payload: { i: 2 } }] })).toBeNull();
   });
 
+  it('keeps keyboard focus in the chart when a drill-down or « Retour » removes the focused control', () => {
+    const { props, rerenderChart } = renderChart();
+    const col = screen.getByRole('button', { name: 'févr. 2026 – 900 FCP · missing days: 3' });
+    col.focus();
+    fireEvent.keyDown(col, { key: 'Enter' });
+    expect(props.onDrill).toHaveBeenCalledWith(1);
+    const week = (key: string, start: string) => bucket({ key, label: key, start, end: start, ht: 100, ttc: 113, goods: 100, byNature: { Imprimantes: 100 } });
+    // The drilled window arrives: the focused column is gone, « Retour » is there.
+    rerenderChart({ drillDepth: 1, payload: payload([week('2026-W06', '2026-02-02'), week('2026-W07', '2026-02-09')]) });
+    expect(screen.getByRole('button', { name: '← Back' })).toHaveFocus();
+    fireEvent.click(screen.getByRole('button', { name: '← Back' }));
+    expect(props.onBack).toHaveBeenCalled();
+    rerenderChart({ drillDepth: 0 });
+    expect(screen.getByRole('button', { name: 'janv. 2026 – 600 FCP' })).toHaveFocus();
+  });
+
   it('has no operable column without a finer level', () => {
     renderChart({ onDrill: undefined });
     expect(screen.queryByRole('button', { name: /janv\. 2026/ })).toBeNull();
