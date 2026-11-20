@@ -53,17 +53,7 @@ import { formatMoney } from '../utils/pricing';
 const BOARD_KEY = ['order-board'] as const;
 const FINISHED_KEY = ['order-board', 'finished'] as const;
 const PAGE = 50;
-const CORE_ONLY_KEY = 'orders.coreOnly';
 const STATS_OPEN_KEY = 'orders.statsOpen';
-// "3D only" is on unless the viewer turned it off. Storage can throw (private
-// windows, blocked site data); the page must render without it.
-function readCoreOnly(): boolean {
-  try {
-    return localStorage.getItem(CORE_ONLY_KEY) !== 'false';
-  } catch {
-    return true;
-  }
-}
 
 // The stats strip is closed unless the viewer left it open.
 function readStatsOpen(): boolean {
@@ -118,8 +108,8 @@ export function OrderBoardPage() {
     onError: () => showToast(t('orders.refreshFailed'), 'error'),
   });
 
-  const { query, setQuery, status, setStatus, payFilter, setPayFilter, follow, setFollow, sort, setSort } = useOrderFilters();
-  const [coreOnly, setCoreOnly] = useState(readCoreOnly);
+  const { query, setQuery, status, setStatus, payFilter, setPayFilter, follow, setFollow, sort, setSort, coreOnly, setCoreOnly, chooseCoreOnly } =
+    useOrderFilters();
   const [statsOpen, setStatsOpen] = useState(readStatsOpen);
   const [shown, setShown] = useState(PAGE);
   const [start, setStart] = useState<{ id: string; target: string; tick: number } | null>(null);
@@ -167,11 +157,7 @@ export function OrderBoardPage() {
     return () => document.removeEventListener('keydown', onKey);
   }, []);
 
-  const toggleCoreOnly = () => {
-    const next = !coreOnly;
-    setCoreOnly(next);
-    remember(CORE_ONLY_KEY, next);
-  };
+  const toggleCoreOnly = () => chooseCoreOnly(!coreOnly);
   // "Also open for this customer": the filters go (in the URL, the filter state follows it) so the target is listed.
   const goto = (id: string) => {
     // Turned off for this visit only: the saved choice stays as the viewer set it.
@@ -208,7 +194,7 @@ export function OrderBoardPage() {
     if (fin) setStatus('finished');
     else if (status === 'finished') setStatus('all');
     scrollTarget.current = { id: openId, block: 'start' };
-  }, [openId, ready, data, finishedQuery.data, finishedQuery.isLoading, coreOnly, status, setStatus]);
+  }, [openId, ready, data, finishedQuery.data, finishedQuery.isLoading, coreOnly, status, setStatus, setCoreOnly]);
   // After the target renders, bring it into view. Declared after the effect above, so one pass does both.
   useEffect(() => {
     if (phone) { // the full-screen view covers the list

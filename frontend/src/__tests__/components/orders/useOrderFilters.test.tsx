@@ -1,11 +1,32 @@
-import { describe, it, expect } from 'vitest';
-import { render, screen, act } from '@testing-library/react';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { render, screen, act, waitFor, fireEvent } from '@testing-library/react';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { createMemoryRouter, RouterProvider } from 'react-router-dom';
 import { useOrderFilters } from '../../../components/orders/useOrderFilters';
 
+const { getUiPrefs, putUiPref } = vi.hoisted(() => ({
+  getUiPrefs: vi.fn(),
+  putUiPref: vi.fn(),
+}));
+vi.mock('../../../api/client', () => ({ api: { getUiPrefs, putUiPref } }));
+
+beforeEach(() => {
+  getUiPrefs.mockReset().mockResolvedValue({});
+  putUiPref.mockReset().mockResolvedValue(undefined);
+  localStorage.clear();
+});
+
 function Box() {
-  const { query, setQuery } = useOrderFilters();
-  return <input data-testid="q" value={query} onChange={e => setQuery(e.target.value)} />;
+  const f = useOrderFilters();
+  return (
+    <>
+      <input data-testid="q" value={f.query} onChange={e => f.setQuery(e.target.value)} />
+      <output data-testid="state">{`${f.payFilter}|${f.follow}|${f.sort.key}|${f.sort.flipped}|${f.coreOnly}`}</output>
+      <button onClick={() => f.setSort({ key: 'value', flipped: true })}>sort</button>
+      <button onClick={() => f.chooseCoreOnly(false)}>core</button>
+      <button onClick={() => f.setCoreOnly(false)}>core-temp</button>
+    </>
+  );
 }
 const setValue = (el: HTMLInputElement, v: string) => {
   Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(el, v);
@@ -13,7 +34,12 @@ const setValue = (el: HTMLInputElement, v: string) => {
 };
 const mount = (url: string) => {
   const router = createMemoryRouter([{ path: '/orders', element: <Box /> }], { initialEntries: [url] });
-  render(<RouterProvider router={router} />);
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  render(
+    <QueryClientProvider client={client}>
+      <RouterProvider router={router} />
+    </QueryClientProvider>,
+  );
   return { router, input: screen.getByTestId('q') as HTMLInputElement };
 };
 
@@ -47,5 +73,31 @@ describe('useOrderFilters', () => {
       await router.navigate('/orders');
     });
     expect(input.value).toBe('');
+  });
+
+  it('brings back the sort and filters saved on the account', async () => {
+    getUiPrefs.mockResolvedValue({ orders: { pay: 'unpaid', follow: null, sort: 'customer', flip: true, coreOnly: false } });
+    const { router } = mount('/orders');
+    await waitFor(() => expect(screen.getByTestId('state').textContent).toBe('unpaid|null|customer|true|false'));
+    await waitFor(() => expect(router.state.location.search).toBe('?pay=unpaid&sort=customer&flip=1'));
+    expect(putUiPref).not.toHaveBeenCalled();
+  });
+
+  it('lets a link that names its filters win over the saved ones', async () => {
+    getUiPrefs.mockResolvedValue({ orders: { pay: 'unpaid', coreOnly: false } });
+    mount('/orders?pay=paid');
+    await waitFor(() => expect(screen.getByTestId('state').textContent).toBe('paid|null|age|false|false'));
+  });
+
+  it('saves what the viewer picks, merged with what was saved, but not a temporary switch', async () => {
+    getUiPrefs.mockResolvedValue({ orders: { pay: 'unpaid' } });
+    mount('/orders');
+    await waitFor(() => expect(screen.getByTestId('state').textContent).toContain('unpaid'));
+    fireEvent.click(screen.getByText('core-temp'));
+    expect(putUiPref).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByText('sort'));
+    expect(putUiPref).toHaveBeenLastCalledWith('orders', { pay: 'unpaid', sort: 'value', flip: true });
+    fireEvent.click(screen.getByText('core'));
+    expect(putUiPref).toHaveBeenLastCalledWith('orders', { pay: 'unpaid', sort: 'value', flip: true, coreOnly: false });
   });
 });

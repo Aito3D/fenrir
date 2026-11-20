@@ -5899,6 +5899,9 @@ async def _run_migrations(conn):
     else:
         await _safe_execute(conn, "ALTER TABLE users ADD COLUMN IF NOT EXISTS cloud_token_invalid_at TIMESTAMP")
 
+    # Migration: per-user view settings (sort and filters that follow the account across devices).
+    await _safe_execute(conn, "ALTER TABLE users ADD COLUMN ui_prefs JSON")
+
     # Data migration: drop the embedded 3MF Title (`print_name`) from library
     # file metadata so the FileManager displays the filename, not the title (#1489).
     await _migrate_drop_library_print_name(conn)
