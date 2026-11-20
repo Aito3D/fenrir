@@ -1,9 +1,8 @@
-import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo, lazy, Suspense } from 'react';
 import { NavLink, useNavigate, useLocation } from 'react-router-dom';
 import { Printer, Archive, ListOrdered, BarChart3, Calculator, Cloud, Settings, Sun, Moon, Monitor, ChevronLeft, ChevronRight, Keyboard, ArrowUpCircle, Wrench, FolderKanban, FolderOpen, Kanban, PackageCheck, X, Menu, Info, Plug, Bug, LogOut, Key, Loader2, Disc3, Droplets, ShieldAlert, Globe, Bell, Receipt, Megaphone, TrendingUp, type LucideIcon } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useTheme } from '../contexts/ThemeContext';
-import { KeyboardShortcutsModal } from './KeyboardShortcutsModal';
 import { InstallAppButton } from './InstallAppButton';
 import { NotificationBell } from './NotificationBell';
 import { SwitchbarPopover } from './SwitchbarPopover';
@@ -42,6 +41,9 @@ import {
   saveSidebarOrder,
   SIDEBAR_LAYOUT_CHANGED_EVENT,
 } from '../utils/sidebarLayout';
+// Lazy: opens only on '?', and its <Trans> footer would put react-i18next's
+// HTML parser in the eager preload set (check-preload-budget).
+const KeyboardShortcutsModal = lazy(() => import('./KeyboardShortcutsModal').then(m => ({ default: m.KeyboardShortcutsModal })));
 
 
 interface NavItem {
@@ -1142,9 +1144,11 @@ export function Layout() {
 
       {/* Keyboard Shortcuts Modal */}
       {showShortcuts && (
-        <KeyboardShortcutsModal
-          onClose={() => setShowShortcuts(false)}
-        />
+        <Suspense fallback={null}>
+          <KeyboardShortcutsModal
+            onClose={() => setShowShortcuts(false)}
+          />
+        </Suspense>
       )}
 
       {/* Plate Detection Alert Modal */}
