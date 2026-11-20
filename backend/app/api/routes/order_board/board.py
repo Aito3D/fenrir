@@ -15,7 +15,7 @@ from sqlalchemy import and_, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.app.api.routes.order_board._common import _logged, _pdf, _require_order, _run, logger, router
+from backend.app.api.routes.order_board._common import _by, _logged, _pdf, _require_order, _run, logger, router
 from backend.app.core.auth import RequirePermissionIfAuthEnabled
 from backend.app.core.database import get_db
 from backend.app.core.permissions import Permission
@@ -264,9 +264,7 @@ async def print_prep_sheet(
         await _run(order_board_actions.picklist_content(db, salesorder_id, picklist_id, whole)) if picklist_id else None
     )
     row = await _run(
-        order_board_actions.stamp_print(
-            db, salesorder_id, user.username if user else "", content["number"] if content else None
-        )
+        order_board_actions.stamp_print(db, salesorder_id, _by(user) or "", content["number"] if content else None)
     )
     base = await aito_tracking.external_url(db)
     pdf = await asyncio.to_thread(  # reportlab is CPU-bound: keep it off the event loop
@@ -308,7 +306,7 @@ async def print_prep_sheet_batch(
     ]
     if not ids:
         raise HTTPException(status_code=404, detail="No order to prepare.")
-    by = user.username if user else ""
+    by = _by(user) or ""
     stamped = [(i, await _run(_stamp_unless_gone(db, i, by))) for i in ids]
     stamped = [(i, row) for i, row in stamped if row is not None]  # an order that left the board is skipped
     if not stamped:

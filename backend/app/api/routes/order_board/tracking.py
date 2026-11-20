@@ -160,6 +160,3 @@ async def get_order_tracking(
     salesorder_id, data = found
     background_tasks.add_task(_log_tracking_view, salesorder_id, now)
     return data
-
-
-# --- Payments: a payment link or the counter terminal, on the order's invoice or its quote's retainer ---------

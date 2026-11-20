@@ -199,7 +199,7 @@ async def create_order_payment_link(
     _check_counter_payment_rate_limit(request, user)
     document = await _payment_document(db, salesorder_id, body.amount)
     existing = await current_link(db, ("order", salesorder_id), kind=None)
-    if existing is not None and existing.heimdall_id is not None and existing.status == "pending":
+    if _open_link(existing):
         raise _refuse(409, "link_exists", "A payment link is already open for this order")
     try:
         link = await create_order_invoice_link(
