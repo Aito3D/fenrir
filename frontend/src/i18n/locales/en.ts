@@ -12999,7 +12999,6 @@ export default {
       mismatch: 'Months off from Zoho: {{n}}',
       checkOk: 'Matches Zoho (checked {{date}})',
       checkGap: 'Differs from Zoho: Zoho {{zoho}}, Fenrir {{cache}}',
-      reloadMonth: 'Reload',
       reloadMonthHint: 'Clear {{month}} and reload it from Zoho',
       monthReloading: '{{month}} cleared, reloading from Zoho.',
     },

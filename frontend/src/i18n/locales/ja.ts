@@ -12942,7 +12942,6 @@ export default {
       mismatch: 'Zoho と一致しない月: {{n}}',
       checkOk: 'Zoho と一致 ({{date}} に確認)',
       checkGap: 'Zoho との差異: Zoho {{zoho}}、Fenrir {{cache}}',
-      reloadMonth: '再読み込み',
       reloadMonthHint: '{{month}} を消去して Zoho から再読み込み',
       monthReloading: '{{month}} を消去しました。Zoho から再読み込み中です。',
     },

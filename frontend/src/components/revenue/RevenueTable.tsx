@@ -1,6 +1,6 @@
 import { Fragment, useId, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { ChevronRight } from 'lucide-react';
+import { ChevronRight, RotateCw } from 'lucide-react';
 import { Panel } from '../aito/stats/primitives';
 import { DeltaBadge } from '../stats/DeltaBadge';
 import { focusRingCls } from '../formStyles';
@@ -39,8 +39,10 @@ function CheckMark({ check, label, onRefetch }: { check: RevenueMonthCheck; labe
       <span role="img" aria-label={title} title={title} className={`shrink-0 text-xs ${tone}`}>{check.ok ? '✓' : '⚠'}</span>
       {!check.ok && onRefetch && (
         <button type="button" onClick={() => onRefetch(check.month, label)} aria-label={t('revenue.sync.reloadMonthHint', { month: label })}
-          className={`shrink-0 rounded text-[11px] underline underline-offset-2 hover:text-white ${tone} ${focusRingCls}`}>
-          {t('revenue.sync.reloadMonth')}
+          title={t('revenue.sync.reloadMonthHint', { month: label })}
+          className={`shrink-0 rounded p-0.5 hover:text-white ${tone} ${focusRingCls}`}>
+          {/* An icon, not the word: the period column is narrow and the month name must stay readable. */}
+          <RotateCw aria-hidden="true" className="h-3 w-3" />
         </button>
       )}
     </>

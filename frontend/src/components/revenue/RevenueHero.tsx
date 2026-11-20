@@ -1,5 +1,5 @@
 import { useTranslation } from 'react-i18next';
-import type { TFunction } from 'i18next';
+import i18next, { type TFunction } from 'i18next';
 import { Finding, Panel, Tile } from '../aito/stats/primitives';
 import { DeltaBadge } from '../stats/DeltaBadge';
 import { bucketKeyFor, bucketLabel, isBucketKey, shiftBucketYear, toDateRangeLabel } from './lib/buckets';
@@ -16,6 +16,7 @@ const RING_R = 50;
 // kpiTiles words its labels in French with this unit; tileLabel maps them back to keys.
 const FR_UNIT = { day: 'Jour', week: 'Semaine', month: 'Mois', year: 'Année' } as const;
 const MARGIN_LABEL = 'Marge brute HT';
+const PER_HOUR_LABEL = 'Services / h machine';
 
 const pick = (m: { ht: number; ttc: number }, mode: TaxMode) => (mode === 'ttc' ? m.ttc : m.ht);
 const pctText = (v: number) => `${Math.round(v * 100)} %`;
@@ -46,6 +47,9 @@ function tileText(t: TFunction, tile: KpiTile, g: RevenueGranularity, last: Reve
     };
   }
   if (tile.label === 'Cumul') return { label: t('revenue.hero.cumulative'), hint: tile.hint };
+  if (tile.label === PER_HOUR_LABEL) {
+    return { label: t('revenue.table.perHour'), hint: `${new Intl.NumberFormat(i18next.language, { maximumFractionDigits: 1 }).format(last.printHours ?? 0)} h` };
+  }
   if (tile.label.startsWith('Projection')) {
     return { label: t(`revenue.hero.projectionTile.${g}`), hint: t(last.projectionMethod === 'seasonal' ? 'revenue.hero.paceLastYear' : 'revenue.hero.paceCurrent') };
   }
@@ -167,7 +171,7 @@ export function RevenueHero({ payload, taxMode, canMargin }: { payload: RevenueR
         </div>
         {share == null && <Sparkline buckets={buckets} mode={taxMode} />}
       </div>
-      <div className="mt-2 grid grid-cols-[repeat(auto-fit,minmax(11rem,1fr))] gap-2">
+      <div className="mt-2 grid grid-cols-[repeat(auto-fit,minmax(13.5rem,1fr))] gap-2">
         {tiles.map((tile) => (
           <div key={tile.label} className="grid">
             <Tile

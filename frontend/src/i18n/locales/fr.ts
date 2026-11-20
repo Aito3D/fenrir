@@ -12928,7 +12928,6 @@ export default {
       mismatch: 'Mois en écart avec Zoho : {{n}}',
       checkOk: 'Conforme à Zoho (vérifié le {{date}})',
       checkGap: 'Écart avec Zoho : Zoho {{zoho}}, Fenrir {{cache}}',
-      reloadMonth: 'Recharger',
       reloadMonthHint: 'Effacer {{month}} et le recharger depuis Zoho',
       monthReloading: '{{month}} effacé, rechargement depuis Zoho en cours.',
     },

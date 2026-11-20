@@ -12525,7 +12525,6 @@ export default {
       mismatch: 'Zoho와 맞지 않는 달: {{n}}',
       checkOk: 'Zoho와 일치 ({{date}} 확인)',
       checkGap: 'Zoho와 차이: Zoho {{zoho}}, Fenrir {{cache}}',
-      reloadMonth: '다시 불러오기',
       reloadMonthHint: '{{month}}을(를) 지우고 Zoho에서 다시 불러오기',
       monthReloading: '{{month}}을(를) 지웠습니다. Zoho에서 다시 불러오는 중입니다.',
     },

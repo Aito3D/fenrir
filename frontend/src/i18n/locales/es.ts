@@ -12951,7 +12951,6 @@ export default {
       mismatch: 'Meses con diferencias respecto a Zoho: {{n}}',
       checkOk: 'Coincide con Zoho (comprobado el {{date}})',
       checkGap: 'Diferencia con Zoho: Zoho {{zoho}}, Fenrir {{cache}}',
-      reloadMonth: 'Recargar',
       reloadMonthHint: 'Borrar {{month}} y recargarlo desde Zoho',
       monthReloading: '{{month}} borrado, recargando desde Zoho.',
     },

@@ -12547,7 +12547,6 @@ export default {
       mismatch: 'Месяцев с расхождением с Zoho: {{n}}',
       checkOk: 'Совпадает с Zoho (проверено {{date}})',
       checkGap: 'Расхождение с Zoho: Zoho {{zoho}}, Fenrir {{cache}}',
-      reloadMonth: 'Перезагрузить',
       reloadMonthHint: 'Очистить {{month}} и заново загрузить из Zoho',
       monthReloading: '{{month}} очищен, идёт повторная загрузка из Zoho.',
     },

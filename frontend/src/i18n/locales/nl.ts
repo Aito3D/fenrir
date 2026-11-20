@@ -12967,7 +12967,6 @@ export default {
       mismatch: 'Maanden die afwijken van Zoho: {{n}}',
       checkOk: 'Komt overeen met Zoho (gecontroleerd op {{date}})',
       checkGap: 'Afwijking van Zoho: Zoho {{zoho}}, Fenrir {{cache}}',
-      reloadMonth: 'Opnieuw laden',
       reloadMonthHint: '{{month}} wissen en opnieuw uit Zoho laden',
       monthReloading: '{{month}} gewist, wordt opnieuw uit Zoho geladen.',
     },

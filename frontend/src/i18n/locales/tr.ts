@@ -12870,7 +12870,6 @@ export default {
       mismatch: 'Zoho ile uyuşmayan aylar: {{n}}',
       checkOk: 'Zoho ile uyumlu ({{date}} tarihinde kontrol edildi)',
       checkGap: 'Zoho ile fark: Zoho {{zoho}}, Fenrir {{cache}}',
-      reloadMonth: 'Yeniden yükle',
       reloadMonthHint: '{{month}} ayını temizle ve Zoho\'dan yeniden yükle',
       monthReloading: '{{month}} temizlendi, Zoho\'dan yeniden yükleniyor.',
     },

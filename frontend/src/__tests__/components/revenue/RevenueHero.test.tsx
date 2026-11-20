@@ -88,6 +88,13 @@ describe('RevenueHero', () => {
     expect(screen.getByText('Running total')).toBeInTheDocument();
   });
 
+  it('names the services per machine hour tile and formats its hours', () => {
+    renderHero([sept, oct({ services: 300_000, printHours: 1315.9 })]);
+    expect(screen.getByText('Services / machine h')).toBeInTheDocument();
+    expect(screen.getByText('1,315.9 h')).toBeInTheDocument();
+    expect(screen.getAllByText('Previous month')).toHaveLength(1);
+  });
+
   it('shows the tile hints the helpers return', () => {
     renderHero([sept, oct({ projection: { ht: 1_240_000, ttc: 1_401_200 }, projectionMethod: 'linear' })]);
     expect(screen.getByText('sept. 2026')).toBeInTheDocument();

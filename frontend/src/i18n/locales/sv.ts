@@ -13000,7 +13000,6 @@ errors: {
       mismatch: 'Månader som avviker från Zoho: {{n}}',
       checkOk: 'Stämmer med Zoho (kontrollerat {{date}})',
       checkGap: 'Avvikelse från Zoho: Zoho {{zoho}}, Fenrir {{cache}}',
-      reloadMonth: 'Ladda om',
       reloadMonthHint: 'Rensa {{month}} och ladda om från Zoho',
       monthReloading: '{{month}} rensad, laddas om från Zoho.',
     },

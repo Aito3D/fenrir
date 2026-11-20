@@ -12926,7 +12926,6 @@ export default {
       mismatch: '与 Zoho 不符的月份：{{n}}',
       checkOk: '与 Zoho 一致（{{date}} 核对）',
       checkGap: '与 Zoho 有差异：Zoho {{zoho}}，Fenrir {{cache}}',
-      reloadMonth: '重新加载',
       reloadMonthHint: '清除 {{month}} 并从 Zoho 重新加载',
       monthReloading: '已清除 {{month}}，正在从 Zoho 重新加载。',
     },

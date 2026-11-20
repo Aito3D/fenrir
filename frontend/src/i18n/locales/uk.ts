@@ -12590,7 +12590,6 @@ export default {
       mismatch: 'Місяців із розбіжністю з Zoho: {{n}}',
       checkOk: 'Збігається з Zoho (перевірено {{date}})',
       checkGap: 'Розбіжність із Zoho: Zoho {{zoho}}, Fenrir {{cache}}',
-      reloadMonth: 'Перезавантажити',
       reloadMonthHint: 'Очистити {{month}} і заново завантажити з Zoho',
       monthReloading: '{{month}} очищено, триває повторне завантаження з Zoho.',
     },
