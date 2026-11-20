@@ -75,7 +75,7 @@ export function RevenuePace({ monthKey, filterParams, taxMode, version }: { mont
           </p>
           <div role="img" aria-label={t('revenue.pace.chartLabel', { month })}>
             <ResponsiveContainer width="100%" height={236}>
-              <LineChart data={rows} margin={{ top: 8, right: 8, left: -4, bottom: 0 }}>
+              <LineChart data={rows} accessibilityLayer={false} margin={{ top: 8, right: 8, left: -4, bottom: 0 }}>
                 <CartesianGrid vertical={false} stroke={GRID} />
                 <XAxis dataKey="day" stroke={AXIS} tickLine={false} axisLine={{ stroke: GRID }} tick={{ fontSize: 11 }} ticks={[1, 10, 20, pace.days]} />
                 <YAxis stroke={AXIS} tickLine={false} axisLine={false} tick={{ fontSize: 11 }} tickFormatter={compactAxis} width={52} />

@@ -47,6 +47,13 @@ describe('RevenuePace', () => {
     expect(screen.getByText('2025')).toBeInTheDocument();
   });
 
+  it('the chart svg is not a tab stop (no recharts accessibility layer)', async () => {
+    stubFetch(someDays);
+    const { container } = renderPace();
+    await waitFor(() => expect(container.querySelector('svg.recharts-surface')).not.toBeNull());
+    expect(container.querySelector('[tabindex="0"]')).toBeNull();
+  });
+
   it('names the year-ago month total in the legend once the whole month is known', async () => {
     const full = Array.from({ length: 30 }, (_, i) => day(`2025-11-${String(i + 1).padStart(2, '0')}`, 10_000));
     stubFetch({ current: someDays.current, previous: full });

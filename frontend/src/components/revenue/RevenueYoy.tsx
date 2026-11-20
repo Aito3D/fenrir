@@ -92,7 +92,7 @@ export function RevenueYoy({ filterParams, taxMode, version }: { filterParams: s
     >
       <div role="img" aria-label={t(mode === 'cumul' ? 'revenue.yoy.chartCumul' : 'revenue.yoy.chartMonthly', { tax })}>
         <ResponsiveContainer width="100%" height={260}>
-          <LineChart data={rows} margin={{ top: 8, right: 8, left: -4, bottom: 0 }}>
+          <LineChart data={rows} accessibilityLayer={false} margin={{ top: 8, right: 8, left: -4, bottom: 0 }}>
             <CartesianGrid vertical={false} stroke={GRID} />
             <XAxis dataKey="month" stroke={AXIS} tickLine={false} axisLine={{ stroke: GRID }} tick={{ fontSize: 11 }} interval="preserveStartEnd" />
             <YAxis stroke={AXIS} tickLine={false} axisLine={false} tick={{ fontSize: 11 }} tickFormatter={compactAxis} width={52} />
