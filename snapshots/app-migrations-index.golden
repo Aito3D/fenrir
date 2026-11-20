@@ -196,119 +196,121 @@
    194	# Migration: smart_plugs gets per-plug auto-off-after-drying toggle and
    195	# Migration: Add per-user Orca Cloud credential columns. Mirrors the Bambu
    196	# Migration: record when Bambu rejects a stored cloud token. Until now the
-   197	# Migration: structured storage locations (#1004). Flat catalog of physical
-   198	# Migration: Add on_ai_failure_detection column to notification_providers (#1794).
-   199	# Migration: Add gate_acknowledged column to print_queue (#1818). Cleared
-   200	# Migration: Add is_autologin column to oidc_providers (#1589). Postgres
-   201	# Migration: Add is_env_managed column to oidc_providers (#2593). Marks the
-   202	# Migration: Add dispatch_attempts to print_queue (#2555). Counts the times
-   203	# Migration: repair completed print-log rows that stored a multi-plate 3MF's
-   204	# Migration: Add controls_printer_power to smart_plugs (#2629). Marks
-   205	# Migration: real filesystem mtime for library files/folders (#2680). The
-   206	# Migration: Disambiguate the four ``user_print_*`` notification template
-   207	# Migration: standalone index on library_file_tags.tag_id (#1268 follow-up).
-   208	# Migration: difficulty factor moved from a calculator-page input onto the
-   209	# Migration: default margin over cost, used to prefill new calculator filaments.
-   210	# Migration: one-time per-job base fee (quotation time, order handling).
-   211	# Migration: hyperbolic margin curves (size margin × quantity discount)
-   212	# Migration: calculator filament profiles split the single free-text name
-   213	# Migration: calculator filaments can be linked to a Zoho product, whose
-   214	# Migration: Aito cards snapshot the client's email alongside the phone so
-   215	# Migration: Aito cards record whether the attached client is a company, so
-   216	# Migration: Aito cards imported from a Zoho quote snapshot the quote's
-   217	# Migration: the outbox for pushing a project into its Zoho quote. The
-   218	# Migration: the quote's acceptance moment, so an accepted card's age can
-   219	# Migration: when the quote first left the shop, plus the cached newest
-   220	# Migration: the cached invoice's total (2026-10-13 tracking-page amounts).
-   221	# Migration: backfill the explicit 'unmanaged' ownership marker (Critical
-   222	# Migration: per-step Done flags on Aito tasks (2026-07-29). One boolean per
-   223	# Migration: per-line percent discount on the Impression3D service
-   224	# Migration: per-service quantity and percent discount on the other three
-   225	# Migration: the Main d'œuvre service (2026-09-20). Three additive
-   226	# Migration: per-service descriptions on Aito tasks (2026-08-03). The
-   227	# Migration: invoiced flag on Aito projects (2026-08-03).
-   228	# Migration: urgent flag on Aito projects (2026-08-04).
-   229	# Migration: content-fields revision counter for optimistic concurrency
-   230	# Migration: three-state board flag on Aito projects (2026-08-06).
-   231	# Migration: the comment mirror's fetch policy needs to know when it last
-   232	# Migration: Aito shipping (Livraison Avion). Six nullable columns; a NULL
-   233	# Migration: Aito shipping LTA (air waybill) number. One nullable column;
-   234	# Migration: an optional social-network handle on an Aito card, standing in
-   235	# Migration: the Finish column's "client has been told to collect" mark.
-   236	# Migration: promised delivery date (2026-09-04). Nullable, so no
-   237	# Migration: when the card last arrived in Done (2026-10-30), for the
-   238	# Migration: the rush surcharge was removed (2026-09-07). Drop the columns
-   239	# Migration: public tracking link token (2026-09-06). Nullable, minted on
-   240	# Migration: tracking page view log (2026-09-06). A row is a card and a
-   241	# Migration: payment-link ledger + the two project facts it reads
-   242	# Migration: the customer's unspent deposits, customer-wide (2026-09-15).
-   243	# Migration: the chosen Zoho contact person on a card (2026-09-22; first
-   244	# Migration: per-customer payment rating cache (2026-09-22). See
-   245	# Migration: the rating rework of 2026-09-23 scores companies on their
-   246	# Migration: terminal (TPE) charges started from a project card (2026-09-23).
-   247	# Migration: invoice payment links share the quote links' ledger (2026-09-23).
-   248	# Migration: remember whether a quote link asked for a deposit (2026-11-05). Nullable, no
-   249	# Migration: heal the 'invoiced' quote statuses the sync worker stored
-   250	# Migration: per-file print progress inside a project (#1897).
-   251	# Migration: persist the timelapse snapshot-diff baseline (#2704).
-   252	# Migration: plate-clear-required notification opt-in (#2525). Off by
-   253	# Migration: variant grouping for library files (#671 / #2570). The
-   254	# Migration: Home Assistant sensor alerts (#1148). The printer_ha_sensors
-   255	# Migration: auto-drying-suspended notification opt-in (#2770). Defaults ON:
-   256	# Migration: brand(s) a 3MF was sliced with, so the pricing calculator can
-   257	# Migration: user link + photos on library files (#3077), the same trio
-   258	# Migration: storage location sensor alerts (#2824), own column rather than
-   259	# Migration: post-print outcome confirmation (#1898). VARCHAR and the
-   260	# Migration: take the capability URLs out of the outcome prompt's body
-   261	# Migration: Telegram verdict-by-reaction (#3046). Per-provider mode plus
-   262	# Migration: rename the ha_sensor_alert template (#2824). "Home Assistant
-   263	# Migration: back the one-binding-per-(location, entity) rule with a unique
-   264	# Migration: the stock alert templates name the colour and subtype (#2955).
-   265	# Migration: the Password Reset template is for the reset link. Its old
-   266	# Migration: the Welcome Email template no longer holds the new user's
-   267	# Migration: use the same AI detection template for either provider (#3236).
-   268	# Migration: supplier master list + spool assignments (#2988).
-   269	# Migration: Add material_number to spool (#2870). Nullable free text —
-   270	# Migration: repair the tare of spools the RFID auto-add gave the wrong
-   271	# Migration: the Bambu PLA Silk+ colours were seeded under "PLA Silk", so
-   272	# Migration: drop the AMS slot markers an older Fenrir wrote into
-   273	# Migration: whether Books has been directly observed to agree with an
-   274	# Migration: the card owes Books its customer after a client transfer
-   275	# Migration: document numbers for the board search (2026-10-04). Nullable;
-   276	# Migration: a settled terminal charge whose event/acceptance failed is
-   277	# Migration: Order Board payments share the two Heimdall ledgers (2026-11-11). Nullable, no backfill:
-   278	# Migration: link a batch to the external record that asked for it (a shop
-   279	# Migration: messages from other applications through the notification
-   280	# Migration: a code for why a scheduled drying failed, so the card can show
-   281	# Migration: per-provider photo attachment opt-out. Defaults TRUE so
-   282	# Migration: the filament id a slot preset was written with, so the slot
-   283	# Migration: printers picked for the chamber light while the camera is in
-   284	# Migration: optional per-printer WLED preset configuration (#1528).
-   285	# Migration: printer-scoped groups (#1727). Defaults off, so no existing
-   286	# Migration: filament-scoped groups (#3522). Off by default, so no group
-   287	# Migration: camera-stream and websocket tokens record who minted them, so
-   288	# Migration: electricity price on each energy snapshot, and where and when a
-   289	# Migration: library folder ownership and sharing (#3201).
-   290	# Migration: printer wear cost per printing hour, and the wear cost of each
-   291	# Migration: a printer's place in the pick order of "Any model" jobs (#2915).
-   292	# Migration: a printer's own "Require plate-clear confirmation" (#2860).
-   293	# Migration: when each spool was last dried, at what temperature and for
-   294	# Migration: which plate's run the attached timelapse came from, so starting
-   295	# Migration: slots a queue item was sent with in another colour than the
-   296	# Migration: spools assigned to a tray while a print runs, so a hand swap
-   297	# Migration: a print log run whose times were not measured, a print that
-   298	# Migration: heads-up before a pause the slicer put into the print (#2984).
-   299	# Migration: per-print usage of Spoolman spools (#3407), so Spoolman mode
-   300	# Migration: mark a timelapse baseline taken off an unreadable card
-   301	# Migration: filament tree leaves whose generated preset changed since the last Export for Orca.
-   302	# Migration: the plate each print log run printed. A library file printed
-   303	# Migration: what describes one print, on the run (archive redesign P1).
-   304	# Migration: each plate's estimate on the archive (#3375). Nullable, no
-   305	# Migration: the G-code fingerprint of the archive's file (#1634), so a
-   306	# Migration: who assigned a spool to a slot, whose cloud sign-in the replay
-   307	# Migration: what a smart plug's temperature-based auto-off waits for
-   308	# Migration: the events a provider sends without its camera snapshot
-   309	# Migration: an MQTT plug's lifetime energy counter, separate from its daily
+   197	# Migration: per-user view settings (sort and filters that follow the account across devices).
+   198	# Migration: structured storage locations (#1004). Flat catalog of physical
+   199	# Migration: Add on_ai_failure_detection column to notification_providers (#1794).
+   200	# Migration: Add gate_acknowledged column to print_queue (#1818). Cleared
+   201	# Migration: Add is_autologin column to oidc_providers (#1589). Postgres
+   202	# Migration: Add is_env_managed column to oidc_providers (#2593). Marks the
+   203	# Migration: Add dispatch_attempts to print_queue (#2555). Counts the times
+   204	# Migration: repair completed print-log rows that stored a multi-plate 3MF's
+   205	# Migration: Add controls_printer_power to smart_plugs (#2629). Marks
+   206	# Migration: real filesystem mtime for library files/folders (#2680). The
+   207	# Migration: Disambiguate the four ``user_print_*`` notification template
+   208	# Migration: standalone index on library_file_tags.tag_id (#1268 follow-up).
+   209	# Migration: difficulty factor moved from a calculator-page input onto the
+   210	# Migration: default margin over cost, used to prefill new calculator filaments.
+   211	# Migration: one-time per-job base fee (quotation time, order handling).
+   212	# Migration: hyperbolic margin curves (size margin × quantity discount)
+   213	# Migration: calculator filament profiles split the single free-text name
+   214	# Migration: calculator filaments can be linked to a Zoho product, whose
+   215	# Migration: Aito cards snapshot the client's email alongside the phone so
+   216	# Migration: Aito cards record whether the attached client is a company, so
+   217	# Migration: Aito cards imported from a Zoho quote snapshot the quote's
+   218	# Migration: the outbox for pushing a project into its Zoho quote. The
+   219	# Migration: the quote's acceptance moment, so an accepted card's age can
+   220	# Migration: when the quote first left the shop, plus the cached newest
+   221	# Migration: the cached invoice's total (2026-10-13 tracking-page amounts).
+   222	# Migration: backfill the explicit 'unmanaged' ownership marker (Critical
+   223	# Migration: per-step Done flags on Aito tasks (2026-07-29). One boolean per
+   224	# Migration: per-line percent discount on the Impression3D service
+   225	# Migration: per-service quantity and percent discount on the other three
+   226	# Migration: the Main d'œuvre service (2026-09-20). Three additive
+   227	# Migration: per-service descriptions on Aito tasks (2026-08-03). The
+   228	# Migration: invoiced flag on Aito projects (2026-08-03).
+   229	# Migration: urgent flag on Aito projects (2026-08-04).
+   230	# Migration: content-fields revision counter for optimistic concurrency
+   231	# Migration: three-state board flag on Aito projects (2026-08-06).
+   232	# Migration: the comment mirror's fetch policy needs to know when it last
+   233	# Migration: Aito shipping (Livraison Avion). Six nullable columns; a NULL
+   234	# Migration: Aito shipping LTA (air waybill) number. One nullable column;
+   235	# Migration: an optional social-network handle on an Aito card, standing in
+   236	# Migration: the Finish column's "client has been told to collect" mark.
+   237	# Migration: promised delivery date (2026-09-04). Nullable, so no
+   238	# Migration: when the card last arrived in Done (2026-10-30), for the
+   239	# Migration: the rush surcharge was removed (2026-09-07). Drop the columns
+   240	# Migration: public tracking link token (2026-09-06). Nullable, minted on
+   241	# Migration: tracking page view log (2026-09-06). A row is a card and a
+   242	# Migration: payment-link ledger + the two project facts it reads
+   243	# Migration: the customer's unspent deposits, customer-wide (2026-09-15).
+   244	# Migration: the chosen Zoho contact person on a card (2026-09-22; first
+   245	# Migration: per-customer payment rating cache (2026-09-22). See
+   246	# Migration: the rating rework of 2026-09-23 scores companies on their
+   247	# Migration: terminal (TPE) charges started from a project card (2026-09-23).
+   248	# Migration: invoice payment links share the quote links' ledger (2026-09-23).
+   249	# Migration: remember whether a quote link asked for a deposit (2026-11-05). Nullable, no
+   250	# Migration: heal the 'invoiced' quote statuses the sync worker stored
+   251	# Migration: per-file print progress inside a project (#1897).
+   252	# Migration: persist the timelapse snapshot-diff baseline (#2704).
+   253	# Migration: plate-clear-required notification opt-in (#2525). Off by
+   254	# Migration: variant grouping for library files (#671 / #2570). The
+   255	# Migration: Home Assistant sensor alerts (#1148). The printer_ha_sensors
+   256	# Migration: auto-drying-suspended notification opt-in (#2770). Defaults ON:
+   257	# Migration: brand(s) a 3MF was sliced with, so the pricing calculator can
+   258	# Migration: user link + photos on library files (#3077), the same trio
+   259	# Migration: storage location sensor alerts (#2824), own column rather than
+   260	# Migration: post-print outcome confirmation (#1898). VARCHAR and the
+   261	# Migration: take the capability URLs out of the outcome prompt's body
+   262	# Migration: Telegram verdict-by-reaction (#3046). Per-provider mode plus
+   263	# Migration: rename the ha_sensor_alert template (#2824). "Home Assistant
+   264	# Migration: back the one-binding-per-(location, entity) rule with a unique
+   265	# Migration: the stock alert templates name the colour and subtype (#2955).
+   266	# Migration: the Password Reset template is for the reset link. Its old
+   267	# Migration: the Welcome Email template no longer holds the new user's
+   268	# Migration: use the same AI detection template for either provider (#3236).
+   269	# Migration: supplier master list + spool assignments (#2988).
+   270	# Migration: Add material_number to spool (#2870). Nullable free text —
+   271	# Migration: repair the tare of spools the RFID auto-add gave the wrong
+   272	# Migration: the Bambu PLA Silk+ colours were seeded under "PLA Silk", so
+   273	# Migration: drop the AMS slot markers an older Fenrir wrote into
+   274	# Migration: whether Books has been directly observed to agree with an
+   275	# Migration: the card owes Books its customer after a client transfer
+   276	# Migration: document numbers for the board search (2026-10-04). Nullable;
+   277	# Migration: a settled terminal charge whose event/acceptance failed is
+   278	# Migration: Order Board payments share the two Heimdall ledgers (2026-11-11). Nullable, no backfill:
+   279	# Migration: link a batch to the external record that asked for it (a shop
+   280	# Migration: messages from other applications through the notification
+   281	# Migration: a code for why a scheduled drying failed, so the card can show
+   282	# Migration: per-provider photo attachment opt-out. Defaults TRUE so
+   283	# Migration: the filament id a slot preset was written with, so the slot
+   284	# Migration: printers picked for the chamber light while the camera is in
+   285	# Migration: optional per-printer WLED preset configuration (#1528).
+   286	# Migration: printer-scoped groups (#1727). Defaults off, so no existing
+   287	# Migration: filament-scoped groups (#3522). Off by default, so no group
+   288	# Migration: camera-stream and websocket tokens record who minted them, so
+   289	# Migration: electricity price on each energy snapshot, and where and when a
+   290	# Migration: library folder ownership and sharing (#3201).
+   291	# Migration: printer wear cost per printing hour, and the wear cost of each
+   292	# Migration: a printer's place in the pick order of "Any model" jobs (#2915).
+   293	# Migration: a printer's own "Require plate-clear confirmation" (#2860).
+   294	# Migration: when each spool was last dried, at what temperature and for
+   295	# Migration: which plate's run the attached timelapse came from, so starting
+   296	# Migration: slots a queue item was sent with in another colour than the
+   297	# Migration: spools assigned to a tray while a print runs, so a hand swap
+   298	# Migration: a print log run whose times were not measured, a print that
+   299	# Migration: heads-up before a pause the slicer put into the print (#2984).
+   300	# Migration: per-print usage of Spoolman spools (#3407), so Spoolman mode
+   301	# Migration: mark a timelapse baseline taken off an unreadable card
+   302	# Migration: filament tree leaves whose generated preset changed since the last Export for Orca.
+   303	# Migration: the plate each print log run printed. A library file printed
+   304	# Migration: what describes one print, on the run (archive redesign P1).
+   305	# Migration: each plate's estimate on the archive (#3375). Nullable, no
+   306	# Migration: the G-code fingerprint of the archive's file (#1634), so a
+   307	# Migration: who assigned a spool to a slot, whose cloud sign-in the replay
+   308	# Migration: what a smart plug's temperature-based auto-off waits for
+   309	# Migration: the events a provider sends without its camera snapshot
+   310	# Migration: an MQTT plug's lifetime energy counter, separate from its daily
+   311	# Migration: what a run was expected to cost at its start, priced at the
 
 ### stderr:
 

@@ -1516,10 +1516,10 @@
   },
   "with-descriptions": {
    "build_description": {
-    "impression": "Info: imp desc",
-    "modelisation": "Info: mod desc\n*Fichier non c\u00e9d\u00e9*",
-    "scan": "Info: scan desc\n*Fichier non c\u00e9d\u00e9*",
-    "usinage": "Info: usi desc"
+    "impression": "Info:\nimp desc",
+    "modelisation": "Info:\nmod desc\n*Fichier non c\u00e9d\u00e9*",
+    "scan": "Info:\nscan desc\n*Fichier non c\u00e9d\u00e9*",
+    "usinage": "Info:\nusi desc"
    },
    "cost_of": {
     "impression": 20.0,
