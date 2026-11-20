@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import type { ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
-import { ArrowUpRight, ChevronRight, ExternalLink, Instagram, Mail, Navigation, Phone } from 'lucide-react';
+import { ArrowUpRight, ChevronRight, Clock, ExternalLink, Instagram, Mail, Navigation, Phone } from 'lucide-react';
 import { AITO3D_SENDER } from '../../utils/aitoSender';
 import { SHOP_DIRECTIONS_URL, SHOP_MAIL_HREF, SHOP_SOCIAL_URL, SHOP_TEL_HREF, SHOP_WEBSITE_URL, shopMapEmbedUrl } from '../../utils/aitoShop';
 import { FOCUS, PRESS } from '../../utils/trackingShell';
@@ -98,9 +98,13 @@ export function TrackingShopPanel({
           <span className="text-aito-muted">{rest.join(', ')}</span>
         </p>
         {hours && (
-          <p className="mt-[6px] text-[13.5px] leading-[1.4]" data-testid="track-shop-hours">
-            <span className="text-aito-muted">{t('aito.track.shop.hours')} </span>
-            {hours}
+          <p
+            className="mt-[10px] inline-flex items-center gap-[8px] rounded-full border border-aito-cyan/35 bg-aito-cyan/10 py-[6px] pr-[14px] pl-[10px] text-[14px] leading-[1.3]"
+            data-testid="track-shop-hours"
+          >
+            <Clock className="h-[16px] w-[16px] shrink-0 text-aito-cyan" aria-hidden="true" />
+            <span className="text-aito-muted">{t('aito.track.shop.hours')}</span>{' '}
+            <b className="font-semibold text-aito-ink">{hours}</b>
           </p>
         )}
       </PanelReveal>
