@@ -39,6 +39,33 @@ describe('OrderPaymentBlock payment buttons', () => {
     expect(screen.getByRole('button', { name: 'Pay by card on the terminal' })).toBeEnabled();
   });
 
+  it('a failed check keeps the charge in progress on screen and keeps polling', async () => {
+    vi.useFakeTimers();
+    try {
+      vi.spyOn(api, 'getOrderPaymentTarget').mockResolvedValue(target());
+      const get = vi.spyOn(api, 'getOrderTerminalPayment').mockResolvedValueOnce(tpe()).mockRejectedValue(new Error('429'));
+      render(<OrderPaymentBlock payment={pay()} currency="XPF" orderId="so1" />);
+      await vi.advanceTimersByTimeAsync(0);
+      expect(screen.getByText('Terminal · waiting for the card')).toBeInTheDocument();
+      await vi.advanceTimersByTimeAsync(3000);
+      await vi.advanceTimersByTimeAsync(3000);
+      expect(get.mock.calls.length).toBeGreaterThanOrEqual(3);
+      expect(screen.getByText('Terminal · waiting for the card')).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Payment link' })).toBeDisabled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('a first check that fails shows no charge', async () => {
+    vi.spyOn(api, 'getOrderPaymentTarget').mockResolvedValue(target());
+    const get = vi.spyOn(api, 'getOrderTerminalPayment').mockRejectedValue(new Error('429'));
+    render(<OrderPaymentBlock payment={pay()} currency="XPF" orderId="so1" />);
+    await vi.waitFor(() => expect(get).toHaveBeenCalled());
+    expect(await screen.findByRole('button', { name: 'Payment link' })).toBeEnabled();
+    expect(screen.queryByText('Terminal · waiting for the card')).not.toBeInTheDocument();
+  });
+
   it('draws nothing once the order is paid and nothing is in motion', async () => {
     const get = vi.spyOn(api, 'getOrderPaymentTarget').mockResolvedValue(target({ kind: null, document_id: null, number: null, max_amount: null, left: 0 }));
     vi.spyOn(api, 'getOrderTerminalPayment').mockResolvedValue(null);

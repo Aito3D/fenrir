@@ -58,7 +58,7 @@ function Collect({ orderId, currency, left, boardLeft }: { orderId: string; curr
   // The order's newest charge, for the state line; polled only while one is in flight.
   const charge = useQuery({
     queryKey: ['order-terminal-current', orderId, boardLeft],
-    queryFn: () => api.getOrderTerminalPayment(orderId).catch(() => null),
+    queryFn: () => api.getOrderTerminalPayment(orderId),
     refetchInterval: q => (isTerminalOpen(q.state.data) ? 3000 : false),
     retry: false,
   });
