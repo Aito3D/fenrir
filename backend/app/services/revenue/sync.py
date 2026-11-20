@@ -22,7 +22,6 @@ from backend.app.services.zoho import (
     ZohoNotConfiguredError,
     ZohoNotFound,
     ZohoRateLimited,
-    ZohoRequestRejected,
     ZohoUpstreamError,
     zoho_service,
 )
@@ -46,14 +45,6 @@ _lane = asyncio.Lock()
 
 class _BudgetLow(Exception):
     """Books' daily budget is below the floor: the batch stops, nothing is marked fetched."""
-
-
-class _DayTooLong(ZohoUpstreamError):
-    """One day's report runs past the page cap."""
-
-
-# Failures tied to one day's report: that day is skipped for this pass, the rest of the batch goes on.
-_DAY_ERRORS = (ZohoRequestRejected, ZohoNotFound, _DayTooLong, AttributeError, KeyError, TypeError, ValueError)
 
 
 class RevenueRebuildRefused(Exception):
@@ -103,7 +94,7 @@ async def _fetch_day(db, day: str) -> list[dict]:
         groups.extend(rows)
         if not more:
             return groups
-    raise _DayTooLong(f"Zoho sales report for {day} has more than {DAY_PAGE_CAP} pages")
+    raise ZohoUpstreamError(f"Zoho sales report for {day} has more than {DAY_PAGE_CAP} pages")
 
 
 def _num(v) -> float | None:
@@ -168,17 +159,11 @@ async def _execute_batch(full: bool) -> dict:
             days: list[str] = []
             unknown: list[str] = []
             looked_up = 0
-            day_error: Exception | None = None
             try:
                 for day in plan[: SYNC.day_batch_size]:
                     # Read before the request: a day that ends mid-fetch stays open, the report may predate its close.
                     today_at_fetch = org_today()
-                    try:
-                        merged, malformed = merge_day_rows(await _fetch_day(db, day))
-                    except _DAY_ERRORS as exc:
-                        _record_error(exc)
-                        day_error = exc
-                        continue
+                    merged, malformed = merge_day_rows(await _fetch_day(db, day))
                     if malformed:
                         logger.warning("Revenue sync: %d malformed report rows on %s", malformed, day)
                     day_lines = [
@@ -211,7 +196,7 @@ async def _execute_batch(full: bool) -> dict:
             except _BudgetLow:
                 pass
         _last_batch_at = _utcnow().isoformat()
-        _last_error = _public_error(day_error) if day_error else None
+        _last_error = None
         return {
             "fetched": len(days),
             "pending": len(plan) - len(days) + len(unknown) - looked_up,
