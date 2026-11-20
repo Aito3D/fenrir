@@ -71,7 +71,7 @@ def test_format_time_round_trips_through_the_importer():
 
 def test_scan_description_is_the_catalogue_template():
     t = task(scan_description="Pièce fissurée à re-scanner")
-    assert build_description("scan", t) == "Info: Pièce fissurée à re-scanner\n*Fichier non cédé*"
+    assert build_description("scan", t) == "Info:\nPièce fissurée à re-scanner\n*Fichier non cédé*"
 
 
 def test_no_description_emits_no_info_row():
@@ -106,7 +106,7 @@ def test_impression_description_closes_with_its_info_row():
         impression_color="Gris",
     )
     assert build_description("impression", t) == (
-        "Matériau: PETG\nPoids: 210 gr\nTemps: 13h\nCouleur: Gris\nInfo: Support moteur, tolérance serrée"
+        "Matériau: PETG\nPoids: 210 gr\nTemps: 13h\nCouleur: Gris\nInfo:\nSupport moteur, tolérance serrée"
     )
 
 
@@ -133,7 +133,7 @@ def test_impression_description_drops_rows_with_no_value():
 
 
 def test_usinage_description_is_its_info_row():
-    assert build_description("usinage", task(usinage_description="Percer 4 trous M3")) == "Info: Percer 4 trous M3"
+    assert build_description("usinage", task(usinage_description="Percer 4 trous M3")) == "Info:\nPercer 4 trous M3"
 
 
 def test_cost_of_treats_zero_as_enabled_and_free():
@@ -243,8 +243,8 @@ def test_each_service_line_carries_only_its_own_description():
         [],
         CATALOGUE,
     )
-    assert lines[0]["description"] == "Info: A scanner\n*Fichier non cédé*"
-    assert lines[1]["description"] == "Info: A imprimer"
+    assert lines[0]["description"] == "Info:\nA scanner\n*Fichier non cédé*"
+    assert lines[1]["description"] == "Info:\nA imprimer"
 
 
 def test_impression_rate_is_the_total_divided_by_quantity():
@@ -863,7 +863,7 @@ def test_labour_line_is_one_unit_at_the_full_cost():
     line = next(item for item in lines if item.get("item_id") == CATALOGUE.maindoeuvre_item_id)
     assert line["rate"] == 4000
     assert line["quantity"] == 1
-    assert line["description"] == "Info: Pose et réglage sur site"
+    assert line["description"] == "Info:\nPose et réglage sur site"
     assert "discount" not in line
     assert "header_name" not in line  # Books refuses it; the title is the header row's
 

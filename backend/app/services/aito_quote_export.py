@@ -269,7 +269,13 @@ def build_description(service: str, task: ExportTask) -> str:
     the ``*Fichier non cédé*`` boilerplate line, even when they have no other
     rows.
     """
-    lines = [f"{label}: {value.strip()}" for label, value in _rows(service, task) if value and str(value).strip()]
+    # Info's text starts on its own line under the label (shop's PDF layout);
+    # the importer drops the empty `Info:` and keeps the lines as free text.
+    lines = [
+        f"{label}:{chr(10) if label == 'Info' else ' '}{value.strip()}"
+        for label, value in _rows(service, task)
+        if value and str(value).strip()
+    ]
     if service in ("scan", "modelisation"):
         lines.append(_FICHIER_NON_CEDE)
     return "\n".join(lines)

@@ -173,7 +173,7 @@ async def test_project_created_through_the_api_produces_the_exact_wire_line_item
             "unit": "Projet",
             "rate": 3500,
             "quantity": 1,
-            "description": "Info: Numérisation de la pièce.\n*Fichier non cédé*",
+            "description": "Info:\nNumérisation de la pièce.\n*Fichier non cédé*",
             "item_order": 2,
         },
         {
@@ -201,7 +201,7 @@ async def test_project_created_through_the_api_produces_the_exact_wire_line_item
             "unit": "Projet",
             "rate": 4000,
             "quantity": 1,
-            "description": "Info: Reprise du moyeu.",
+            "description": "Info:\nReprise du moyeu.",
             "item_order": 5,
         },
     ]
