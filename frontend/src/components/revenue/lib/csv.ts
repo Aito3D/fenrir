@@ -11,6 +11,7 @@ const SEGMENTS: Column[] = [
 const MARGIN: Column[] = [
   ["Marge HT", (b) => (b.costedHt ?? 0) - (b.cost ?? 0)],
   ["HT avec coût", (b) => b.costedHt ?? 0],
+  ["Heures machine", (b) => b.printHours ?? ""],
 ];
 
 // Cells are period labels and numbers only, so no quoting or formula guard is needed; a column carrying Zoho text would need both.

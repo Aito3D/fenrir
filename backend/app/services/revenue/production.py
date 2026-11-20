@@ -3,7 +3,7 @@
 import json
 import statistics
 from collections.abc import Iterable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import date, datetime, timezone
 from typing import Protocol, cast
 from zoneinfo import ZoneInfo
@@ -51,6 +51,7 @@ PARTS = ("filament", "energy", "wear", "labor")
 class ProductionCosts:
     by_day: dict[str, dict[str, float]]  # day -> part (PARTS) -> cost
     first_day: str | None  # services sold before the print log began have no known cost
+    hours_by_day: dict[str, float] = field(default_factory=dict)  # day -> printer hours of the runs started that day
 
 
 def _add(by_day: dict[str, dict[str, float]], day: str, parts: dict[str, float]) -> None:
@@ -141,13 +142,16 @@ def costs_by_day(
     since: str = COSTS_START,
 ) -> ProductionCosts:
     by_day: dict[str, dict[str, float]] = {}
+    hours: dict[str, float] = {}
     for run in runs:
         day = org_day(run.started_at)
         if day < since:
             continue
+        if run.seconds <= MAX_RUN_SECONDS:
+            hours[day] = hours.get(day, 0.0) + run.seconds / 3600
         rate = rates_by_printer.get(run.printer_id) if run.printer_id is not None else None
         _add(by_day, day, run_cost(run, rate, tariff, prices.per_g(run.material)))
-    return ProductionCosts(by_day=by_day, first_day=min(by_day, default=None))
+    return ProductionCosts(by_day=by_day, first_day=min(by_day, default=None), hours_by_day=hours)
 
 
 def labor_by_day(providers: Iterable[dict], today: str, since: str = COSTS_START) -> dict[str, float]:
@@ -225,4 +229,4 @@ async def read_production_costs(conn: AsyncConnection, today: str) -> Production
     by_day = costs.by_day
     for day, cost in labor_by_day(await read_labor(conn), today).items():
         _add(by_day, day, {"labor": cost})
-    return ProductionCosts(by_day=by_day, first_day=min(by_day, default=None))
+    return ProductionCosts(by_day=by_day, first_day=min(by_day, default=None), hours_by_day=costs.hours_by_day)

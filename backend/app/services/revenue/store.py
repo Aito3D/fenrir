@@ -294,11 +294,13 @@ async def clear_target(db: AsyncSession, month: str) -> bool:
     return await _delete_one(db, delete(RevenueTarget).where(RevenueTarget.month == month))
 
 
-async def customer_first_days(conn: AsyncConnection) -> dict[str, str]:
-    """Each identified customer's first day in the cache (any item, unfiltered): the "new customer" test."""
+async def customer_item_first_lines(conn: AsyncConnection) -> list[RevenueLine]:
+    """Each identified customer's first day per item over the whole cache; scope and filters are folded in Python."""
     t = RevenueDayLine
-    rows = await conn.execute(select(t.customer_id, func.min(t.day)).where(t.customer_id != "").group_by(t.customer_id))
-    return dict(rows.tuples().all())
+    rows = await conn.execute(
+        select(t.customer_id, t.item_id, func.min(t.day)).where(t.customer_id != "").group_by(t.customer_id, t.item_id)
+    )
+    return [RevenueLine(day=d, item_id=i, customer_id=c, name="", sku="", quantity=0, amount=0) for c, i, d in rows]
 
 
 async def read_annotations(conn: AsyncConnection) -> list[dict]:

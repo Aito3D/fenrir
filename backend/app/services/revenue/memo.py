@@ -15,7 +15,9 @@ if TYPE_CHECKING:
     from backend.app.models.user import User
 
 _CUSTOMER_KEYS = frozenset({"bySegment", "bySegmentTtc", "topOverdue"})
-_MARGIN_KEYS = frozenset({"cost", "costedHt", "marginByBrand", "marginByNature", "marginSplit", "costParts"})
+_MARGIN_KEYS = frozenset(
+    {"cost", "costedHt", "marginByBrand", "marginByNature", "marginSplit", "costParts", "printHours"}
+)
 
 
 def revenue_etag(stamp: str, path_and_query: str) -> str:

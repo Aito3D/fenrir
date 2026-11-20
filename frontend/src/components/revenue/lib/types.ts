@@ -37,6 +37,8 @@ export interface RevenueBucket {
   marginSplit?: { nature: Record<string, number>; brand: Record<string, number>; segment?: Record<string, number>; kind: Record<string, number> };
   /** What `cost` is made of: Zoho item costs (`items`), then the services' filament, energy, wear and labour. */
   costParts?: Partial<Record<'items' | 'filament' | 'energy' | 'wear' | 'labor', number>>;
+  /** Printer hours of the print log in the bucket (null before the log began); stripped with the margin figures. */
+  printHours?: number | null;
   projection: Money | null;
   projectionMethod: "seasonal" | "linear" | null;
   target?: number | null;
@@ -306,10 +308,27 @@ export interface AnnotationsResponse {
   annotations: RevenueAnnotation[];
 }
 
+/** One period of the page granularity: sales from first-time buyers of what the page shows, earlier buyers, and unidentified sales. */
+export interface RetentionRow {
+  key: string;
+  label: string;
+  start: string;
+  end: string;
+  newHt: number;
+  returningHt: number;
+  anonHt: number;
+  newTtc: number;
+  returningTtc: number;
+  anonTtc: number;
+  newCount: number;
+  returningCount: number;
+}
+
 export interface CustomersResponse extends CustomerBreakdown {
   from: string;
   to: string;
   acquisition: Acquisition;
+  retention: RetentionRow[];
 }
 
 export interface MoversResponse extends MoversResult {

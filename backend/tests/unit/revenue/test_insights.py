@@ -5,9 +5,11 @@ from backend.app.services.revenue.insights import (
     calendar_days,
     compute_movers,
     customer_breakdown,
+    first_days_in_scope,
     is_target_month,
     mover_ranges,
     parse_target_amount,
+    retention_series,
     yoy_pivot,
 )
 from backend.app.services.revenue.scope import ScopeItem
@@ -200,3 +202,69 @@ def test_validates_months_and_amounts():
         parse_target_amount(1e12 + 1),
         parse_target_amount(10**400),
     ] == [1500, None, None, None, None, None, None]
+
+
+PASSAGE = "66407000001237340"
+
+
+def retention(lines, first_days, g="month", from_="2026-09-01", to="2026-10-31", filters=None):
+    return retention_series(lines, ITEMS, [], CUSTOMERS, filters or LineFilters(), first_days, g, from_, to)
+
+
+def test_retention_splits_each_bucket_into_new_returning_and_unidentified():
+    rows = retention(
+        [
+            l("2026-09-03", "pla", 100, "biz"),
+            l("2026-10-04", "pla", 200, "biz"),
+            l("2026-10-05", "print", 100, "ind"),
+            l("2026-10-06", "pla", 30, PASSAGE),
+            l("2026-10-07", "pla", 20),
+        ],
+        {"biz": "2026-09-03", "ind": "2026-10-05"},
+    )
+    assert [r["key"] for r in rows] == ["2026-09", "2026-10"]
+    sep, oct_ = rows
+    assert (sep["newHt"], sep["returningHt"], sep["anonHt"], sep["newCount"], sep["returningCount"]) == (
+        100,
+        0,
+        0,
+        1,
+        0,
+    )
+    assert (oct_["newHt"], oct_["returningHt"], oct_["anonHt"]) == (100, 200, 50)
+    assert (oct_["newCount"], oct_["returningCount"]) == (1, 1)
+    assert oct_["newTtc"] == 113  # 100 at 13 %
+    assert (oct_["label"], oct_["start"], oct_["end"]) == ("oct. 2026", "2026-10-01", "2026-10-31")
+
+
+def test_retention_new_is_judged_on_the_whole_bucket_and_the_edges_are_clipped():
+    rows = retention([l("2026-09-20", "pla", 100, "biz")], {"biz": "2026-09-02"}, from_="2026-09-15", to="2026-09-25")
+    assert rows == [
+        {
+            "key": "2026-09",
+            "label": "sept. 2026",
+            "start": "2026-09-15",
+            "end": "2026-09-25",
+            "newHt": 100,
+            "returningHt": 0,
+            "anonHt": 0,
+            "newTtc": 116,
+            "returningTtc": 0,
+            "anonTtc": 0,
+            "newCount": 1,
+            "returningCount": 0,
+        }
+    ]
+
+
+def test_first_days_in_scope_follow_the_page_filters():
+    first = [l("2025-01-10", "print", 0, "biz"), l("2026-10-01", "pla", 0, "biz"), l("2026-01-01", "pla", 0, PASSAGE)]
+    assert first_days_in_scope(first, ITEMS, [], CUSTOMERS, LineFilters()) == {
+        "biz": "2025-01-10",
+        PASSAGE: "2026-01-01",
+    }
+    goods = LineFilters(kind="goods")
+    assert first_days_in_scope(first, ITEMS, [], CUSTOMERS, goods) == {"biz": "2026-10-01", PASSAGE: "2026-01-01"}
+    # A filament buyer since 2025 on print services is new to filament this month.
+    rows = retention([l("2026-10-04", "pla", 200, "biz")], first_days_in_scope(first, ITEMS, [], CUSTOMERS, goods))
+    assert rows[1]["newHt"] == 200

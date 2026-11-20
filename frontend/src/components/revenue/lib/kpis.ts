@@ -98,6 +98,9 @@ export function insightTiles(buckets: RevenueBucket[], mode: TaxMode, granularit
       tone: margin >= 0 ? "up" : "down",
     });
   }
+  if (last.printHours && last.services) {
+    out.push({ label: "Services / h machine", value: last.services / last.printHours, kind: "money", hint: `${last.printHours} h d'impression` });
+  }
   if (last.projection) {
     out.push({
       label: `Projection fin de ${granularityLabel.toLowerCase()}`,

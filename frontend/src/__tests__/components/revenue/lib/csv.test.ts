@@ -20,9 +20,9 @@ describe("toCsv", () => {
     const csv = toCsv([sept, oct]);
     expect(csv.startsWith("﻿")).toBe(true);
     const lines = csv.slice(1).split("\n");
-    expect(lines[0]).toBe("Période;CA HT;CA TTC;Biens HT;Services HT;Pro HT;Particuliers HT;Passage HT;Non identifié HT;Marge HT;HT avec coût;Evol HT %;Cumul HT;Cumul TTC;Jours manquants;En cours;TTC approx");
-    expect(lines[1]).toBe("sept. 2026;1000;1160;1000;0;0;0;0;1000;0;0;;1000;1160;0;;");
-    expect(lines[2]).toBe("oct. 2026;1500;1740;1500;0;0;0;0;1500;0;0;50,0;2500;2900;0;15;");
+    expect(lines[0]).toBe("Période;CA HT;CA TTC;Biens HT;Services HT;Pro HT;Particuliers HT;Passage HT;Non identifié HT;Marge HT;HT avec coût;Heures machine;Evol HT %;Cumul HT;Cumul TTC;Jours manquants;En cours;TTC approx");
+    expect(lines[1]).toBe("sept. 2026;1000;1160;1000;0;0;0;0;1000;0;0;;;1000;1160;0;;");
+    expect(lines[2]).toBe("oct. 2026;1500;1740;1500;0;0;0;0;1500;0;0;;50,0;2500;2900;0;15;");
   });
 
   it("flags an in-progress bucket with its elapsed days and an approximate TTC with oui (T-1501)", () => {
@@ -34,12 +34,12 @@ describe("toCsv", () => {
   });
 
   it("toCsv leaves the En cours column empty for a complete bucket", () => {
-    expect(toCsv([sept]).split("\n")[1].split(";")[15]).toBe("");
+    expect(toCsv([sept]).split("\n")[1].split(";")[16]).toBe("");
   });
 
   it("toCsv prints an empty En cours cell for a partial bucket whose elapsedDays is null", () => {
     const row = toCsv([{ ...sept, partial: true, elapsedDays: null }]).split("\n")[1].split(";");
-    expect(row[15]).toBe("");
+    expect(row[16]).toBe("");
   });
 });
 

@@ -4,13 +4,15 @@ import re
 from collections.abc import Iterable
 
 from backend.app.services.revenue.customers import CUSTOMER_SEGMENTS, RevenueCustomerFacts, customer_display_name
-from backend.app.services.revenue.dates import add_days, days_between
+from backend.app.services.revenue.dates import add_days, all_days, days_between
 from backend.app.services.revenue.scope import RevenueDecision, ScopeItem, brand_key, is_service_item
 from backend.app.services.revenue.series import (
     NO_BRAND,
     Granularity,
     LineFilters,
+    RevenueLine,
     bucket_key_for,
+    bucket_label,
     bucket_range,
     js_round,
     matching_lines,
@@ -24,7 +26,7 @@ _SEGMENT_KEYS = ("ht", "ttc", "goods", "services", "goodsTtc", "servicesTtc")
 
 
 def acquisition_of(rows: Iterable[dict], first_days: dict[str, str], from_: str) -> dict:
-    """New = first line in the whole cache falls in the range; basket = HT per customer-day."""
+    """New = first purchase (`first_days_in_scope`) falls in the range; basket = HT per customer-day."""
     a = {"newCount": 0, "newHt": 0, "returningCount": 0, "returningHt": 0, "customerDays": 0, "avgBasketHt": None}
     ht = 0
     for r in rows:
@@ -106,6 +108,66 @@ def customer_breakdown(
         "unsplitHt": js_round(unsplit),
         "acquisition": acquisition_of(everyone, first_days, from_) if first_days is not None else None,
     }
+
+
+def first_days_in_scope(
+    first_lines: Iterable[RevenueLine],
+    items: dict[str, ScopeItem],
+    decisions: Iterable[RevenueDecision],
+    customers: dict[str, RevenueCustomerFacts],
+    filters: LineFilters,
+) -> dict[str, str]:
+    """Each customer's first purchase of what the page shows (3D scope, then the page's filters), from per-item first days."""
+    out: dict[str, str] = {}
+    for m in matching_lines(first_lines, items, decisions, customers, filters):
+        c = m.line.customer_id
+        out[c] = min(out.get(c, m.line.day), m.line.day)
+    return out
+
+
+def retention_series(
+    lines: Iterable[RevenueLine],
+    items: dict[str, ScopeItem],
+    decisions: Iterable[RevenueDecision],
+    customers: dict[str, RevenueCustomerFacts],
+    filters: LineFilters,
+    first_days: dict[str, str],
+    g: Granularity,
+    from_: str,
+    to: str,
+) -> list[dict]:
+    """Per bucket: sales from customers whose first purchase falls in it (new), before it (returning), or unidentified."""
+    starts = {k: bucket_range(k, g)[0] for k in dict.fromkeys(bucket_key_for(d, g) for d in all_days(from_, to))}
+    acc = {
+        k: {"new": 0.0, "returning": 0.0, "anon": 0.0, "newTtc": 0.0, "returningTtc": 0.0, "anonTtc": 0.0}
+        for k in starts
+    }
+    ids: dict[str, dict[str, set[str]]] = {k: {"new": set(), "returning": set()} for k in starts}
+    for m in matching_lines(lines, items, decisions, customers, filters):
+        key = bucket_key_for(m.line.day, g)
+        if key not in acc:
+            continue
+        c = m.line.customer_id
+        if not c or m.segment == "passage":
+            side = "anon"
+        else:
+            side = "returning" if first_days.get(c, m.line.day) < starts[key] else "new"
+            ids[key][side].add(c)
+        acc[key][side] += m.line.amount
+        acc[key][f"{side}Ttc"] += ttc_of(m.line, m.item)[0]
+    return [
+        {
+            "key": k,
+            "label": bucket_label(k, g),
+            "start": max(start, from_),
+            "end": min(bucket_range(k, g)[1], to),
+            **{f"{side}Ht": js_round(acc[k][side]) for side in ("new", "returning", "anon")},
+            **{f"{side}Ttc": js_round(acc[k][f"{side}Ttc"]) for side in ("new", "returning", "anon")},
+            "newCount": len(ids[k]["new"]),
+            "returningCount": len(ids[k]["returning"]),
+        }
+        for k, start in starts.items()
+    ]
 
 
 def mover_ranges(key: str, g: Granularity, today: str) -> dict:

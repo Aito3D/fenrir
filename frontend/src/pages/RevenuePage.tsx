@@ -526,7 +526,7 @@ export function RevenuePage() {
             </>
           )}
           {view === 'clients' && can.customers && data && (
-            <RevenueCustomers from={data.from} to={data.to} filterParams={filterParams} taxMode={active.taxMode}
+            <RevenueCustomers from={data.from} to={data.to} granularity={data.granularity} filterParams={filterParams} taxMode={active.taxMode}
               segment={active.segment} onSegment={(segment) => setControls({ segment })} version={data} />
           )}
           {view === 'produits' && data && <RevenueAnalysis from={data.from} to={data.to} filterParams={filterParams} version={data} />}

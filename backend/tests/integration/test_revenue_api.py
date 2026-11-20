@@ -124,7 +124,7 @@ async def test_series_payload_keys(async_client, revenue_db, tokens):
 @pytest.mark.asyncio
 async def test_read_user_buckets_lack_cost_and_segments_all_user_has_them(async_client, revenue_db, tokens):
     plain = (await async_client.get(URL, params=MONTH, headers=tokens["read"])).json()["buckets"][0]
-    assert not {"cost", "costedHt", "marginSplit", "costParts", "bySegment", "bySegmentTtc"} & set(plain)
+    assert not {"cost", "costedHt", "marginSplit", "costParts", "printHours", "bySegment", "bySegmentTtc"} & set(plain)
     full = (await async_client.get(URL, params=MONTH, headers=tokens["all"])).json()["buckets"][0]
     assert {"cost", "costedHt", "marginSplit", "costParts", "bySegment", "bySegmentTtc"} <= set(full)
     assert full["cost"] == 8
@@ -259,6 +259,32 @@ async def test_customers_payload_always_carries_acquisition(async_client, revenu
     assert {"from", "to", "segments", "customers", "customerCount", "unsplitHt", "acquisition"} <= set(body)
     assert body["acquisition"] is not None
     assert body["customers"][0]["customerId"] == "c1"
+
+
+@pytest.mark.asyncio
+async def test_customers_carries_retention_per_bucket_of_the_granularity(async_client, revenue_db, tokens):
+    params = {**RANGE, "granularity": "week"}
+    body = (await async_client.get(f"{URL}/customers", params=params, headers=tokens["read_customers"])).json()
+    weeks = body["retention"]
+    assert [w["key"] for w in weeks] == ["2025-W09", "2025-W10", "2025-W11", "2025-W12", "2025-W13", "2025-W14"]
+    assert (weeks[0]["start"], weeks[-1]["end"]) == ("2025-03-01", "2025-03-31")
+    hit = next(w for w in weeks if w["key"] == "2025-W11")
+    assert {k: hit[k] for k in ("newHt", "returningHt", "anonHt", "newCount", "returningCount")} == {
+        "newHt": 1000,
+        "returningHt": 0,
+        "anonHt": 0,
+        "newCount": 1,
+        "returningCount": 0,
+    }
+    default = (await async_client.get(f"{URL}/customers", params=RANGE, headers=tokens["read_customers"])).json()
+    assert [m["key"] for m in default["retention"]] == ["2025-03"]
+
+
+@pytest.mark.asyncio
+async def test_customers_rejects_an_unknown_granularity(async_client, revenue_db, tokens):
+    params = {**RANGE, "granularity": "quarter"}
+    r = await async_client.get(f"{URL}/customers", params=params, headers=tokens["read_customers"])
+    assert r.status_code == 422
 
 
 @pytest.mark.asyncio

@@ -73,6 +73,7 @@ function ItemRows({ bucket, filterParams, version, cols, margin }: { bucket: Rev
           <span role="cell" />
           <span role="cell" />
           {margin && <span role="cell" className={CELL}>{r.cost == null ? '—' : formatFcp(r.ht - r.cost)}</span>}
+          {margin && <span role="cell" />}
           <span role="cell" />
           <span role="cell" className={CELL}>{r.quantity}</span>
         </div>
@@ -98,7 +99,7 @@ export function RevenueTable({ buckets, granularity, taxMode, canMargin, filterP
   const [open, setOpen] = useState<ReadonlySet<string>>(new Set());
   // Cost fields are stripped by the server without the margin permission.
   const margin = canMargin && buckets.some((b) => b.costedHt !== undefined);
-  const cols = `minmax(0,1.5fr) repeat(${margin ? 7 : 6},minmax(0,1fr))`;
+  const cols = `minmax(0,1.5fr) repeat(${margin ? 8 : 6},minmax(0,1fr))`;
   const rows = [...buckets].reverse();
   const checkOf = new Map(granularity === 'month' ? (checks ?? []).map((c) => [c.month, c]) : []);
   const heads = [
@@ -107,7 +108,7 @@ export function RevenueTable({ buckets, granularity, taxMode, canMargin, filterP
     { id: 'ttc', label: t('revenue.table.ttc') },
     { id: 'change', label: t('revenue.table.change') },
     { id: 'yoy', label: t('revenue.table.yoy') },
-    ...(margin ? [{ id: 'margin', label: t('revenue.table.margin') }] : []),
+    ...(margin ? [{ id: 'margin', label: t('revenue.table.margin') }, { id: 'perHour', label: t('revenue.table.perHour') }] : []),
     { id: 'cumulative', label: t('revenue.table.cumulative') },
     { id: 'units', label: t('revenue.table.units') },
   ];
@@ -117,11 +118,11 @@ export function RevenueTable({ buckets, granularity, taxMode, canMargin, filterP
       <span id={hintId} hidden>{t('revenue.table.marginHint')}</span>
       {/* Eight figures do not fit a phone or the narrow split column: the rows scroll sideways, never wrap. */}
       <div role="region" tabIndex={0} aria-label={t('revenue.table.title')} className={`overflow-x-auto rounded-lg ${focusRingCls}`}>
-      <div role="table" aria-label={t('revenue.table.title')} className="grid min-w-[60rem] gap-1.5 text-[13px]">
+      <div role="table" aria-label={t('revenue.table.title')} className="grid min-w-[66rem] gap-1.5 text-[13px]">
         <div role="row" className={`${ROW} text-[11px] text-bambu-gray`} style={{ gridTemplateColumns: cols }}>
           {heads.map((h, i) => (
             <span key={h.id} role="columnheader" className={i === 0 ? '' : 'text-right'}
-              {...(h.id === 'margin' ? { title: t('revenue.table.marginHint'), 'aria-describedby': hintId } : {})}>{h.label}</span>
+              {...(h.id === 'margin' ? { title: t('revenue.table.marginHint'), 'aria-describedby': hintId } : h.id === 'perHour' ? { title: t('revenue.table.perHourHint') } : {})}>{h.label}</span>
           ))}
         </div>
         {rows.map((b) => {
@@ -162,6 +163,11 @@ export function RevenueTable({ buckets, granularity, taxMode, canMargin, filterP
                     ) : (
                       '—'
                     )}
+                  </span>
+                )}
+                {margin && (
+                  <span role="cell" className={`${CELL} text-bambu-gray-light`}>
+                    {b.printHours ? `${formatFcp(b.services / b.printHours)} /h` : '—'}
                   </span>
                 )}
                 <span role="cell" className={`${CELL} text-bambu-gray-light`}>{formatFcp(taxMode === 'ttc' ? b.cumulative.ttc : b.cumulative.ht)}</span>

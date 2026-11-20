@@ -612,6 +612,19 @@ def test_print_costs_cost_the_services_from_the_first_logged_day_and_skip_sliced
     assert series(lines=lines, production=prod, filters=LineFilters(kind="services"))[0]["cost"] == 300
 
 
+def test_print_hours_sum_per_bucket_and_are_null_before_the_log():
+    prod = ProductionCosts(
+        by_day={"2026-09-10": {"wear": 1.0}},
+        first_day="2026-09-10",
+        hours_by_day={"2026-09-10": 1.5, "2026-09-20": 2.0, "2026-10-05": 0.5},
+    )
+    aug, sep, oct_ = series(
+        lines=[line("2026-09-05", "print", 1000)], production=prod, from_="2026-08-01", to="2026-10-31"
+    )
+    assert (aug["printHours"], sep["printHours"], oct_["printHours"]) == (None, 3.5, 0.5)
+    assert "printHours" not in series(lines=[line("2026-09-05", "print", 1000)])[0]
+
+
 def test_margin_split_charges_zoho_costs_per_line_and_print_costs_pro_rata_of_service_ht():
     items = {
         **ITEMS,

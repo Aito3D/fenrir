@@ -295,11 +295,15 @@ async def test_the_data_stamp_moves_on_a_day_write_a_decision_a_target_and_a_cus
     assert len(set(stamps)) == len(stamps)
 
 
-async def test_customer_first_days_ignores_unidentified_lines(engine, db):
-    await write(db, "2026-10-05", [line("2026-10-05", L1, "c1")])
+async def test_customer_item_first_lines_ignores_unidentified_lines(engine, db):
+    await write(db, "2026-10-05", [line("2026-10-05", L1, "c1"), line("2026-10-05", L2, "c1")])
     await write(db, "2026-10-02", [line("2026-10-02", L2, "c1"), line("2026-10-02", {**L2, "item_id": "i3"})])
     async with store.snapshot(engine) as conn:
-        assert await store.customer_first_days(conn) == {"c1": "2026-10-02"}
+        firsts = await store.customer_item_first_lines(conn)
+    assert sorted((x.customer_id, x.item_id, x.day) for x in firsts) == [
+        ("c1", L1["item_id"], "2026-10-05"),
+        ("c1", L2["item_id"], "2026-10-02"),
+    ]
 
 
 async def test_annotations_add_list_delete(engine, db):

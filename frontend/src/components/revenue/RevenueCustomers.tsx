@@ -1,11 +1,14 @@
 import { useTranslation } from 'react-i18next';
+import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
+import { AXIS, GRID, SERIES } from '../aito/stats/palette';
 import { Legend, LegendList, Panel, Split, Tile } from '../aito/stats/primitives';
+import { CHART_TOOLTIP_STYLE } from '../stats/chartTheme';
 import { focusRingCls } from '../formStyles';
 import { Skeleton } from '../Skeleton';
 import { RevenueSegmented } from './RevenueSegmented';
 import { REVENUE_HISTORY_START } from './lib/dates';
-import { formatFcp } from './lib/format';
-import type { CustomerSegment, CustomersResponse, SegmentRow, TaxMode } from './lib/types';
+import { compactAxis, formatFcp } from './lib/format';
+import type { CustomerSegment, CustomersResponse, RetentionRow, RevenueGranularity, SegmentRow, TaxMode } from './lib/types';
 import { useRevenueResource } from './useRevenueResource';
 
 const CUSTOMER_SEGMENTS: readonly CustomerSegment[] = ['pro', 'particulier', 'passage', 'inconnu'];
@@ -54,10 +57,57 @@ function KindBar({ label, values }: { label: string; values: { segment: Customer
   );
 }
 
+const SIDES = ['new', 'returning', 'anon'] as const;
+type Side = (typeof SIDES)[number];
+const SIDE_COLOR: Record<Side, string> = { new: SERIES.created, returning: SERIES.done, anon: SEGMENT_COLOR.inconnu };
+
+/** « Nouveaux et fidèles »: each period's sales stacked by first-time buyers, earlier buyers and unidentified sales. */
+function RetentionChart({ rows, mode }: { rows: RetentionRow[]; mode: TaxMode }) {
+  const { t } = useTranslation();
+  const name = (s: Side) => t(`revenue.customers.retention.${s}`);
+  const data = rows.map((r) => ({ row: r, label: r.label, ...Object.fromEntries(SIDES.map((s) => [s, mode === 'ttc' ? r[`${s}Ttc`] : r[`${s}Ht`]])) }));
+  return (
+    <Panel
+      title={t('revenue.customers.retention.title')}
+      action={
+        <LegendList label={t('revenue.chart.legend')}>
+          {SIDES.map((s) => <Legend key={s} color={SIDE_COLOR[s]}>{name(s)}</Legend>)}
+        </LegendList>
+      }
+    >
+      <div role="img" aria-label={t('revenue.customers.retention.chart', { tax: t(`revenue.${mode}`) })}>
+        <ResponsiveContainer width="100%" height={220}>
+          <BarChart data={data} stackOffset="sign" accessibilityLayer={false} margin={{ top: 8, right: 8, left: -4, bottom: 0 }}>
+            <CartesianGrid vertical={false} stroke={GRID} />
+            <XAxis dataKey="label" stroke={AXIS} tickLine={false} axisLine={{ stroke: GRID }} tick={{ fontSize: 11 }} interval="preserveStartEnd" />
+            <YAxis stroke={AXIS} tickLine={false} axisLine={false} tick={{ fontSize: 11 }} tickFormatter={compactAxis} width={52} />
+            <Tooltip
+              contentStyle={CHART_TOOLTIP_STYLE}
+              animationDuration={120}
+              labelStyle={{ color: '#fff' }}
+              itemStyle={{ color: '#a0a0a0' }}
+              separator=": "
+              formatter={(value: number | undefined, key: string | undefined, item: { payload?: { row: RetentionRow } }) => {
+                const side = key as Side;
+                const amount = formatFcp(value ?? 0);
+                const row = item.payload?.row;
+                return [side === 'anon' || !row ? amount : t('revenue.customers.retention.withCount', { amount, n: row[`${side}Count`] }), name(side)];
+              }}
+            />
+            {SIDES.map((s) => <Bar key={s} dataKey={s} stackId="r" fill={SIDE_COLOR[s]} isAnimationActive={false} />)}
+          </BarChart>
+        </ResponsiveContainer>
+      </div>
+      <p className="mt-2 text-xs text-bambu-gray">{t('revenue.customers.retention.note')}</p>
+    </Panel>
+  );
+}
+
 /** « Clients »: acquisition, the per-segment split (a row toggles the page segment filter) and the best customers. */
 export function RevenueCustomers(p: {
   from: string;
   to: string;
+  granularity: RevenueGranularity;
   filterParams: string;
   taxMode: TaxMode;
   segment: CustomerSegment | null;
@@ -65,7 +115,7 @@ export function RevenueCustomers(p: {
   version: unknown;
 }) {
   const { t, i18n } = useTranslation();
-  const url = p.from && p.to ? `/api/v1/revenue/customers?from=${p.from}&to=${p.to}${p.filterParams}` : null;
+  const url = p.from && p.to ? `/api/v1/revenue/customers?from=${p.from}&to=${p.to}&granularity=${p.granularity}${p.filterParams}` : null;
   const { data, error } = useRevenueResource<CustomersResponse>(url, p.version);
   const mode = p.taxMode;
   const segName = (s: CustomerSegment) => t(`revenue.filters.segments.${s}`);
@@ -123,6 +173,7 @@ export function RevenueCustomers(p: {
           </div>
         </Panel>
       )}
+      <RetentionChart rows={data.retention} mode={mode} />
       <Split>
         <Panel
           title={t('revenue.customers.topTitle')}
