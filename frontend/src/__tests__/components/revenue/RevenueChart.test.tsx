@@ -8,6 +8,7 @@ import type { RevenueAnnotation, RevenueBucket, RevenueProduct, RevenueResponse 
 import { bucket } from './lib/fixtures';
 
 // jsdom has no layout, so ResponsiveContainer renders nothing; pin a size. The tooltip's content is kept to call it directly.
+let tooltipProps: { active?: boolean; defaultIndex?: number } = {};
 let tooltipContent: ((p: { active?: boolean; payload?: { payload?: unknown }[] }) => unknown) | undefined;
 vi.mock('recharts', async (orig) => {
   const actual = await orig<typeof import('recharts')>();
@@ -15,6 +16,7 @@ vi.mock('recharts', async (orig) => {
     ...actual,
     Tooltip: (props: ComponentProps<typeof actual.Tooltip>) => {
       tooltipContent = props.content as typeof tooltipContent;
+      tooltipProps = props;
       return <actual.Tooltip {...props} />;
     },
     ResponsiveContainer: (props: ComponentProps<typeof actual.ResponsiveContainer>) => (
@@ -148,6 +150,16 @@ describe('RevenueChart', () => {
     screen.getByRole('button', { name: 'mars 2026 – 200 FCP' }).dispatchEvent(space);
     expect(props.onDrill).toHaveBeenCalledWith(2);
     expect(space.defaultPrevented).toBe(true);
+  });
+
+  it('shows the tooltip for the focused column and hides it on blur', () => {
+    renderChart();
+    expect(tooltipProps.active).toBeUndefined();
+    const col = screen.getByRole('button', { name: 'févr. 2026 – 900 FCP · missing days: 3' });
+    fireEvent.focus(col);
+    expect(tooltipProps).toMatchObject({ active: true, defaultIndex: 1 });
+    fireEvent.blur(col);
+    expect(tooltipProps.active).toBeUndefined();
   });
 
   it('renders no tooltip for a hovered row the drilled-down data no longer has', () => {

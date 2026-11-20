@@ -65,9 +65,11 @@ function ColumnMarks(p: {
   missingLabel: (n: number) => string;
   noteLabel: (notes: RevenueAnnotation[]) => string;
   onDrill?: (index: number) => void;
+  focused: number | null;
+  setFocused: (index: number | null) => void;
 }) {
   const area = usePlotArea();
-  const [focused, setFocused] = useState<number | null>(null);
+  const { focused, setFocused } = p;
   if (!area || p.columns.length === 0) return null;
   const band = area.width / p.columns.length;
   const y = (v: number) => yFor(v, p.yMin, p.yMax, area.y, area.height);
@@ -159,6 +161,8 @@ export function RevenueChart({ payload, controls, can, onStack, onDrill, drillDe
     (d) => (d.id !== 'item' || (narrowed && !margin)) && (d.id !== 'kind' || !kindFiltered) && (d.id !== 'segment' || (!segmentFiltered && can.customers)),
   ).map((d) => ({ id: d.id, label: t(`revenue.chart.stack.${d.id}`) }));
 
+  // Keyboard focus drives the tooltip like a hover does.
+  const [focused, setFocused] = useState<number | null>(null);
   const notes = useRevenueResource<AnnotationsResponse>('/api/v1/revenue/annotations', 0);
 
   // A drill-down unmounts the focused column and the last « Retour » unmounts itself: focus would fall to the page.
@@ -309,7 +313,7 @@ export function RevenueChart({ payload, controls, can, onStack, onDrill, drillDe
               domain={[yMin, yMax]} ticks={yMin < 0 ? [yMin, ...ticks] : ticks} tickFormatter={compactAxis} />
             <YAxis yAxisId="cum" orientation="right" stroke={AXIS} tickLine={false} axisLine={false} tick={{ fontSize: 11 }} width={52}
               domain={[cum.min, cum.max]} ticks={cum.min < 0 ? [cum.min, 0, cum.max] : [0, cum.max]} tickFormatter={compactAxis} />
-            <Tooltip content={tooltip} cursor={{ fill: 'rgba(255,255,255,0.04)' }} animationDuration={120} />
+            <Tooltip content={tooltip} active={focused != null ? true : undefined} defaultIndex={focused ?? undefined} cursor={{ fill: 'rgba(255,255,255,0.04)' }} animationDuration={120} />
             {series.map((s) => (
               <Bar key={s.key} yAxisId="left" dataKey={`s${s.slot}`} stackId="revenue" fill={colorOf(s)} isAnimationActive={false}>
                 {rows.map((r) => <Cell key={r.i} fillOpacity={r.partial ? 0.6 : 1} />)}
@@ -320,7 +324,7 @@ export function RevenueChart({ payload, controls, can, onStack, onDrill, drillDe
             <ColumnMarks columns={columns} yMin={yMin} yMax={yMax} targets={targets} notes={notesOf} label={columnLabel}
               missingLabel={(n) => t('revenue.chart.missingDays', { n })}
               noteLabel={(ns) => t('revenue.chart.note', { label: ns.map((n) => n.label).join(' · ') })}
-              onDrill={drillFrom} />
+              onDrill={drillFrom} focused={focused} setFocused={setFocused} />
           </ComposedChart>
         </ResponsiveContainer>
       </div>

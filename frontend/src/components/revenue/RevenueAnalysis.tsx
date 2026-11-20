@@ -131,7 +131,7 @@ function Margins({ byBrand, byNature }: { byBrand: MarginRow[]; byNature: Margin
                 <span className="shrink-0 whitespace-nowrap text-right tabular-nums text-bambu-gray-light">{`${r.rate == null ? '—' : pct(r.rate)} · ${formatFcp(r.margin)}`}</span>
               </div>
               {r.coverage < 0.95 && (
-                <p className="mt-0.5 text-[11px] text-amber-400">{t('revenue.analysis.coverage', { pct: pct(r.coverage), amount: formatFcp(r.ht) })}</p>
+                <p className="mt-0.5 text-[11px] text-amber-700 dark:text-amber-400">{t('revenue.analysis.coverage', { pct: pct(r.coverage), amount: formatFcp(r.ht) })}</p>
               )}
             </li>
           ))}

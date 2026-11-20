@@ -115,7 +115,7 @@ export function RevenueTable({ buckets, granularity, taxMode, canMargin, filterP
                     <span className="truncate">{b.label}</span>
                   </button>
                   {(b.partial || b.missingDays > 0) && (
-                    <span className="ml-[18px] flex flex-wrap gap-x-2 text-[11px] text-amber-400">
+                    <span className="ml-[18px] flex flex-wrap gap-x-2 text-[11px] text-amber-700 dark:text-amber-400">
                       {b.partial && <span>{t('revenue.chart.inProgress')}</span>}
                       {b.missingDays > 0 && <span>{t('revenue.chart.missingDays', { n: b.missingDays })}</span>}
                     </span>

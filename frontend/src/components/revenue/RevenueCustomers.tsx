@@ -171,7 +171,7 @@ export function RevenueCustomers(p: {
           <div className="space-y-3">
             {error && <p role="alert" className="text-xs text-status-error">{error}</p>}
             {data.unsplitHt !== 0 && (
-              <p className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-400">
+              <p className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-700 dark:text-amber-400">
                 {t('revenue.customers.unsplit', { amount: formatFcp(data.unsplitHt) })}
               </p>
             )}
