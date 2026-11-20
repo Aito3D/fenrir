@@ -10,7 +10,7 @@ import time
 from collections.abc import Awaitable, Callable, Iterable, Sequence
 from datetime import date, datetime, timedelta, timezone
 from types import SimpleNamespace
-from typing import Literal
+from typing import Literal, cast
 
 from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, Query, Request, Response, UploadFile
 from fastapi.exceptions import RequestValidationError
@@ -64,6 +64,7 @@ from backend.app.schemas.aito import (
     AitoNoteCreate,
     AitoPaymentLinkView,
     AitoPickupMessageResponse,
+    AitoPriority,
     AitoPriorityUpdate,
     AitoProjectCreate,
     AitoProjectImport,
@@ -581,7 +582,7 @@ def _to_response(
         client_contacted_at=p.client_contacted_at,
         done_at=p.done_at,
         due_date=p.due_date,
-        priority=p.priority,
+        priority=cast(AitoPriority, p.priority),
         tracking_configured=external_url != "",
         # Mirrors quote_invoiced above: in-memory rows that never flushed
         # read None.
