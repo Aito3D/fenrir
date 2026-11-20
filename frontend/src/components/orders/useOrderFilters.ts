@@ -66,6 +66,18 @@ export function useOrderFilters() {
   const saved = useRef<OrderPrefs | null>(null);
   // Picks made before the account's answer: merged over it once it arrives, never PUT alone (a PUT replaces `orders`).
   const pending = useRef<OrderPrefs | null>(null);
+  // Saves go out one after another, so the last PUT the server gets is the latest pick; a failed one never
+  // blocks the next. With nothing in flight a save is sent at once.
+  const saving = useRef<Promise<void> | null>(null);
+  const save = (prefsToSave: OrderPrefs) => {
+    const send = () => api.putUiPref(PREF_KEY, prefsToSave);
+    const mine: Promise<void> = (saving.current ? saving.current.then(send) : send())
+      .then(() => {}, () => {}) // unsaved, the choice still holds for this visit
+      .then(() => {
+        if (saving.current === mine) saving.current = null;
+      });
+    saving.current = mine;
+  };
   const readFailed = useRef(false); // a failed read never becomes a write of a partial copy
   const [urlNamedFilters] = useState(() => URL_FILTERS.some(k => params.has(k)));
   useEffect(() => {
@@ -79,7 +91,7 @@ export function useOrderFilters() {
       saved.current = prefs.isError ? {} : { ...mine, ...queued };
       if (!prefs.isError) {
         queryClient.setQueryData<UiPrefs>(PREFS_QUERY, d => ({ ...d, [PREF_KEY]: saved.current }));
-        api.putUiPref(PREF_KEY, saved.current).catch(() => {});
+        save(saved.current);
       }
       return;
     }
@@ -100,7 +112,7 @@ export function useOrderFilters() {
     saved.current = next;
     queryClient.setQueryData<UiPrefs>(PREFS_QUERY, d => ({ ...d, [PREF_KEY]: next }));
     if (readFailed.current) return;
-    api.putUiPref(PREF_KEY, next).catch(() => {}); // unsaved, the choice still holds for this visit
+    save(next);
   };
   const choosePayFilter = (value: PayFilter) => {
     setPayFilter(value);
