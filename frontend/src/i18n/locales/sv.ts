@@ -12292,6 +12292,7 @@ errors: {
       rebuildYes: 'Ja, bygg om',
       cancel: 'Avbryt',
       rebuildStarted: 'Ombyggnad startad — historiken laddas om från Zoho i bakgrunden.',
+      rebuildRefused: 'Ombyggnad inte startad: Zoho är inte konfigurerat eller dagens API-kvot är nästan slut. Inget har raderats.',
     },
     hero: {
       partial: '{{period}} · pågår, dag {{day}} av {{total}}',

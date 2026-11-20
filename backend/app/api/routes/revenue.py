@@ -550,6 +550,8 @@ async def post_sync(
         result = await asyncio.wait_for(sync.run_revenue_sync_batch(full=full == "1"), SYNC_TIMEOUT_S)
     except TimeoutError:
         raise HTTPException(status_code=504, detail="Upstream request timed out") from None
+    except sync.RevenueRebuildRefused as e:
+        raise HTTPException(status_code=503, detail=str(e)) from None
     except Exception as e:
         logger.error("revenue sync failed: %s", type(e).__name__)  # the message may carry a URL or token
         raise HTTPException(status_code=500, detail="Internal server error") from None

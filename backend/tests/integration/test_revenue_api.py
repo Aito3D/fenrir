@@ -479,6 +479,17 @@ async def test_sync_post_timeout_and_failure_are_clean_errors(async_client, reve
 
 
 @pytest.mark.asyncio
+async def test_sync_post_refused_rebuild_is_a_503_with_its_reason(async_client, revenue_db, tokens, monkeypatch):
+    async def refused(*, full=False):
+        raise sync.RevenueRebuildRefused("Zoho credentials are not configured")
+
+    monkeypatch.setattr(sync, "run_revenue_sync_batch", refused)
+    r = await async_client.post(f"{URL}/sync", params={"full": "1"}, headers=tokens["sync"])
+    assert r.status_code == 503
+    assert r.json()["detail"] == "Zoho credentials are not configured"
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize(
     "raw",
     [b'{"day": "2026-01-05", "label": "\\ud800x"}', b"[" * 100_000],

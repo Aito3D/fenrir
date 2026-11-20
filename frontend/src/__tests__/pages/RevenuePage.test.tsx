@@ -367,6 +367,33 @@ describe('RevenuePage — rebuild', () => {
     expect(seriesCalls().length).toBe(before + 1);
   });
 
+  const confirmRebuild = async () => {
+    renderPage();
+    await flush();
+    const before = seriesCalls().length;
+    openMenu();
+    fireEvent.click(menuItem('Rebuild'));
+    fireEvent.click(menuItem('Yes, rebuild'));
+    await flush();
+    await flush();
+    return before;
+  };
+
+  it('treats a 504 on a rebuild as started: refreshes, no error toast', async () => {
+    stubFetch(payload(), async () => json({ detail: 'Upstream request timed out' }, 504));
+    const before = await confirmRebuild();
+    expect(screen.queryByText('Upstream request timed out')).toBeNull();
+    expect(screen.getByText(/Rebuild started/)).toBeInTheDocument();
+    expect(seriesCalls().length).toBe(before + 1);
+  });
+
+  it('says why a refused rebuild (503) did not start and that nothing was deleted', async () => {
+    stubFetch(payload(), async () => json({ detail: 'Zoho credentials are not configured' }, 503));
+    await confirmRebuild();
+    expect(screen.getByText(/Rebuild not started.*Nothing was deleted/)).toBeInTheDocument();
+    expect(screen.queryByText(/Rebuild started/)).toBeNull();
+  });
+
   it('cancels the rebuild confirmation', async () => {
     stubFetch(payload());
     renderPage();

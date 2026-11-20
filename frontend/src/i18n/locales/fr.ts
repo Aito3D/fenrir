@@ -12220,6 +12220,7 @@ export default {
       rebuildYes: 'Oui, reconstruire',
       cancel: 'Annuler',
       rebuildStarted: 'Reconstruction lancée — l\'historique se recharge depuis Zoho en arrière-plan.',
+      rebuildRefused: 'Reconstruction non lancée : Zoho n\'est pas configuré ou le quota d\'API du jour est presque épuisé. Rien n\'a été effacé.',
     },
     hero: {
       partial: '{{period}} · en cours, jour {{day}} sur {{total}}',

@@ -12243,6 +12243,7 @@ export default {
       rebuildYes: 'Sí, reconstruir',
       cancel: 'Cancelar',
       rebuildStarted: 'Reconstrucción iniciada: el historial se recarga desde Zoho en segundo plano.',
+      rebuildRefused: 'Reconstrucción no iniciada: Zoho no está configurado o la cuota de API de hoy está casi agotada. No se ha borrado nada.',
     },
     hero: {
       partial: '{{period}} · en curso, día {{day}} de {{total}}',

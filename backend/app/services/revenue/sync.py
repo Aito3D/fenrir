@@ -47,6 +47,10 @@ class _BudgetLow(Exception):
     """Books' daily budget is below the floor: the batch stops, nothing is marked fetched."""
 
 
+class RevenueRebuildRefused(Exception):
+    """A full rebuild cannot refill the cache right now, so nothing is cleared."""
+
+
 def _utcnow() -> datetime:
     return datetime.now(timezone.utc)
 
@@ -203,10 +207,20 @@ async def _execute_batch(full: bool) -> dict:
         raise
 
 
+async def _check_rebuild_possible() -> None:
+    async with database.async_session() as db:
+        if not await zoho_service.is_configured(db):
+            raise RevenueRebuildRefused("Zoho credentials are not configured")
+    if _budget_low():
+        raise RevenueRebuildRefused("Zoho's daily API budget is too low to rebuild; try again after it resets")
+
+
 async def _after(previous: asyncio.Task | None, full: bool) -> dict:
     if previous is not None:
         await asyncio.wait([previous])  # its failure must not poison the chained full rebuild
     async with _lane:
+        if full:
+            await _check_rebuild_possible()
         return await _execute_batch(full)
 
 

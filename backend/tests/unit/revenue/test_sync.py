@@ -31,6 +31,7 @@ class FakeZoho:
         self.sales = self.default_sales
         self.contact = self.default_contact
         self.items = self.default_items
+        self.configured = True
 
     async def default_sales(self, day, page):
         return [], False
@@ -40,6 +41,9 @@ class FakeZoho:
 
     async def default_items(self, page):
         return [], False
+
+    async def is_configured(self, db):
+        return self.configured
 
     async def sales_by_item_by_customer(self, db, day, page):
         self.sales_calls.append((day, page))
@@ -86,6 +90,7 @@ def zoho(engine, sleeps, monkeypatch):
         monkeypatch.setattr(zoho_service, name, getattr(fake, name))
     monkeypatch.setattr(zoho_service, "calls_in_last_minute", lambda: 0)
     monkeypatch.setattr(zoho_service, "daily_remaining", None)
+    monkeypatch.setattr(zoho_service, "is_configured", fake.is_configured)
     monkeypatch.setattr(sync, "org_today", lambda now=None: TODAY)
     monkeypatch.setattr(sync, "REVENUE_HISTORY_START", "2026-10-01")
     sync.reset_revenue_sync_state_for_tests()
@@ -181,6 +186,29 @@ async def test_full_true_clears_the_cache_first_and_rebuilds_from_scratch(zoho, 
     await sync.run_revenue_sync_batch(full=True)
     assert await lines(engine, "2026-10-10") == []
     assert ("2026-10-10", 1) in zoho.sales_calls
+
+
+async def _seed_day(day):
+    async with database.async_session() as db:
+        await store.write_day(db, day, [RevenueLine(day, "x", "", "X", "", 1, 1)], True, datetime.now(timezone.utc), 2)
+
+
+async def test_full_rebuild_is_refused_and_keeps_the_cache_when_the_daily_budget_is_low(zoho, engine, monkeypatch):
+    await _seed_day("2026-10-10")
+    monkeypatch.setattr(zoho_service, "daily_remaining", SYNC.daily_budget_floor - 1)
+    with pytest.raises(sync.RevenueRebuildRefused, match="budget"):
+        await sync.run_revenue_sync_batch(full=True)
+    assert len(await lines(engine, "2026-10-10")) == 1
+    assert zoho.sales_calls == []
+
+
+async def test_full_rebuild_is_refused_and_keeps_the_cache_when_zoho_is_not_configured(zoho, engine):
+    await _seed_day("2026-10-10")
+    zoho.configured = False
+    with pytest.raises(sync.RevenueRebuildRefused, match="not configured"):
+        await sync.run_revenue_sync_batch(full=True)
+    assert len(await lines(engine, "2026-10-10")) == 1
+    assert zoho.sales_calls == []
 
 
 async def test_a_day_whose_org_day_ends_during_its_fetch_is_stored_open(zoho, engine, monkeypatch):

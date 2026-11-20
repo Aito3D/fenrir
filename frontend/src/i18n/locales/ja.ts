@@ -12234,6 +12234,7 @@ export default {
       rebuildYes: 'はい、再構築します',
       cancel: 'キャンセル',
       rebuildStarted: '再構築を開始しました。履歴はバックグラウンドで Zoho から再読み込みされます。',
+      rebuildRefused: '再構築は開始されませんでした。Zoho が未設定か、本日の API 割り当てがほぼ上限に達しています。何も削除されていません。',
     },
     hero: {
       partial: '{{period}} · 進行中、{{total}}日中{{day}}日目',

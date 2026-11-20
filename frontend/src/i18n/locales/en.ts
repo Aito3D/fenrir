@@ -12291,6 +12291,7 @@ export default {
       rebuildYes: 'Yes, rebuild',
       cancel: 'Cancel',
       rebuildStarted: 'Rebuild started — the history reloads from Zoho in the background.',
+      rebuildRefused: 'Rebuild not started: Zoho is not configured or today\'s API quota is nearly used up. Nothing was deleted.',
     },
     hero: {
       partial: '{{period}} · in progress, day {{day}} of {{total}}',

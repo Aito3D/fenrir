@@ -12218,6 +12218,7 @@ export default {
       rebuildYes: '是，重建',
       cancel: '取消',
       rebuildStarted: '已开始重建——历史将在后台从 Zoho 重新加载。',
+      rebuildRefused: '未开始重建：Zoho 尚未配置，或今日的 API 配额即将用完。未删除任何内容。',
     },
     hero: {
       partial: '{{period}} · 进行中，第 {{day}} 天，共 {{total}} 天',

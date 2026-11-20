@@ -295,16 +295,21 @@ export function RevenuePage() {
     setTick((n) => n + 1);
   };
 
-  const postSync = async (full: boolean) => {
-    const res = await fetch(`/api/v1/revenue/sync${full ? '?full=1' : ''}`, { method: 'POST', headers: bearerAuthHeaders() });
+  const postSync = async () => {
+    const res = await fetch('/api/v1/revenue/sync', { method: 'POST', headers: bearerAuthHeaders() });
     if (!res.ok) throw new Error(failureMessage(res.status, await readJsonBody(res)));
   };
   const rebuild = async () => {
     setRebuildBusy(true);
     try {
-      await postSync(true);
-      showToast(t('revenue.sync.rebuildStarted'), 'success');
-      refresh();
+      const res = await fetch('/api/v1/revenue/sync?full=1', { method: 'POST', headers: bearerAuthHeaders() });
+      // 504: the request gave up but the rebuild keeps running server-side, so a retry would wipe it again.
+      if (res.status === 503) showToast(t('revenue.sync.rebuildRefused'), 'error');
+      else if (!res.ok && res.status !== 504) showToast(failureMessage(res.status, await readJsonBody(res)), 'error');
+      else {
+        showToast(t('revenue.sync.rebuildStarted'), 'success');
+        refresh();
+      }
     } catch (e) {
       showToast(e instanceof Error ? e.message : String(e), 'error');
     } finally {
@@ -313,7 +318,7 @@ export function RevenuePage() {
   };
   const retry = async () => {
     try {
-      await postSync(false);
+      await postSync();
     } catch (e) {
       showToast(e instanceof Error ? e.message : String(e), 'error');
     }

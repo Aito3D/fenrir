@@ -12162,6 +12162,7 @@ export default {
       rebuildYes: 'Evet, yeniden oluştur',
       cancel: 'İptal',
       rebuildStarted: 'Yeniden oluşturma başladı — geçmiş arka planda Zoho\'dan yeniden yükleniyor.',
+      rebuildRefused: 'Yeniden oluşturma başlatılmadı: Zoho yapılandırılmamış ya da bugünkü API kotası neredeyse doldu. Hiçbir şey silinmedi.',
     },
     hero: {
       partial: '{{period}} · devam ediyor, {{total}} günün {{day}}. günü',

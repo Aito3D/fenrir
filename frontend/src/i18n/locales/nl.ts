@@ -12259,6 +12259,7 @@ export default {
       rebuildYes: 'Ja, opnieuw opbouwen',
       cancel: 'Annuleren',
       rebuildStarted: 'Opnieuw opbouwen gestart — de geschiedenis wordt op de achtergrond opnieuw uit Zoho geladen.',
+      rebuildRefused: 'Opnieuw opbouwen niet gestart: Zoho is niet ingesteld of het API-quotum van vandaag is bijna op. Er is niets verwijderd.',
     },
     hero: {
       partial: '{{period}} · lopend, dag {{day}} van {{total}}',

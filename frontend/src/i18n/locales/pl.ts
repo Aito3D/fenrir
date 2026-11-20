@@ -12440,6 +12440,7 @@ export default {
       rebuildYes: 'Tak, odbuduj',
       cancel: 'Anuluj',
       rebuildStarted: 'Odbudowa rozpoczęta — historia wczytuje się ponownie z Zoho w tle.',
+      rebuildRefused: 'Odbudowa nie rozpoczęta: Zoho nie jest skonfigurowane albo dzisiejszy limit API jest prawie wyczerpany. Nic nie zostało usunięte.',
     },
     hero: {
       partial: '{{period}} · w toku, dzień {{day}} z {{total}}',

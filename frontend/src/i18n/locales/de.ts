@@ -12235,6 +12235,7 @@ export default {
       rebuildYes: 'Ja, neu aufbauen',
       cancel: 'Abbrechen',
       rebuildStarted: 'Neuaufbau gestartet — der Verlauf wird im Hintergrund aus Zoho neu geladen.',
+      rebuildRefused: 'Neuaufbau nicht gestartet: Zoho ist nicht eingerichtet oder das heutige API-Kontingent ist fast aufgebraucht. Es wurde nichts gelöscht.',
     },
     hero: {
       partial: '{{period}} · laufend, Tag {{day}} von {{total}}',
