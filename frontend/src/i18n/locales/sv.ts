@@ -13217,6 +13217,16 @@ errors: {
       last: 'senast {{day}}',
       failed: 'Ändringen sparades inte',
     },
+    breakdown: {
+      label: 'Bruttomarginalens delar',
+      costedHt: 'Omsättning HT med kostnad',
+      items: 'Artikelkostnad',
+      filament: 'Filament',
+      energy: 'Energi',
+      wear: 'Skrivarslitage',
+      labor: 'Personal',
+      margin: 'Bruttomarginal HT',
+    },
     labor: {
       title: 'Personalkostnader',
       intro: 'Anställda och konsulter (modellering, 3D-skanning, efterbearbetning…): var och en kostar timpris × timmar på sina arbetsdagar, avdraget från tjänstemarginalen. Utan startdatum räknas från juli 2026.',

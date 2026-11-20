@@ -13159,6 +13159,16 @@ export default {
       last: '最終 {{day}}',
       failed: '変更は保存されていません',
     },
+    breakdown: {
+      label: '粗利の内訳',
+      costedHt: '原価判明分の売上 HT',
+      items: '商品原価',
+      filament: 'フィラメント',
+      energy: '電力',
+      wear: 'プリンター摩耗',
+      labor: '人件費',
+      margin: '粗利 HT',
+    },
     labor: {
       title: '人件費',
       intro: '従業員・外注先（モデリング、3Dスキャン、仕上げ…）：各自の勤務日に時給×時間がかかり、サービスの粗利から差し引かれます。開始日がない場合は2026年7月から計上します。',

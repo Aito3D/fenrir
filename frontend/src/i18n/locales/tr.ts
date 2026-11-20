@@ -13087,6 +13087,16 @@ export default {
       last: 'son {{day}}',
       failed: 'Değişiklik kaydedilmedi',
     },
+    breakdown: {
+      label: 'Brüt marj dökümü',
+      costedHt: 'Maliyeti bilinen ciro HT',
+      items: 'Ürün maliyeti',
+      filament: 'Filament',
+      energy: 'Enerji',
+      wear: 'Yazıcı aşınması',
+      labor: 'İşçilik',
+      margin: 'Brüt marj HT',
+    },
     labor: {
       title: 'İşçilik maliyeti',
       intro: 'Çalışanlar ve hizmet sağlayıcılar (modelleme, 3D tarama, son işlem…): her biri çalışma günlerinde ücret × saat tutar ve hizmet marjından düşülür. Başlangıç tarihi yoksa Temmuz 2026\'dan itibaren sayılır.',

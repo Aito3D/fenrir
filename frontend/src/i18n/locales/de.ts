@@ -13160,6 +13160,16 @@ export default {
       last: 'zuletzt {{day}}',
       failed: 'Änderung nicht gespeichert',
     },
+    breakdown: {
+      label: 'Aufschlüsselung der Bruttomarge',
+      costedHt: 'Umsatz HT mit Kosten',
+      items: 'Artikelkosten',
+      filament: 'Filament',
+      energy: 'Energie',
+      wear: 'Druckerverschleiß',
+      labor: 'Personal',
+      margin: 'Bruttomarge HT',
+    },
     labor: {
       title: 'Personalkosten',
       intro: 'Mitarbeiter und Dienstleister (Modellierung, 3D-Scans, Nachbearbeitung…): jeder kostet Satz × Stunden an seinen Arbeitstagen, abgezogen von der Dienstleistungsmarge. Ohne Startdatum ab Juli 2026 gezählt.',

@@ -13143,6 +13143,16 @@ export default {
       last: '最近 {{day}}',
       failed: '更改未保存',
     },
+    breakdown: {
+      label: '毛利明细',
+      costedHt: '已核成本的营业额 HT',
+      items: '商品成本',
+      filament: '耗材',
+      energy: '电费',
+      wear: '打印机损耗',
+      labor: '人工',
+      margin: '毛利 HT',
+    },
     labor: {
       title: '人工成本',
       intro: '员工和外包（建模、3D 扫描、后处理…）：每人在工作日按时薪 × 小时计费，从服务毛利中扣除。未填开始日期时，从 2026 年 7 月起计算。',

@@ -106,6 +106,30 @@ describe('RevenueControls — keyboard shortcuts', () => {
 });
 
 describe('RevenueControls — range popover', () => {
+  it('picks a whole month from the month grid, to today for this one, and shows its days', () => {
+    const { onRange, onGranularity } = renderControls();
+    fireEvent.click(screen.getByRole('button', { name: /Last 12 months/ }));
+    // December 2026 has not started.
+    expect(screen.getByRole('button', { name: 'December 2026' })).toBeDisabled();
+    fireEvent.click(screen.getByRole('button', { name: 'November 2026' }));
+    expect(onRange).toHaveBeenCalledWith({ preset: 'custom', from: '2026-11-01', to: '2026-11-19' });
+    expect(onGranularity).toHaveBeenCalledWith('day');
+    fireEvent.click(screen.getByRole('button', { name: /Last 12 months/ }));
+    fireEvent.click(screen.getByRole('button', { name: 'Previous year' }));
+    fireEvent.click(screen.getByRole('button', { name: 'February 2025' }));
+    expect(onRange).toHaveBeenLastCalledWith({ preset: 'custom', from: '2025-02-01', to: '2025-02-28' });
+  });
+
+  it('names the trigger after a picked month, and keeps a week view as is', () => {
+    const { onGranularity } = renderControls({ granularity: 'week', range: { preset: 'custom', from: '2026-10-01', to: '2026-10-31' } });
+    const trigger = screen.getByRole('button', { name: /October 2026/ });
+    fireEvent.click(trigger);
+    const popover = screen.getByRole('dialog', { name: 'Date range' });
+    expect(within(popover).getByRole('button', { name: 'October 2026' })).toHaveAttribute('aria-pressed', 'true');
+    fireEvent.click(screen.getByRole('button', { name: 'September 2026' }));
+    expect(onGranularity).not.toHaveBeenCalled();
+  });
+
   it('lists the presets and Auto, picks one and closes', () => {
     const { onRange } = renderControls();
     fireEvent.click(screen.getByRole('button', { name: /Last 12 months/ }));

@@ -13216,6 +13216,16 @@ export default {
       last: 'last {{day}}',
       failed: 'Change not saved',
     },
+    breakdown: {
+      label: 'Gross margin breakdown',
+      costedHt: 'Costed revenue HT',
+      items: 'Item costs',
+      filament: 'Filament',
+      energy: 'Energy',
+      wear: 'Printer wear',
+      labor: 'Labour',
+      margin: 'Gross margin HT',
+    },
     labor: {
       title: 'Labour costs',
       intro: 'Staff and contractors (modelling, 3D scans, finishing…): each one costs rate × hours on its working days, deducted from the services margin. Without a start date, counted from July 2026.',

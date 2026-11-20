@@ -10,6 +10,7 @@ import { formatFcp } from './lib/format';
 import { toggleInSet } from './lib/dashboard';
 import type { ItemsResponse, RevenueBucket, RevenueGranularity, TaxMode } from './lib/types';
 import { useRevenueResource } from './useRevenueResource';
+import { MarginBreakdown } from './MarginBreakdown';
 
 const ROW = 'grid items-baseline gap-3 px-3';
 const CELL = 'text-right tabular-nums';
@@ -139,6 +140,13 @@ export function RevenueTable({ buckets, granularity, taxMode, canMargin, filterP
                 <span role="cell" className={`${CELL} text-bambu-gray-light`}>{formatFcp(taxMode === 'ttc' ? b.cumulative.ttc : b.cumulative.ht)}</span>
                 <span role="cell" className={`${CELL} text-bambu-gray-light`}>{b.quantity}</span>
               </div>
+              {expanded && margin && b.costParts && (
+                <div role="row" className="px-3 py-1.5 pl-9">
+                  <span role="cell" className="block max-w-sm text-xs text-bambu-gray-light">
+                    <MarginBreakdown bucket={b} />
+                  </span>
+                </div>
+              )}
               {expanded && <ItemRows bucket={b} filterParams={filterParams} version={version} cols={cols} margin={margin} />}
             </Fragment>
           );

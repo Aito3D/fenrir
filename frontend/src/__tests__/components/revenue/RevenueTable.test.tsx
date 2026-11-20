@@ -126,6 +126,28 @@ describe('RevenueTable', () => {
     expect(screen.queryByText(/cost known/)).toBeNull();
   });
 
+  it('details the margin under an opened period: costed HT, each cost part, the margin', async () => {
+    stubItems([]);
+    const parts = { ...sept, costParts: { items: 100_000, filament: 50_000, energy: 0, wear: 120_000, labor: 30_000 } };
+    render(renderTable({ buckets: [parts] }));
+    fireEvent.click(screen.getByRole('button', { name: 'sept. 2026' }));
+    const breakdown = await screen.findByRole('group', { name: 'Gross margin breakdown' });
+    expect(breakdown).toHaveTextContent('Costed revenue HT500.000 FCP');
+    expect(breakdown).toHaveTextContent('Item costs−100.000 FCP');
+    expect(breakdown).toHaveTextContent('Printer wear−120.000 FCP');
+    expect(breakdown).toHaveTextContent('Labour−30.000 FCP');
+    // A zero part is left out.
+    expect(within(breakdown).queryByText('Energy')).toBeNull();
+    expect(breakdown).toHaveTextContent('Gross margin HT200.000 FCP');
+  });
+
+  it('shows no breakdown without the margin right', () => {
+    stubItems([]);
+    render(renderTable({ buckets: [{ ...sept, costParts: { items: 1 } }], canMargin: false }));
+    fireEvent.click(screen.getByRole('button', { name: 'sept. 2026' }));
+    expect(screen.queryByRole('group', { name: 'Gross margin breakdown' })).toBeNull();
+  });
+
   it('shows the margin amount with its rate and explains the column', () => {
     render(renderTable());
     const cells = within(bodyRows()[0]).getAllByRole('cell');

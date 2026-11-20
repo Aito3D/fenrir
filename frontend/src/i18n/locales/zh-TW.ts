@@ -13143,6 +13143,16 @@ export default {
       last: '最近 {{day}}',
       failed: '變更未儲存',
     },
+    breakdown: {
+      label: '毛利明細',
+      costedHt: '已核成本的營業額 HT',
+      items: '商品成本',
+      filament: '線材',
+      energy: '電費',
+      wear: '印表機損耗',
+      labor: '人工',
+      margin: '毛利 HT',
+    },
     labor: {
       title: '人工成本',
       intro: '員工與外包（建模、3D 掃描、後處理…）：每人在工作日按時薪 × 小時計費，從服務毛利中扣除。未填開始日期時，從 2026 年 7 月起計算。',

@@ -35,6 +35,8 @@ export interface RevenueBucket {
   costedHt?: number;
   /** Gross margin HT per key, services' print + labour costs shared pro rata of their HT; same stripping as cost. */
   marginSplit?: { nature: Record<string, number>; brand: Record<string, number>; segment?: Record<string, number>; kind: Record<string, number> };
+  /** What `cost` is made of: Zoho item costs (`items`), then the services' filament, energy, wear and labour. */
+  costParts?: Partial<Record<'items' | 'filament' | 'energy' | 'wear' | 'labor', number>>;
   projection: Money | null;
   projectionMethod: "seasonal" | "linear" | null;
   target?: number | null;

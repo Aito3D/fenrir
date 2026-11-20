@@ -242,6 +242,7 @@ class _Acc:
         # Margin per split key: lines with a Zoho cost carry their own; service lines costed by the
         # print log share the bucket's production cost pro rata of their HT (`pool`).
         self.prod_cost = 0.0
+        self.prod_parts: dict[str, float] = {}
         self.margin: dict[str, dict[str, float]] = {d: {} for d in MARGIN_DIMS}
         self.pool: dict[str, dict[str, float]] = {d: {} for d in MARGIN_DIMS}
         self.ttc_approx = False
@@ -370,8 +371,11 @@ def build_revenue_series(
         d[1] += ttc_of(m.line.amount, m.item)[0]
         totals.setdefault(bucket_key_for(m.line.day, g), _Acc()).add(m.line, m.item, m.segment, production_from)
     if production:
-        for day, cost in production.by_day.items():
-            totals.setdefault(bucket_key_for(day, g), _Acc()).prod_cost += cost
+        for day, parts in production.by_day.items():
+            acc = totals.setdefault(bucket_key_for(day, g), _Acc())
+            for part, cost in parts.items():
+                acc.prod_cost += cost
+                acc.prod_parts[part] = acc.prod_parts.get(part, 0) + cost
 
     keys: list[str] = []
     for day in all_days(from_, to):
@@ -448,6 +452,8 @@ def build_revenue_series(
                 "bySegmentTtc": _round_record(sp["segment_ttc"]),
                 "cost": js_round(acc.cost + acc.prod_cost),
                 "marginSplit": acc.margin_split(),
+                # What the cost is made of: Zoho item costs, then the services' print and labour costs.
+                "costParts": _round_record({"items": acc.cost, **acc.prod_parts}),
                 "costedHt": js_round(acc.costed_ht),
                 "projection": projection,
                 "projectionMethod": projection_method,

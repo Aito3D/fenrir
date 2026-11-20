@@ -13145,6 +13145,16 @@ export default {
       last: 'dernier {{day}}',
       failed: 'Modification non enregistrée',
     },
+    breakdown: {
+      label: 'Détail de la marge brute',
+      costedHt: 'CA HT chiffré',
+      items: 'Coût des articles',
+      filament: 'Filament',
+      energy: 'Énergie',
+      wear: 'Usure des imprimantes',
+      labor: 'Main-d\'œuvre',
+      margin: 'Marge brute HT',
+    },
     labor: {
       title: 'Main-d\'œuvre',
       intro: 'Employés et prestataires (modélisation, scan 3D, finition…) : chacun coûte taux × heures sur ses jours travaillés, déduit de la marge des services. Sans date de début, compté depuis juillet 2026.',

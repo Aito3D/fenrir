@@ -13184,6 +13184,16 @@ export default {
       last: 'laatst {{day}}',
       failed: 'Wijziging niet opgeslagen',
     },
+    breakdown: {
+      label: 'Opbouw van de brutomarge',
+      costedHt: 'Omzet HT met kostprijs',
+      items: 'Artikelkosten',
+      filament: 'Filament',
+      energy: 'Energie',
+      wear: 'Printerslijtage',
+      labor: 'Personeel',
+      margin: 'Brutomarge HT',
+    },
     labor: {
       title: 'Personeelskosten',
       intro: 'Medewerkers en freelancers (modelleren, 3D-scans, afwerking…): elk kost tarief × uren op de werkdagen, afgetrokken van de dienstenmarge. Zonder startdatum geteld vanaf juli 2026.',

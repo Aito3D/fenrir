@@ -597,11 +597,13 @@ def test_arabic_indic_digits_are_not_bucket_keys_or_days():
 
 
 def test_print_costs_cost_the_services_from_the_first_logged_day_and_skip_sliced_views():
-    prod = ProductionCosts(by_day={"2026-09-10": 300.0, "2026-10-02": 50.0}, first_day="2026-09-10")
+    prod = ProductionCosts(
+        by_day={"2026-09-10": {"filament": 100.0, "labor": 200.0}, "2026-10-02": {"wear": 50.0}}, first_day="2026-09-10"
+    )
     lines = [line("2026-09-05", "print", 1000), line("2026-09-20", "print", 2000), line("2026-10-03", "pla", 700)]
     sep, oct_ = series(lines=lines, production=prod)
     # The 09-05 sale predates the log, so only the 09-20 one counts as costed.
-    has(sep, {"cost": 300, "costedHt": 2000})
+    has(sep, {"cost": 300, "costedHt": 2000, "costParts": {"items": 0, "filament": 100, "labor": 200}})
     has(oct_, {"cost": 50, "costedHt": 0})
     for f in (LineFilters(kind="goods"), LineFilters(brands=frozenset({"aito3d"})), LineFilters(segment="pro")):
         assert series(lines=lines, production=prod, filters=f)[0]["cost"] == 0
@@ -613,7 +615,9 @@ def test_margin_split_charges_zoho_costs_per_line_and_print_costs_pro_rata_of_se
         **ITEMS,
         "pla": ScopeItem("pla", "SUNLU PLA", brand="SUNLU", nature="Filaments", item_type="inventory", unit_cost=300),
     }
-    prod = ProductionCosts(by_day={"2026-09-10": 600.0, "2026-10-05": 80.0}, first_day="2026-09-01")
+    prod = ProductionCosts(
+        by_day={"2026-09-10": {"wear": 600.0}, "2026-10-05": {"energy": 80.0}}, first_day="2026-09-01"
+    )
     lines = [
         line("2026-09-03", "pla", 1000, 2),
         line("2026-09-20", "print", 2000, customer_id="c1"),
@@ -627,5 +631,6 @@ def test_margin_split_charges_zoho_costs_per_line_and_print_costs_pro_rata_of_se
     assert sp["kind"] == {"Biens": 400, "Services": 2400}
     assert sp["segment"] == {"inconnu": 400 + 800, "pro": 1600}
     assert sum(sp["brand"].values()) == sep["costedHt"] - sep["cost"]
+    assert sep["costParts"] == {"items": 600, "wear": 600}
     # No service sold: the print cost lands on the unallocated keys.
     assert oct_["marginSplit"]["nature"] == {"Sans nature": -80}

@@ -9,6 +9,8 @@ import { REVENUE_HISTORY_START } from './lib/dates';
 import type { RangeChoice } from './lib/dashboard';
 import type { CustomerSegment, RangePresetId, RevenueGranularity, RevenueKind } from './lib/types';
 
+const MONTHS = Array.from({ length: 12 }, (_, i) => i);
+
 export const PICK_CLS = `inline-flex items-center gap-1.5 rounded-lg border border-bambu-dark-tertiary bg-bambu-dark-secondary px-3 py-1.5 text-[13px] text-bambu-gray-light hover:text-white disabled:opacity-40 disabled:hover:text-bambu-gray-light ${focusRingCls}`;
 const MENU_ITEM = `w-full rounded-md px-3 py-1.5 text-left text-sm transition-colors ${focusRingCls}`;
 const menuItemCls = (on: boolean) => `${MENU_ITEM} ${on ? 'bg-bambu-dark-tertiary text-white' : 'text-bambu-gray-light hover:bg-bambu-dark-tertiary hover:text-white'}`;
@@ -122,10 +124,28 @@ export function RevenueControls(p: {
     return () => window.removeEventListener('keydown', h);
   }, []);
 
+  const thisYear = Number(p.today.slice(0, 4));
+  const firstYear = Number(REVENUE_HISTORY_START.slice(0, 4));
+  const [monthYear, setMonthYear] = useState(thisYear);
+  /** A calendar month, its end clamped to today. */
+  const monthRange = (year: number, i: number) => {
+    const from = `${year}-${String(i + 1).padStart(2, '0')}-01`;
+    const last = new Date(Date.UTC(year, i + 1, 0)).toISOString().slice(0, 10);
+    return { from, to: last > p.today ? p.today : last };
+  };
+  const monthShort = new Intl.DateTimeFormat(i18n.language, { month: 'short', timeZone: 'UTC' });
+  const monthLong = new Intl.DateTimeFormat(i18n.language, { month: 'long', year: 'numeric', timeZone: 'UTC' });
+  // A custom range that is exactly one calendar month (to today for this one) is named after it.
+  const pickedMonth = (() => {
+    if (p.range.preset !== 'custom') return null;
+    const [y, m] = p.range.from.split('-').map(Number);
+    const r = monthRange(y, m - 1);
+    return r.from === p.range.from && r.to === p.range.to ? monthLong.format(Date.UTC(y, m - 1, 1)) : null;
+  })();
   const short = new Intl.DateTimeFormat(i18n.language, { day: 'numeric', month: 'short', year: '2-digit', timeZone: 'UTC' });
   const day = (d: string) => short.format(new Date(`${d}T00:00:00Z`));
   const rangeLabel =
-    p.range.preset === 'custom' ? t('revenue.controls.custom') : p.range.preset === 'default' ? t('revenue.controls.auto') : t(`revenue.controls.${PRESET_KEY[p.range.preset]}`);
+    p.range.preset === 'custom' ? (pickedMonth ?? t('revenue.controls.custom')) : p.range.preset === 'default' ? t('revenue.controls.auto') : t(`revenue.controls.${PRESET_KEY[p.range.preset]}`);
   // An incomplete, inverted or out-of-bounds pair stays a local draft, tied to the range it was typed
   // against: once the applied range moves (stepping, granularity, a preset) the draft is ignored.
   const appliedFrom = p.range.preset === 'custom' ? p.range.from : p.from;
@@ -167,6 +187,42 @@ export function RevenueControls(p: {
                   onClick={() => { p.onRange({ preset: 'default' }); setDraft(null); close(); }}>
                   {t('revenue.controls.auto')} <span className="text-xs text-bambu-gray">{t('revenue.controls.autoHint')}</span>
                 </button>
+              </div>
+              <div className="space-y-1.5 border-t border-bambu-dark-tertiary pt-2">
+                <div className="flex items-center justify-between px-1">
+                  <p className="text-xs uppercase tracking-wide text-bambu-gray">{t('revenue.controls.month')}</p>
+                  <div className="flex items-center gap-1">
+                    <button type="button" className={`rounded p-0.5 text-bambu-gray hover:text-white disabled:opacity-30 ${focusRingCls}`} aria-label={t('revenue.targets.prevYear')}
+                      disabled={monthYear <= firstYear} onClick={() => setMonthYear((y) => y - 1)}>
+                      <ChevronLeft aria-hidden className="h-3.5 w-3.5" />
+                    </button>
+                    <span className="text-xs tabular-nums text-white">{monthYear}</span>
+                    <button type="button" className={`rounded p-0.5 text-bambu-gray hover:text-white disabled:opacity-30 ${focusRingCls}`} aria-label={t('revenue.targets.nextYear')}
+                      disabled={monthYear >= thisYear} onClick={() => setMonthYear((y) => y + 1)}>
+                      <ChevronRight aria-hidden className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
+                </div>
+                <div className="grid grid-cols-4 gap-1">
+                  {MONTHS.map((i) => {
+                    const m = monthRange(monthYear, i);
+                    const picked = p.range.preset === 'custom' && p.range.from === m.from && p.range.to === m.to;
+                    return (
+                      <button key={i} type="button" aria-pressed={picked} disabled={m.to < REVENUE_HISTORY_START || m.from > p.today}
+                        aria-label={monthLong.format(Date.UTC(monthYear, i, 1))}
+                        className={`rounded-md px-1 py-1 text-xs capitalize disabled:opacity-30 ${picked ? 'bg-bambu-green text-white' : 'text-bambu-gray-light hover:bg-bambu-dark-tertiary hover:text-white'} ${focusRingCls}`}
+                        onClick={() => {
+                          p.onRange({ preset: 'custom', ...m });
+                          // A month in month or year buckets is a single column: show its days.
+                          if (p.granularity === 'month' || p.granularity === 'year') p.onGranularity('day');
+                          setDraft(null);
+                          close();
+                        }}>
+                        {monthShort.format(Date.UTC(monthYear, i, 1)).replace('.', '')}
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
               <div className="space-y-1.5 border-t border-bambu-dark-tertiary pt-2">
                 <p className="px-1 text-xs uppercase tracking-wide text-bambu-gray">{t('revenue.controls.custom')}</p>

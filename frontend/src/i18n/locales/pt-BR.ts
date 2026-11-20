@@ -13145,6 +13145,16 @@ export default {
       last: 'último {{day}}',
       failed: 'Alteração não salva',
     },
+    breakdown: {
+      label: 'Detalhe da margem bruta',
+      costedHt: 'Faturamento HT com custo',
+      items: 'Custo dos itens',
+      filament: 'Filamento',
+      energy: 'Energia',
+      wear: 'Desgaste das impressoras',
+      labor: 'Mão de obra',
+      margin: 'Margem bruta HT',
+    },
     labor: {
       title: 'Mão de obra',
       intro: 'Funcionários e prestadores (modelagem, escaneamento 3D, acabamento…): cada um custa taxa × horas nos seus dias úteis, deduzido da margem dos serviços. Sem data de início, contado desde julho de 2026.',

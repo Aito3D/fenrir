@@ -6,6 +6,7 @@ import { AXIS, GRID, SERVICE_COLORS } from '../aito/stats/palette';
 import { Legend, LegendList, Panel } from '../aito/stats/primitives';
 import { CHART_TOOLTIP_STYLE } from '../stats/chartTheme';
 import { focusRingCls } from '../formStyles';
+import { MarginBreakdown } from './MarginBreakdown';
 import { RevenueNotes } from './RevenueNotes';
 import { RevenueSegmented } from './RevenueSegmented';
 import { drillDown } from './lib/analysis';
@@ -253,6 +254,7 @@ export function RevenueChart({ payload, controls, can, onStack, onDrill, drillDe
         {c.segments.map((seg, j) => seg.value !== 0 && (
           <p key={seg.key} className="flex justify-between gap-4"><span className="truncate">{nameOf(series[j])}</span><span className="tabular-nums">{formatFcp(seg.value)}</span></p>
         ))}
+        {margin && <MarginBreakdown bucket={payload.buckets[row.i]} className="mt-1 border-t border-bambu-dark-tertiary pt-1" />}
         <p className="tabular-nums">{t('revenue.chart.cumulative')} {formatFcp(c.cumulative)}</p>
         {proj != null && <p className="tabular-nums">{t('revenue.chart.projection')} {formatFcp(proj)}</p>}
         {target != null && <p className="tabular-nums" style={{ color: TARGET_COLOR }}>{t('revenue.chart.target')} {formatFcp(target)}</p>}

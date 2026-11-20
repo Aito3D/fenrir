@@ -12742,6 +12742,16 @@ export default {
       last: '최근 {{day}}',
       failed: '변경 사항이 저장되지 않았습니다',
     },
+    breakdown: {
+      label: '매출총이익 내역',
+      costedHt: '원가 확인 매출 HT',
+      items: '품목 원가',
+      filament: '필라멘트',
+      energy: '전력',
+      wear: '프린터 마모',
+      labor: '인건비',
+      margin: '매출총이익 HT',
+    },
     labor: {
       title: '인건비',
       intro: '직원 및 외주 (모델링, 3D 스캔, 후가공…): 각자 근무일마다 시급 × 시간이 들며 서비스 마진에서 차감됩니다. 시작일이 없으면 2026년 7월부터 계산합니다.',

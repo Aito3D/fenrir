@@ -13145,6 +13145,16 @@ export default {
       last: 'ultimo {{day}}',
       failed: 'Modifica non salvata',
     },
+    breakdown: {
+      label: 'Dettaglio del margine lordo',
+      costedHt: 'Fatturato HT con costo',
+      items: 'Costo articoli',
+      filament: 'Filamento',
+      energy: 'Energia',
+      wear: 'Usura stampanti',
+      labor: 'Manodopera',
+      margin: 'Margine lordo HT',
+    },
     labor: {
       title: 'Manodopera',
       intro: 'Dipendenti e collaboratori (modellazione, scansione 3D, finitura…): ognuno costa tariffa × ore nei suoi giorni lavorativi, dedotto dal margine dei servizi. Senza data di inizio, conteggiato da luglio 2026.',

@@ -13168,6 +13168,16 @@ export default {
       last: 'último {{day}}',
       failed: 'Cambio no guardado',
     },
+    breakdown: {
+      label: 'Desglose del margen bruto',
+      costedHt: 'Facturación HT con coste',
+      items: 'Coste de artículos',
+      filament: 'Filamento',
+      energy: 'Energía',
+      wear: 'Desgaste de impresoras',
+      labor: 'Mano de obra',
+      margin: 'Margen bruto HT',
+    },
     labor: {
       title: 'Mano de obra',
       intro: 'Empleados y proveedores (modelado, escaneo 3D, acabado…): cada uno cuesta tarifa × horas en sus días laborables, descontado del margen de servicios. Sin fecha de inicio, se cuenta desde julio de 2026.',

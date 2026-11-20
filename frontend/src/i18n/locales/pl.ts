@@ -13365,6 +13365,16 @@ export default {
       last: 'ostatnio {{day}}',
       failed: 'Zmiana niezapisana',
     },
+    breakdown: {
+      label: 'Rozbicie marży brutto',
+      costedHt: 'Przychód HT z kosztem',
+      items: 'Koszt towarów',
+      filament: 'Filament',
+      energy: 'Energia',
+      wear: 'Zużycie drukarek',
+      labor: 'Praca',
+      margin: 'Marża brutto HT',
+    },
     labor: {
       title: 'Koszty pracy',
       intro: 'Pracownicy i podwykonawcy (modelowanie, skan 3D, wykańczanie…): każdy kosztuje stawkę × godziny w dni robocze, odejmowane od marży usług. Bez daty początkowej liczone od lipca 2026.',
