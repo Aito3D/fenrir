@@ -123,7 +123,7 @@ export function OrderBoardPage() {
   const [statsOpen, setStatsOpen] = useState(readStatsOpen);
   const [shown, setShown] = useState(PAGE);
   const [start, setStart] = useState<{ id: string; target: string; tick: number } | null>(null);
-  // A counter order being drafted: the board steps aside (filters, figures and the other orders hidden) until it is created or abandoned.
+  // A counter order being drafted, in a modal over the board until it is created or closed.
   const [drafting, setDrafting] = useState(false);
   const scrollTarget = useRef<{ id: string; block: ScrollLogicalPosition } | null>(null);
   // One order is open at a time and the URL says which (`?order=`): a copied address or Back lands on it.
@@ -456,16 +456,15 @@ export function OrderBoardPage() {
         </div>
       )}
 
-      {drafting ? (
+      {drafting && (
         <NewOrderDraftRow
-          hiddenCount={all.length}
           currency={all[0]?.currency ?? finishedQuery.data?.rows[0]?.currency ?? ''}
           open={all}
           finished={finishedQuery.data?.rows ?? []}
           onCreated={onCreated}
           onClose={() => setDrafting(false)}
         />
-      ) : (<>
+      )}
       {phone && (
         <>
           <div className="-mx-4 mb-3 flex gap-2 overflow-x-auto px-4 pb-1">
@@ -601,7 +600,6 @@ export function OrderBoardPage() {
           {close => controlsEl('sheet', close)}
         </Sheet>
       )}
-      </>)}
       {phone && hasPermission('orders:update') && !drafting && (
         <button
           type="button"

@@ -924,20 +924,17 @@ describe('OrderBoardPage actions', () => {
     const zohoStatus = () => server.use(http.get('/api/v1/zoho/status', () =>
       HttpResponse.json({ configured: true, reachable: true, default_contact_id: 'walk-in', default_contact_name: 'Client de passage' })));
 
-    it('new order hides other rows and filters', async () => {
+    it('new order opens a modal over the board and closes back to it', async () => {
       zohoStatus();
       serve(board());
       render(<OrderBoardPage />);
       await screen.findByText('SO-00412');
       fireEvent.click(screen.getByRole('button', { name: 'New order' }));
-      expect(await screen.findByText('3 other orders hidden while you create this one')).toBeInTheDocument();
-      expect(screen.queryByText('SO-00412')).not.toBeInTheDocument();
-      expect(screen.queryByPlaceholderText('Order number, customer, product, SKU…')).not.toBeInTheDocument();
-      expect(screen.queryByTestId('orders-tiles')).not.toBeInTheDocument();
-      expect(screen.queryByRole('button', { name: 'Figures' })).not.toBeInTheDocument();
+      expect(await screen.findByRole('dialog', { name: 'New order' })).toBeInTheDocument();
+      expect(screen.getByText('SO-00412')).toBeInTheDocument();
 
       fireEvent.click(screen.getByRole('button', { name: 'Abandon' }));
-      expect(await screen.findByText('SO-00412')).toBeInTheDocument();
+      await waitFor(() => expect(screen.queryByRole('dialog', { name: 'New order' })).not.toBeInTheDocument());
       expect(screen.getByTestId('orders-tiles')).toBeInTheDocument();
     });
 
