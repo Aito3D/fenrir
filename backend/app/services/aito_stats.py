@@ -204,6 +204,9 @@ class _StageScan:
     stays: dict[int, list[_Stay]] = field(default_factory=lambda: defaultdict(list))
     backward: dict[int, list[datetime]] = field(default_factory=lambda: defaultdict(list))
     done: dict[int, datetime] = field(default_factory=dict)
+    # First real move into Finition (or straight into Done when the card skipped
+    # it): the work is finished there, the rest is the client's pickup.
+    ready: dict[int, datetime] = field(default_factory=dict)
 
 
 async def _scan_stages(
@@ -243,6 +246,8 @@ async def _scan_stages(
             scan.backward[pid].append(at)
         if to == "done" and pid not in scan.done:
             scan.done[pid] = at
+        if to in ("finish", "done") and pid not in scan.ready:
+            scan.ready[pid] = at
     return scan
 
 
@@ -533,6 +538,19 @@ async def _tracking(
     )
 
 
+async def _view_times(db: AsyncSession, ids: list[int], start: datetime | None, end: datetime | None) -> list[datetime]:
+    """Moments of every tracking-page open of these cards in the window, for
+    the daily series and the previous-window count."""
+    if not ids:
+        return []
+    stmt = select(AitoTrackingView.viewed_at).where(AitoTrackingView.project_id.in_(ids))
+    if start is not None:
+        stmt = stmt.where(AitoTrackingView.viewed_at >= start)
+    if end is not None:
+        stmt = stmt.where(AitoTrackingView.viewed_at <= end)
+    return list((await db.execute(stmt)).scalars())
+
+
 def _days_between(a: datetime, b: datetime) -> float:
     return max(0.0, (b - a).total_seconds() / _DAY_SECONDS)
 
@@ -549,6 +567,7 @@ def _throughput(
     start: datetime | None,
     end: datetime | None,
     days: int | None,
+    ready: dict[int, datetime] | None = None,
 ) -> AitoStatsThroughput:
     """Counts and lead times for one window. ``born``/``accepted``/``done``
     are the first-moment maps, already bounded by the request's ``end``, so
@@ -562,6 +581,13 @@ def _throughput(
     production = [
         _days_between(accepted[pid], at) for pid, at in finished.items() if pid in accepted and accepted[pid] <= at
     ]
+    # Our own work only: acceptance to the card reaching Finition, counted in
+    # the window where it got there.
+    make = [
+        _days_between(accepted[pid], at)
+        for pid, at in (ready or {}).items()
+        if _in_range(at, start, end) and pid in accepted and accepted[pid] <= at
+    ]
     return AitoStatsThroughput(
         created=created,
         accepted=sum(1 for at in accepted.values() if _in_range(at, start, end)),
@@ -570,6 +596,8 @@ def _throughput(
         lead_days=(round(fmean(leads), 2) if leads else None),
         lead_days_median=(round(median(leads), 2) if leads else None),
         production_days=(round(fmean(production), 2) if production else None),
+        make_days=(round(fmean(make), 2) if make else None),
+        make_days_median=(round(median(make), 2) if make else None),
         active=sum(1 for p in projects.values() if p.board_column != "done"),
     )
 
@@ -579,6 +607,7 @@ def _daily(
     accepted: dict[int, datetime],
     declined: dict[int, datetime],
     done: dict[int, datetime],
+    views: list[datetime],
     first_day: date | None,
     last_day: date | None,
     tz_offset_minutes: int,
@@ -589,15 +618,17 @@ def _daily(
     # see `compute_aito_stats`, which clamps it once and reuses that same
     # value for `days`/`per_day` and the throughput window so every figure
     # on the page describes the same span this loop emits.
-    counts: dict[date, list[int]] = defaultdict(lambda: [0, 0, 0, 0])
+    counts: dict[date, list[int]] = defaultdict(lambda: [0, 0, 0, 0, 0])
     for index, moments in enumerate((born, accepted, declined, done)):
         for at in moments.values():
             counts[_local_day(at, tz_offset_minutes)][index] += 1
+    for at in views:
+        counts[_local_day(at, tz_offset_minutes)][4] += 1
     rows: list[AitoStatsDay] = []
     day = first_day
     while day <= last_day:
-        c = counts.get(day, [0, 0, 0, 0])
-        rows.append(AitoStatsDay(day=day, created=c[0], accepted=c[1], declined=c[2], done=c[3]))
+        c = counts.get(day, [0, 0, 0, 0, 0])
+        rows.append(AitoStatsDay(day=day, created=c[0], accepted=c[1], declined=c[2], done=c[3], tracking_views=c[4]))
         day += timedelta(days=1)
     return rows
 
@@ -676,7 +707,10 @@ async def compute_aito_stats(
     # keep reading the caller's own `start`/`end`.
     throughput_start = local_day_bounds(first_day, None, tz_offset_minutes)[0] if first_day is not None else None
 
-    throughput = _throughput(projects, born, accepted, done, throughput_start, end, days)
+    throughput = _throughput(projects, born, accepted, done, throughput_start, end, days, scan.ready)
+    # One read covers the chart's span and, when there is one, the previous window.
+    views_from = start - timedelta(days=days) if start is not None and end is not None and days else throughput_start
+    views = await _view_times(db, ids, views_from, end)
     previous = None
     if start is not None and end is not None and days:
         prev = _throughput(
@@ -689,6 +723,7 @@ async def compute_aito_stats(
             declined=sum(1 for at in declined.values() if _in_range(at, prev_start, prev_end)),
             done=prev.done,
             lead_days=prev.lead_days,
+            tracking_views=sum(1 for at in views if _in_range(at, prev_start, prev_end)),
         )
 
     acc = _bucket(accepted, projects, start, end)
@@ -722,7 +757,7 @@ async def compute_aito_stats(
         tracking=await _tracking(db, projects, start, end),
         throughput=throughput,
         previous=previous,
-        daily=_daily(born, accepted, declined, done, first_day, last_day, tz_offset_minutes),
+        daily=_daily(born, accepted, declined, done, views, first_day, last_day, tz_offset_minutes),
         quote_age=_quote_age(projects, now),
         size_bands=_size_bands(projects, accepted, declined, start, end),
         overdue=_overdue(projects, today),

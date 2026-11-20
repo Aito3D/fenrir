@@ -1,8 +1,8 @@
 import { useCallback, useState } from 'react';
 
-/** The period's five screens, in tab order. */
-export type StatsScreen = 'overview' | 'sales' | 'time' | 'money' | 'clients';
-export const STATS_SCREENS: readonly StatsScreen[] = ['overview', 'sales', 'time', 'money', 'clients'];
+/** The period's six screens, in tab order. */
+export type StatsScreen = 'overview' | 'sales' | 'time' | 'money' | 'clients' | 'tracking';
+export const STATS_SCREENS: readonly StatsScreen[] = ['overview', 'sales', 'time', 'money', 'clients', 'tracking'];
 
 export const statsTabId = (id: StatsScreen) => `aito-stats-tab-${id}`;
 export const statsScreenId = (id: StatsScreen) => `aito-stats-screen-${id}`;

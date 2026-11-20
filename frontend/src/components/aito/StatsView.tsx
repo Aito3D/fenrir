@@ -14,6 +14,7 @@ import { SalesScreen } from './stats/SalesScreen';
 import { ScreenTabs } from './stats/ScreenTabs';
 import { statsScreenId, statsTabId, useStatsScreen } from './stats/screens';
 import { TimeScreen } from './stats/TimeScreen';
+import { TrackingScreen } from './stats/TrackingScreen';
 import { TodayStrip, type BriefInput } from './stats/TodayStrip';
 
 /** The board's statistics view: today above the line, the period below it.
@@ -130,6 +131,8 @@ function Screen({ screen, data }: { screen: ReturnType<typeof useStatsScreen>[0]
       return <MoneyScreen data={data} />;
     case 'clients':
       return <ClientsScreen data={data} />;
+    case 'tracking':
+      return <TrackingScreen data={data} />;
     default:
       return <OverviewScreen data={data} />;
   }

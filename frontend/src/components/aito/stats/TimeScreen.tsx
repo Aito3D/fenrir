@@ -30,7 +30,8 @@ export function TimeScreen({ data }: { data: AitoStats }) {
   if (rework && rework.moves > 0) {
     clauses.push(t('aito.stats.finding.timeRework', { count: rework.moves, cards: t('aito.stats.facts.cards', { count: rework.cards }) }));
   }
-  const lead = tp?.lead_days == null ? t('aito.stats.finding.timeNone') : t('aito.stats.finding.timeLead', { days: days(tp.lead_days) });
+  // Headline is our own work (acceptance → Finition), not the client's yes or pickup.
+  const lead = tp?.make_days == null ? t('aito.stats.finding.timeMakeNone') : t('aito.stats.finding.timeMake', { days: days(tp.make_days) });
 
   return (
     <div className="grid gap-3">
@@ -87,6 +88,12 @@ export function TimeScreen({ data }: { data: AitoStats }) {
           <Panel title={t('aito.stats.timings')}>
           <Facts
             rows={[
+              {
+                testId: 'aito-stats-make-time',
+                label: t('aito.stats.makeTime'),
+                value: days(tp?.make_days),
+                note: tp?.make_days_median == null ? undefined : t('aito.stats.median', { days: tp.make_days_median.toFixed(1) }),
+              },
               {
                 label: t('aito.stats.leadTime'),
                 value: days(tp?.lead_days),

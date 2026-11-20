@@ -456,6 +456,23 @@ async def test_tracking_block_excludes_views_of_a_trashed_card(async_client, db_
     assert body["tracking"] == {"views": 2, "cards_viewed": 2, "cards_with_link": 2}
 
 
+@pytest.mark.asyncio
+async def test_tracking_views_land_in_daily_local_days_and_previous_window(async_client, db_session):
+    a = await _create(async_client)
+    await _view(db_session, a, "2026-03-05 23:30:00")  # 2026-03-06 at UTC+1
+    await _view(db_session, a, "2026-03-07 09:00:00")
+    await _view(db_session, a, "2026-03-02 09:00:00")  # previous window (Feb 28 - Mar 4)
+
+    body = (
+        await async_client.get(
+            STATS, params={"date_from": "2026-03-05", "date_to": "2026-03-09", "tz_offset_minutes": 60}
+        )
+    ).json()
+    assert [d["tracking_views"] for d in body["daily"]] == [0, 1, 1, 0, 0]
+    assert body["previous"]["tracking_views"] == 1
+    assert body["tracking"]["views"] == 2
+
+
 # ---------------------------------------------------------------------------
 # Statistics view: throughput / previous / daily
 # ---------------------------------------------------------------------------
@@ -488,6 +505,32 @@ async def test_throughput_counts_created_accepted_done_in_range(async_client, db
     # production: only a has an acceptance -> 2 days 1h = 2.04
     assert tp["production_days"] == 2.04
     assert tp["active"] == 1  # c is still on the board
+
+
+@pytest.mark.asyncio
+async def test_make_days_run_from_acceptance_to_the_first_move_into_finish(async_client, db_session):
+    """Our own work only: the client's pickup wait in Finition is not counted,
+    and a card that skipped Finition counts at its move into Done."""
+    a = await _create(async_client)
+    b = await _create(async_client)
+    for pid in (a, b):
+        await _move_event(db_session, pid, "project.created", "2026-02-20 10:00:00")
+    await _event(db_session, a, "quote.accepted", "2026-03-01 10:00:00")
+    await _event(db_session, a, "stage.changed", "2026-03-03 10:00:00", changes=_stage("print", "finish"))
+    await _event(db_session, a, "stage.changed", "2026-03-05 10:00:00", changes=_stage("finish", "print"))
+    await _event(db_session, a, "stage.changed", "2026-03-06 10:00:00", changes=_stage("print", "finish"))
+    await _event(db_session, a, "stage.changed", "2026-03-09 10:00:00", changes=_stage("finish", "done"))
+    await _event(db_session, b, "quote.accepted", "2026-03-02 10:00:00")
+    await _event(db_session, b, "stage.changed", "2026-03-08 10:00:00", changes=_stage("print", "done"))
+
+    tp = (await async_client.get(STATS, params={"date_from": "2026-03-01", "date_to": "2026-03-10"})).json()[
+        "throughput"
+    ]
+    # a: 2 days to its FIRST Finition; b: 6 days straight to Done.
+    assert tp["make_days"] == 4.0
+    assert tp["make_days_median"] == 4.0
+    later = (await async_client.get(STATS, params={"date_from": "2026-03-04", "date_to": "2026-03-10"})).json()
+    assert later["throughput"]["make_days"] == 6.0  # a reached Finition before this window
 
 
 @pytest.mark.asyncio
@@ -541,7 +584,14 @@ async def test_previous_block_is_the_preceding_window_of_equal_length(async_clie
     r = await async_client.get(STATS, params={"date_from": "2026-03-04", "date_to": "2026-03-08"})
     body = r.json()
     assert body["throughput"]["created"] == 1
-    assert body["previous"] == {"created": 1, "accepted": 0, "declined": 1, "done": 0, "lead_days": None}
+    assert body["previous"] == {
+        "created": 1,
+        "accepted": 0,
+        "declined": 1,
+        "done": 0,
+        "lead_days": None,
+        "tracking_views": 0,
+    }
 
 
 @pytest.mark.asyncio

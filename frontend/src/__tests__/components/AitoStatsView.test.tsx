@@ -198,7 +198,7 @@ describe('StatsView', () => {
     expect(document.activeElement).toBe(screen.getByRole('tab', { name: 'Clients' }));
     expect(await screen.findByTestId('aito-stats-arrivals')).toBeInTheDocument();
 
-    // Clients is the last tab, so ArrowLeft steps back to Money (no wrap needed here).
+    // ArrowLeft steps back to Money.
     await user.keyboard('{ArrowLeft}');
     expect(screen.getByRole('tab', { name: 'Money' })).toHaveAttribute('aria-selected', 'true');
     expect(document.activeElement).toBe(screen.getByRole('tab', { name: 'Money' }));
@@ -210,17 +210,17 @@ describe('StatsView', () => {
     expect(document.activeElement).toBe(screen.getByRole('tab', { name: 'Overview' }));
     expect(await screen.findByTestId('aito-stats-band')).toBeInTheDocument();
 
-    // End jumps to the last screen, back to Clients.
+    // End jumps to the last screen, Tracking.
     await user.keyboard('{End}');
-    expect(screen.getByRole('tab', { name: 'Clients' })).toHaveAttribute('aria-selected', 'true');
-    expect(document.activeElement).toBe(screen.getByRole('tab', { name: 'Clients' }));
-    expect(await screen.findByTestId('aito-stats-arrivals')).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: 'Tracking' })).toHaveAttribute('aria-selected', 'true');
+    expect(document.activeElement).toBe(screen.getByRole('tab', { name: 'Tracking' }));
+    expect(await screen.findByTestId('aito-stats-tracking-band')).toBeInTheDocument();
 
     unmount();
     render(view());
-    // sessionStorage kept the last screen, so the view comes back on Clients.
-    expect(await screen.findByTestId('aito-stats-arrivals')).toBeInTheDocument();
-    expect(screen.getByRole('tab', { name: 'Clients' })).toHaveAttribute('aria-selected', 'true');
+    // sessionStorage kept the last screen, so the view comes back on Tracking.
+    expect(await screen.findByTestId('aito-stats-tracking-band')).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: 'Tracking' })).toHaveAttribute('aria-selected', 'true');
   });
 
   it('shows the empty line instead of a blank chart when nothing happened', async () => {

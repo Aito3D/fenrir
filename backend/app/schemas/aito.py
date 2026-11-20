@@ -1360,6 +1360,10 @@ class AitoStatsThroughput(BaseModel):
     lead_days_median: float | None
     # Mean days from the quote's acceptance to Done, over done cards that have one.
     production_days: float | None
+    # Mean and median days from the acceptance to the first move into Finition
+    # (or Done when it was skipped), over cards that got there in the period.
+    make_days: float | None = None
+    make_days_median: float | None = None
     # Snapshot: active cards not in Done.
     active: int
 
@@ -1372,6 +1376,7 @@ class AitoStatsPrevious(BaseModel):
     declined: int
     done: int
     lead_days: float | None
+    tracking_views: int = 0
 
 
 class AitoStatsDay(BaseModel):
@@ -1382,6 +1387,8 @@ class AitoStatsDay(BaseModel):
     accepted: int
     declined: int
     done: int
+    # Opens of the public tracking page that day (active cards only, like `tracking`).
+    tracking_views: int = 0
 
 
 class AitoStatsQuoteAge(BaseModel):

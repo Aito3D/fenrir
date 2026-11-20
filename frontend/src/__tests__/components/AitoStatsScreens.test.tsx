@@ -52,7 +52,7 @@ function fixture(overrides: Partial<AitoStats> = {}): AitoStats {
     })),
     invoicing: { invoiced_total: 1800, invoiced_count: 1, outstanding_balance: 300, outstanding_count: 1 },
     tracking: { views: 0, cards_viewed: 0, cards_with_link: 0 },
-    throughput: { created: 3, accepted: 2, done: 1, per_day: 0.1, lead_days: 4.75, lead_days_median: 4.5, production_days: 2.04, active: 12 },
+    throughput: { created: 3, accepted: 2, done: 1, per_day: 0.1, lead_days: 4.75, lead_days_median: 4.5, production_days: 2.04, make_days: 3.2, make_days_median: 2.5, active: 12 },
     previous: { created: 2, accepted: 1, declined: 3, done: 0, lead_days: null },
     daily: [
       { day: '2026-09-01', created: 0, accepted: 0, declined: 1, done: 0 },
@@ -106,7 +106,7 @@ function serve(body: AitoStats) {
 const view = () => <StatsView range={{}} timeframe={{ preset: 'last-30', dateFrom: undefined, dateTo: undefined }} onTimeframeChange={vi.fn()} />;
 
 /** Open one period screen and wait for it. */
-async function open(screenName: 'Sales' | 'Time' | 'Money' | 'Clients', body = fixture()) {
+async function open(screenName: 'Sales' | 'Time' | 'Money' | 'Clients' | 'Tracking', body = fixture()) {
   const user = userEvent.setup();
   serve(body);
   render(view());
@@ -243,7 +243,11 @@ describe('StatsView period screens', () => {
   it('Time: the finding names the slow stage and the rework, the bars are longest first', async () => {
     await open('Time');
     const finding = screen.getByTestId('aito-stats-finding');
-    expect(finding).toHaveTextContent('A project takes 4.8 d from quote to delivery.');
+    // The headline is our own work: acceptance to Finish, not quote to delivery.
+    expect(finding).toHaveTextContent('A project takes 3.2 d of work, from acceptance to Finish.');
+    expect(screen.getByTestId('aito-stats-make-time')).toHaveTextContent('Acceptance to Finish');
+    expect(screen.getByTestId('aito-stats-make-time')).toHaveTextContent('3.2 d');
+    expect(screen.getByTestId('aito-stats-make-time')).toHaveTextContent('2.5');
     expect(finding).toHaveTextContent('Scan is the slow stage at 8.9 d.');
     expect(finding).toHaveTextContent('2 moves went backwards on 1 card.');
 
@@ -284,7 +288,7 @@ describe('StatsView period screens', () => {
     // slow-stage or rework clauses that ride along on top of it in the
     // populated-period test above.
     const finding = screen.getByTestId('aito-stats-finding');
-    expect(finding).toHaveTextContent('No project was delivered in this period.');
+    expect(finding).toHaveTextContent('No project reached Finish in this period.');
     expect(finding).not.toHaveTextContent('moves went backwards');
     expect(finding).not.toHaveTextContent('is the slow stage');
 
@@ -379,6 +383,35 @@ describe('StatsView period screens', () => {
     expect(clientsPanel).not.toHaveTextContent('Nothing happened in this period');
     expect(clientsPanel).toHaveTextContent('New clients');
     expect(clientsPanel).toHaveTextContent('Returning clients');
+  });
+
+  it('Tracking: the finding counts the opens and names the busiest day, the figures follow', async () => {
+    await open(
+      'Tracking',
+      fixture({
+        tracking: { views: 12, cards_viewed: 4, cards_with_link: 9 },
+        previous: { created: 2, accepted: 1, declined: 3, done: 0, lead_days: null, tracking_views: 6 },
+        daily: [
+          { day: '2026-09-01', created: 0, accepted: 0, declined: 1, done: 0, tracking_views: 3 },
+          { day: '2026-09-02', created: 2, accepted: 2, declined: 0, done: 1, tracking_views: 9 },
+        ],
+      }),
+    );
+    const finding = screen.getByTestId('aito-stats-finding');
+    expect(finding).toHaveTextContent('Clients opened their tracking page 12 times.');
+    expect(finding).toHaveTextContent('The busiest day was September 2.');
+    const band = screen.getByTestId('aito-stats-tracking-band');
+    expect(within(band).getByText('Page opens').closest('div.rounded-lg')).toHaveTextContent('12');
+    expect(within(band).getByText('Opens per card viewed').closest('div.rounded-lg')).toHaveTextContent('3.0');
+    expect(within(band).getByText('Cards with a link').closest('div.rounded-lg')).toHaveTextContent('9');
+    expect(within(screen.getByTestId('aito-stats-tracking-chart')).queryByText('Nothing happened in this period')).toBeNull();
+  });
+
+  it('Tracking: says so plainly when nobody opened a page, and works on a backend without daily views', async () => {
+    await open('Tracking');
+    expect(screen.getByTestId('aito-stats-finding')).toHaveTextContent('No client opened a tracking page in this period.');
+    expect(within(screen.getByTestId('aito-stats-tracking-chart')).getByText('Nothing happened in this period')).toBeInTheDocument();
+    expect(within(screen.getByTestId('aito-stats-tracking-band')).getByText('Opens per card viewed').closest('div.rounded-lg')).toHaveTextContent('—');
   });
 
   it('degrades block by block on a backend that predates these blocks', async () => {
