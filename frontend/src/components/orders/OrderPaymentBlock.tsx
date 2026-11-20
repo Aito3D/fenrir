@@ -85,7 +85,18 @@ function Collect({ orderId, currency, left, boardLeft }: { orderId: string; curr
   const openTerminal = async (doc: PaymentDocument) => {
     setOpening(true);
     // A charge still in flight reopens on its waiting screen rather than offering a second one.
-    const current = await api.getOrderTerminalPayment(orderId).catch(() => null);
+    let current: AitoTerminalPayment | null;
+    try {
+      current = await api.getOrderTerminalPayment(orderId);
+    } catch {
+      // The lookup failed: never offer a second charge over one that may still be waiting on the terminal.
+      current = charge.data ?? null;
+      if (!isTerminalOpen(current)) {
+        setOpening(false);
+        showToast(t('common.errorLoading'), 'error');
+        return;
+      }
+    }
     setOpening(false);
     setOpen({ document: doc, hint, terminal: isTerminalOpen(current) ? current : null });
   };

@@ -130,6 +130,21 @@ describe('OrderSmsModal', () => {
     await waitFor(() => expect(record).toHaveBeenCalledWith('so264'));
   });
 
+  it('a failed record after the relay sent still reads as sent, closes, and texts once', async () => {
+    vi.spyOn(api, 'getOrderSmsDraft').mockResolvedValue({ message: DRAFT, kind: 'filaments', partial: false, due: 0 });
+    const posted = relayAnswers(() => new HttpResponse('sent'));
+    const record = vi.spyOn(api, 'recordOrderSms').mockRejectedValue(new Error('500'));
+    const onClose = vi.fn();
+    render(<OrderSmsModal row={row} phone="+689-89530560" onClose={onClose} />);
+    await screen.findByDisplayValue(/tes filaments/);
+    await userEvent.setup().click(screen.getByRole('button', { name: /send sms/i }));
+    expect(await screen.findByText('SMS sent')).toBeInTheDocument();
+    expect(screen.queryByText(/could not send the sms/i)).not.toBeInTheDocument();
+    await waitFor(() => expect(onClose).toHaveBeenCalledTimes(1));
+    expect(posted).toHaveLength(1);
+    expect(record).toHaveBeenCalledTimes(1);
+  });
+
   it('no relay on this machine records nothing and keeps the text', async () => {
     vi.spyOn(api, 'getOrderSmsDraft').mockResolvedValue({ message: DRAFT, kind: 'filaments', partial: false, due: 0 });
     relayAnswers(() => HttpResponse.error());

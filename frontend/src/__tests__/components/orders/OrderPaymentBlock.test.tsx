@@ -162,6 +162,29 @@ describe('OrderPaymentBlock payment buttons', () => {
     expect(screen.queryByLabelText('Amount')).not.toBeInTheDocument();
   });
 
+  it('a failed lookup on reopen falls back to the polled live charge and its waiting screen', async () => {
+    vi.spyOn(api, 'getOrderPaymentTarget').mockResolvedValue(target());
+    const get = vi.spyOn(api, 'getOrderTerminalPayment').mockResolvedValueOnce(tpe()).mockRejectedValue(new Error('429'));
+    render(<OrderPaymentBlock payment={pay()} currency="XPF" orderId="so1" />);
+    await screen.findByText('Terminal · waiting for the card');
+    await userEvent.click(screen.getByRole('button', { name: 'Pay by card on the terminal' }));
+    expect(await screen.findByText('Waiting for the card on the terminal…')).toBeInTheDocument();
+    expect(get.mock.calls.length).toBeGreaterThanOrEqual(2);
+    expect(screen.queryByLabelText('Amount')).not.toBeInTheDocument();
+  });
+
+  it('a failed lookup with no live charge toasts the error and leaves the dialog closed', async () => {
+    vi.spyOn(api, 'getOrderPaymentTarget').mockResolvedValue(target());
+    vi.spyOn(api, 'getOrderTerminalPayment').mockRejectedValue(new Error('429'));
+    render(<OrderPaymentBlock payment={pay()} currency="XPF" orderId="so1" />);
+    const cell = await screen.findByRole('button', { name: 'Pay by card on the terminal' });
+    await userEvent.click(cell);
+    expect(await screen.findByText('Error loading data')).toBeInTheDocument();
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('Amount')).not.toBeInTheDocument();
+    expect(cell).toBeEnabled();
+  });
+
   it('a replayed link shows what it holds, with a note, not what was typed', async () => {
     vi.spyOn(api, 'getOrderPaymentTarget').mockResolvedValue(target());
     const create = vi.spyOn(api, 'createOrderPaymentLink').mockResolvedValue(link({ amount: 3000, document_number: 'FA-OLD' }));
