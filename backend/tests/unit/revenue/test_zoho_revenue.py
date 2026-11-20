@@ -113,3 +113,42 @@ async def test_get_contact_404_raises_not_found(async_client, db_session):
     zoho_service.transport = _books(lambda _r: httpx.Response(404, json={"code": 1002, "message": "nope"}))
     with pytest.raises(ZohoNotFound):
         await zoho_service.get_contact(db_session, "zX")
+
+
+@pytest.mark.asyncio
+async def test_list_customer_payments_page_sends_books_since_oldest_first(async_client, db_session):
+    await _configure(async_client)
+    seen: list[httpx.Request] = []
+    rows = [{"payment_id": "p1", "amount": 10, "last_modified_time": "2026-10-01T08:00:00-1000"}]
+
+    def handler(request):
+        seen.append(request)
+        return httpx.Response(200, json={"customerpayments": rows, "page_context": {"has_more_page": False}})
+
+    zoho_service.transport = _books(handler)
+    got, more = await zoho_service.list_customer_payments_page(db_session, "2025-10-01T10:00:00+0000", 3)
+    assert (got, more) == (rows, False)
+    assert seen[0].url.path == "/books/v3/customerpayments"
+    q = seen[0].url.params
+    assert q["last_modified_time"] == "2025-10-01T10:00:00+0000"
+    assert (q["sort_column"], q["sort_order"], q["per_page"], q["page"]) == ("last_modified_time", "A", "200", "3")
+
+
+@pytest.mark.asyncio
+async def test_get_customer_payment_and_unpaid_invoice_listing(async_client, db_session):
+    await _configure(async_client)
+    seen: list[httpx.Request] = []
+
+    def handler(request):
+        seen.append(request)
+        if request.url.path.endswith("/customerpayments/p1"):
+            return httpx.Response(200, json={"payment": {"invoices": [{"invoice_id": "i1", "amount_applied": 5}]}})
+        return httpx.Response(200, json={"invoices": [{"invoice_id": "i1"}], "page_context": {"has_more_page": True}})
+
+    zoho_service.transport = _books(handler)
+    assert (await zoho_service.get_customer_payment(db_session, "p1"))["invoices"][0]["amount_applied"] == 5
+    got, more = await zoho_service.list_unpaid_invoices_page(db_session, "overdue", 2)
+    assert (got, more) == ([{"invoice_id": "i1"}], True)
+    q = seen[1].url.params
+    assert seen[1].url.path == "/books/v3/invoices"
+    assert (q["status"], q["page"], q["per_page"]) == ("overdue", "2", "200")

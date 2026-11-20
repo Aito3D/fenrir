@@ -14,7 +14,7 @@ from datetime import datetime, timedelta, timezone
 
 from backend.app.core import database
 from backend.app.core.tasks import spawn_background_task
-from backend.app.services.revenue import store
+from backend.app.services.revenue import cash, store
 from backend.app.services.revenue.config import REVENUE_HISTORY_START, REVENUE_LINE_FORMAT, SYNC
 from backend.app.services.revenue.dates import days_between, org_today
 from backend.app.services.revenue.series import RevenueLine
@@ -43,6 +43,8 @@ MONTH_PAGE_CAP = 20  # ungrouped: one row per item sold in the month
 CEILING_POLL_S = 1.0
 DAY_RETRY_CAP_S = 6 * 3600
 FAILED_DAYS_SHOWN = 5
+CASH_PAGE_CAP = 10  # 2 000 payments a run; a capped run resumes from the cursor
+UNPAID_STATUSES = ("unpaid", "overdue", "partially_paid")  # Books' statuses overlap: their union is safe
 
 
 @dataclass(frozen=True)
@@ -62,6 +64,8 @@ _last_call_at = float("-inf")
 _loop_task: asyncio.Task | None = None
 _lane = asyncio.Lock()
 _day_failures: dict[str, DayFailure] = {}
+_cash_at = float("-inf")
+_cash_error: str | None = None
 
 
 class _BudgetLow(Exception):
@@ -171,6 +175,108 @@ def _item_row(it: dict) -> dict:
     }
 
 
+def _payment_row(p: dict) -> dict:
+    return {
+        "payment_id": str(p["payment_id"]),
+        "customer_id": str(p.get("customer_id") or ""),
+        "date": p.get("date") or "",
+        "amount": _num(p.get("amount")) or 0.0,
+        "unapplied": _num(p.get("unused_amount")) or 0.0,
+        "last_modified_time": p.get("last_modified_time") or "",
+    }
+
+
+def _invoice_row(i: dict) -> dict:
+    return {
+        "invoice_id": str(i["invoice_id"]),
+        "number": i.get("invoice_number") or "",
+        "customer_id": str(i.get("customer_id") or ""),
+        "customer_name": i.get("customer_name") or "",
+        "date": i.get("date") or "",
+        "due_date": i.get("due_date") or "",
+        "total": _num(i.get("total")) or 0.0,
+        "balance": _num(i.get("balance")) or 0.0,
+    }
+
+
+async def _refresh_cash(db) -> None:
+    """Payments since the cursor, the unpaid invoices' balances, then a bounded number of detail reads."""
+    today = org_today()
+    async with store.snapshot() as conn:
+        since = await store.get_setting(conn, store.PAYMENTS_SINCE_KEY) or cash.cursor_start(today)
+    for page in range(1, CASH_PAGE_CAP + 1):
+        rows, more = await _paced(zoho_service.list_customer_payments_page, db, since, page)
+        rows = [r for r in rows if r.get("payment_id")]
+        cursor = rows[-1].get("last_modified_time") if rows else None
+        await store.save_payments(db, [_payment_row(r) for r in rows], cursor, _utcnow())
+        if not more:
+            break
+    unpaid: dict[str, dict] = {}
+    truncated = False
+    for status in UNPAID_STATUSES:
+        for page in range(1, CASH_PAGE_CAP + 1):
+            rows, more = await _paced(zoho_service.list_unpaid_invoices_page, db, status, page)
+            unpaid.update((str(r["invoice_id"]), _invoice_row(r)) for r in rows if r.get("invoice_id"))
+            if not more:
+                break
+        else:
+            truncated = True
+    await store.save_unpaid_invoices(db, list(unpaid.values()), not truncated, _utcnow())
+
+    window_start = f"{cash.last_months(today)[0]}-01"
+    async with store.snapshot() as conn:
+        items = await store.read_scope_items(conn)
+        decisions = await store.read_decisions(conn)
+        classes = cash.classify_customers(await store.customer_item_pairs(conn), items, decisions)
+        payments = await store.read_payments(conn, window_start)
+        invoices = await store.read_invoice_shares(conn)
+    payment_ids, invoice_ids = cash.detail_queue(payments, invoices, classes, window_start)
+    payment_ids = payment_ids[: SYNC.cash_detail_budget]
+    for payment_id in payment_ids:
+        try:
+            p = await _paced(zoho_service.get_customer_payment, db, payment_id)
+        except ZohoNotFound:
+            await store.delete_payment(db, payment_id)
+            continue
+        applications = [
+            {"invoiceId": str(a.get("invoice_id") or ""), "amount": _num(a.get("amount_applied")) or 0.0}
+            for a in p.get("invoices") or []
+        ]
+        await store.save_payment_applications(
+            db, payment_id, applications, _num(p.get("unused_amount")) or 0.0, _utcnow()
+        )
+    for invoice_id in invoice_ids[: SYNC.cash_detail_budget - len(payment_ids)]:
+        try:
+            inv = await _paced(zoho_service.get_invoice_raw, db, invoice_id)
+            row = {
+                **_invoice_row({**inv, "invoice_id": invoice_id}),
+                "share": cash.invoice_share(inv.get("line_items") or [], items, decisions),
+            }
+        except ZohoNotFound:
+            row = {**_invoice_row({"invoice_id": invoice_id}), "share": 0.0}  # gone from Books: stop asking
+        await store.save_invoice_detail(db, row, _utcnow())
+    await store.save_cash_synced(db, _utcnow())
+
+
+async def _refresh_cash_on_its_own(db) -> None:
+    """A cash failure is kept for /cash and retried after the TTL; it never fails the day batch nor reaches the banner."""
+    global _cash_at, _cash_error
+    _cash_at = time.monotonic()
+    try:
+        await _refresh_cash(db)
+    except (ZohoUpstreamError, ZohoNotConfiguredError) as exc:
+        message = _public_error(exc)
+        if message != _cash_error:
+            logger.warning("Revenue cash refresh failed: %s", message)
+        _cash_error = message
+        return
+    _cash_error = None
+
+
+def cash_error() -> str | None:
+    return _cash_error
+
+
 async def refresh_revenue_items(db, now: datetime) -> bool:
     """Full item sweep, then swaps the item table. An empty listing keeps the current rows (returns False)."""
     items: list[dict] = []
@@ -274,6 +380,8 @@ async def _execute_batch(full: bool) -> dict:
                     if month:
                         await _check_month(db, month)
                         checked = month
+                    if time.monotonic() - _cash_at >= SYNC.cash_ttl_s:
+                        await _refresh_cash_on_its_own(db)
             except _BudgetLow:
                 pass
         _last_batch_at = _utcnow().isoformat()
@@ -397,10 +505,19 @@ def ensure_revenue_sync_loop() -> None:
 
 
 def reset_revenue_sync_state_for_tests() -> None:
-    global _inflight, _last_batch_at, _last_error, _last_read_at, _last_call_at, _loop_task, _lane
+    global \
+        _inflight, \
+        _last_batch_at, \
+        _last_error, \
+        _last_read_at, \
+        _last_call_at, \
+        _loop_task, \
+        _lane, \
+        _cash_at, \
+        _cash_error
     if _loop_task is not None and not _loop_task.done():
         _loop_task.cancel()
-    _inflight = _last_batch_at = _last_error = _loop_task = None
-    _last_read_at = _last_call_at = float("-inf")
+    _inflight = _last_batch_at = _last_error = _loop_task = _cash_error = None
+    _last_read_at = _last_call_at = _cash_at = float("-inf")
     _lane = asyncio.Lock()
     _day_failures.clear()

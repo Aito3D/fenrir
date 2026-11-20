@@ -72,6 +72,60 @@ wrong date. It does not catch an error on an invoice in Zoho itself.
 
 A full rebuild drops every check with the days.
 
+## Cash
+
+The page shows invoiced turnover; cash is what was **collected** each month and what is still **owed** now, for the
+3D business only. The Zoho org is shared with the sailing business and payments and balances are per invoice, not
+per item, so every amount is cut to its 3D share.
+
+- **3D share.** Each customer is classed from the whole day cache, with the scope rules and decisions: every line in
+  scope → `only3d` (share 1); none in scope → `none` (share 0); both, or unknown to the cache → the documents decide.
+  For those, a payment's applications are read (`GET /customerpayments/{id}`: which invoices, how much), and each
+  invoice's share is its in-scope `item_total` over the `item_total` of all its lines (a line without item, such as
+  shipping, only counts in the total; a zero total gives 0). The class is computed at read time; a stored invoice
+  share is re-read when Zoho's total for it changes.
+- **Collected** (per month, by payment date): `only3d` → the amount; `none` → 0; otherwise Σ applied × invoice share.
+  Money whose share is not known yet and money not applied to any invoice go in `collectedUnknown`, never guessed.
+- **Invoiced TTC** beside it: the series' in-scope TTC for the month, unfiltered.
+- **Outstanding**: Σ balance × share over invoices with a balance; unknown shares go in `unknown`; `overdue` is the
+  part whose due date is before today. **topOverdue**: the five largest overdue 3D balances, with the customer's name
+  (stripped without `revenue:view_customers`).
+- **Coverage**: raw amounts (payments of the 12 months plus open balances) whose share is known vs still unknown.
+
+Refresh: a step of the batch, after the day work and the month check, only when no day is left to fetch, at most
+every 10 minutes (process-local). Each run (a) pages through payments modified since the cursor (the
+`revenue_payments_since` row of `settings`, Books' `+0000` timestamp; first value: the 1st of the month 12 months
+back), at most 10 pages a run, the cursor moving to the last row's `last_modified_time` after each page so a capped
+run resumes there; a payment Zoho touched again has its applications read again; (b) lists invoices in status
+`unpaid`, `overdue` and `partially_paid` (union by id) with their balance; a stored invoice none of them returned is
+set to balance 0, unless a listing hit its page cap; (c) reads at most 20 documents for customers the cache cannot
+settle: payments missing their applications, then invoices missing their share, newest first. `only3d` and `none`
+customers never cost a document read.
+
+Cost: the first fill lists about 8 pages of payments for 12 months, then up to 20 document reads every 10 minutes
+until the mixed customers' shares are known; afterwards about 4 calls every 10 minutes. A Zoho error in this step is
+logged and kept in the payload's `error`, and the step waits 10 minutes before trying again; it never fails the day
+batch nor shows in the sync banner. A low daily budget stops it quietly like the rest. A full rebuild keeps these
+tables.
+
+Caveats: a cash advance (retainer) paid by a mixed customer sits unapplied and counts in `collectedUnknown`; for a
+3D-only customer it counts in full when paid. A payment deleted in Zoho stays until a document read finds it gone. An
+invoice share is computed with the scope rules of the moment it is read. A customer is classed on the cached lines
+only: one whose 3D purchases predate the cache, or a new customer, is read document by document.
+
+Reads: `GET /api/v1/revenue/cash` (`revenue:read`):
+
+```
+{
+  "months": [{"month": "2026-11", "invoicedTtc": n, "collected": n, "collectedUnknown": n}],  // 12, oldest first
+  "outstanding": {"total": n, "overdue": n, "invoices": count, "unknown": n},
+  "topOverdue": [{"number", "customerName", "dueDate", "daysOverdue", "balance"}],  // view_customers only
+  "coverage": {"known": n, "unknown": n},
+  "syncedAt": iso | null,  // last complete cash refresh
+  "error": string | null   // last cash refresh failure, process-local
+}
+```
+
 ## Tables
 
 New tables come from `create_all` (no migration); they work on SQLite and PostgreSQL.
@@ -86,8 +140,11 @@ New tables come from `create_all` (no migration); they work on SQLite and Postgr
 | `revenue_targets` | monthly HT targets |
 | `revenue_annotations` | chart notes (day + label) |
 | `revenue_month_checks` | per closed month: Zoho's total, the cache's total, when checked |
+| `revenue_payments` | Zoho customer payments: customer, date, amount, unapplied, applications (JSON, read for mixed customers only) |
+| `revenue_invoice_shares` | invoices: number, customer, dates, total, balance, 3D share and the total it was computed for |
 
-The time of the last complete item listing is the `revenue_items_synced_at` row of `settings`.
+The time of the last complete item listing is the `revenue_items_synced_at` row of `settings`; the payment listing's
+cursor is `revenue_payments_since` and the last complete cash refresh `revenue_cash_synced_at`.
 
 ## Permissions
 

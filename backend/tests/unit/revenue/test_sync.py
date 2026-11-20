@@ -34,6 +34,33 @@ class FakeZoho:
         self.contact = self.default_contact
         self.items = self.default_items
         self.configured = True
+        self.cash_calls: list[tuple] = []
+        self.payment_pages = self.default_pages
+        self.unpaid_pages = self.default_pages
+        self.payment_detail = self.default_detail
+        self.invoice_detail = self.default_detail
+
+    async def default_pages(self, key, page):
+        return [], False
+
+    async def default_detail(self, doc_id):
+        return {}
+
+    async def list_customer_payments_page(self, db, since, page):
+        self.cash_calls.append(("payments", since, page))
+        return await self.payment_pages(since, page)
+
+    async def list_unpaid_invoices_page(self, db, status, page):
+        self.cash_calls.append(("unpaid", status, page))
+        return await self.unpaid_pages(status, page)
+
+    async def get_customer_payment(self, db, payment_id):
+        self.cash_calls.append(("payment", payment_id))
+        return await self.payment_detail(payment_id)
+
+    async def get_invoice_raw(self, db, invoice_id):
+        self.cash_calls.append(("invoice", invoice_id))
+        return await self.invoice_detail(invoice_id)
 
     async def default_sales(self, day, page):
         return [], False
@@ -95,7 +122,16 @@ def sleeps(monkeypatch):
 @pytest.fixture
 def zoho(engine, sleeps, monkeypatch):
     fake = FakeZoho()
-    for name in ("sales_by_item_by_customer", "get_contact", "list_items_page_all", "sales_by_item_range"):
+    for name in (
+        "sales_by_item_by_customer",
+        "get_contact",
+        "list_items_page_all",
+        "sales_by_item_range",
+        "list_customer_payments_page",
+        "list_unpaid_invoices_page",
+        "get_customer_payment",
+        "get_invoice_raw",
+    ):
         monkeypatch.setattr(zoho_service, name, getattr(fake, name))
     monkeypatch.setattr(zoho_service, "calls_in_last_minute", lambda: 0)
     monkeypatch.setattr(zoho_service, "daily_remaining", None)
@@ -727,3 +763,198 @@ async def test_a_zoho_error_while_checking_fails_the_batch_but_marks_no_day(with
     assert sync._day_failures == {}
     assert (await status(engine))["missingDays"] == 0
     assert await checks(engine) == []
+
+
+# ── cash: payments and unpaid invoices ───────────────────────────────────────
+
+
+def payment(pid, lmt, customer="c9", date="2026-10-01", amount=100):
+    return {"payment_id": pid, "customer_id": customer, "date": date, "amount": amount, "last_modified_time": lmt}
+
+
+def invoice(iid, balance, customer="c9", total=None):
+    return {
+        "invoice_id": iid,
+        "invoice_number": f"INV-{iid}",
+        "customer_id": customer,
+        "customer_name": "Client",
+        "date": "2026-10-01",
+        "due_date": "2026-10-10",
+        "total": total if total is not None else balance,
+        "balance": balance,
+    }
+
+
+async def cash_rows(engine):
+    async with store.snapshot(engine) as conn:
+        since = await store.get_setting(conn, store.PAYMENTS_SINCE_KEY)
+        return (
+            await store.read_payments(conn, ""),
+            {i["invoiceId"]: i for i in await store.read_invoice_shares(conn)},
+            since,
+        )
+
+
+async def refresh_cash():
+    async with database.async_session() as db:
+        await sync._refresh_cash(db)
+
+
+def cash_kinds(zoho):
+    return [c[0] for c in zoho.cash_calls]
+
+
+async def test_cash_runs_only_on_a_complete_cache_and_at_most_every_ttl(zoho, monkeypatch):
+    clock = [1000.0]
+    monkeypatch.setattr(sync.time, "monotonic", lambda: clock[0])
+    await sync.run_revenue_sync_batch()
+    assert zoho.cash_calls == []  # 5 days still missing
+    await sync.run_revenue_sync_batch()
+    assert cash_kinds(zoho) == ["payments", "unpaid", "unpaid", "unpaid"]
+    assert zoho.cash_calls[0] == ("payments", "2025-10-01T10:00:00+0000", 1)
+    zoho.cash_calls.clear()
+    clock[0] += SYNC.cash_ttl_s - 1
+    await sync.run_revenue_sync_batch()
+    assert zoho.cash_calls == []
+    clock[0] += 1
+    await sync.run_revenue_sync_batch()
+    assert cash_kinds(zoho)[0] == "payments"
+
+
+async def test_payment_cursor_moves_per_page_and_a_capped_run_resumes_there(zoho, engine):
+    async def pages(since, page):
+        return [payment(f"{since}-{page}", f"2026-10-0{page % 10}T08:00:00-1000")], True
+
+    zoho.payment_pages = pages
+    await refresh_cash()
+    calls = [c for c in zoho.cash_calls if c[0] == "payments"]
+    assert len(calls) == sync.CASH_PAGE_CAP
+    payments, _, since = await cash_rows(engine)
+    assert len(payments) == sync.CASH_PAGE_CAP
+    assert since == "2026-10-00T08:00:00-1000"  # page 10's row
+    zoho.cash_calls.clear()
+    await refresh_cash()
+    assert zoho.cash_calls[0] == ("payments", "2026-10-00T08:00:00-1000", 1)
+
+
+async def test_a_payment_touched_again_forgets_its_applications(zoho, engine):
+    async with database.async_session() as db:
+        await store.save_payments(db, [sync._payment_row(payment("p1", "t1"))], None, sync._utcnow())
+        await store.save_payment_applications(db, "p1", [{"invoiceId": "i1", "amount": 100}], 0, sync._utcnow())
+        await store.save_payments(db, [sync._payment_row(payment("p1", "t1"))], None, sync._utcnow())
+        assert (await cash_rows(engine))[0][0]["applications"] == [{"invoiceId": "i1", "amount": 100}]
+        await store.save_payments(db, [sync._payment_row(payment("p1", "t2"))], None, sync._utcnow())
+    assert (await cash_rows(engine))[0][0]["applications"] is None
+
+
+async def test_unpaid_listings_union_and_a_paid_invoice_drops_to_zero_unless_a_listing_was_cut(zoho, engine):
+    listing = {"unpaid": [invoice("a", 100)], "overdue": [invoice("a", 100), invoice("b", 50)], "partially_paid": []}
+
+    async def unpaid(status, page):
+        return listing[status], False
+
+    async def detail(iid):  # the share read sees the same balance
+        return next(i for rows in listing.values() for i in rows if i["invoice_id"] == iid)
+
+    zoho.unpaid_pages, zoho.invoice_detail = unpaid, detail
+    await refresh_cash()
+    _, invoices, _ = await cash_rows(engine)
+    assert {k: v["balance"] for k, v in invoices.items()} == {"a": 100, "b": 50}
+
+    listing["overdue"] = [invoice("a", 100)]  # b was paid
+
+    async def unpaid_cut(status, page):
+        return listing[status], status == "partially_paid"  # never ends: capped
+
+    zoho.unpaid_pages = unpaid_cut
+    await refresh_cash()
+    assert (await cash_rows(engine))[1]["b"]["balance"] == 50
+    zoho.unpaid_pages = unpaid
+    await refresh_cash()
+    assert (await cash_rows(engine))[1]["b"]["balance"] == 0
+
+
+async def test_detail_reads_stay_within_the_budget_payments_first_newest_first(zoho, engine):
+    n = SYNC.cash_detail_budget + 5
+
+    async def pages(since, page):
+        return [payment(f"p{i:02d}", f"t{i:02d}", date=f"2026-0{1 + i % 9}-{10 + i:02d}") for i in range(n)], False
+
+    async def unpaid(status, page):
+        return ([invoice("open", 100)] if status == "unpaid" else []), False
+
+    zoho.payment_pages, zoho.unpaid_pages = pages, unpaid
+    await refresh_cash()
+    details = [c for c in zoho.cash_calls if c[0] in ("payment", "invoice")]
+    assert len(details) == SYNC.cash_detail_budget
+    assert {c[0] for c in details} == {"payment"}
+    dates = {p["paymentId"]: p["date"] for p in (await cash_rows(engine))[0]}
+    asked = [dates[c[1]] for c in details]
+    assert asked == sorted(asked, reverse=True)
+
+
+async def test_detail_reads_fill_applications_and_invoice_shares(zoho, engine):
+    async with database.async_session() as db:
+        await store.replace_items(
+            db, [{"item_id": "pla", "nature": "Filaments"}, {"item_id": "kayak", "nature": "Boats"}], sync._utcnow()
+        )
+
+    async def pages(since, page):
+        return [payment("p1", "t1", amount=1000)], False
+
+    async def pay_detail(pid):
+        return {"invoices": [{"invoice_id": "i1", "amount_applied": 800}], "unused_amount": 200}
+
+    async def inv_detail(iid):
+        lines = [{"item_id": "pla", "item_total": 250}, {"item_id": "kayak", "item_total": 750}]
+        return {**invoice(iid, 0, total=1130), "line_items": lines}
+
+    zoho.payment_pages, zoho.payment_detail, zoho.invoice_detail = pages, pay_detail, inv_detail
+    await refresh_cash()
+    assert [c for c in zoho.cash_calls if c[0] in ("payment", "invoice")] == [("payment", "p1")]
+    zoho.cash_calls.clear()
+    await refresh_cash()  # the application's invoice is read on the next run
+    assert [c for c in zoho.cash_calls if c[0] in ("payment", "invoice")] == [("invoice", "i1")]
+    payments, invoices, _ = await cash_rows(engine)
+    assert payments[0]["applications"] == [{"invoiceId": "i1", "amount": 800}]
+    assert (invoices["i1"]["share"], invoices["i1"]["total"]) == (0.25, 1130)
+    zoho.cash_calls.clear()
+    await refresh_cash()
+    assert [c for c in zoho.cash_calls if c[0] in ("payment", "invoice")] == []
+
+
+async def test_a_cash_error_leaves_the_batch_and_banner_alone_and_waits_out_the_ttl(zoho, engine, monkeypatch):
+    clock = [1000.0]
+    monkeypatch.setattr(sync.time, "monotonic", lambda: clock[0])
+
+    async def boom(since, page):
+        raise ZohoUpstreamError("Zoho Books error (HTTP 500)")
+
+    zoho.payment_pages = boom
+    await sync.run_revenue_sync_batch()
+    r = await sync.run_revenue_sync_batch()
+    assert r["fetched"] == 5
+    assert (await status(engine))["lastError"] is None
+    assert sync.cash_error() == "Zoho Books error (HTTP 500)"
+    zoho.cash_calls.clear()
+    clock[0] += 60
+    await sync.run_revenue_sync_batch()
+    assert zoho.cash_calls == []
+    zoho.payment_pages = zoho.default_pages
+    clock[0] += SYNC.cash_ttl_s
+    await sync.run_revenue_sync_batch()
+    assert sync.cash_error() is None
+
+
+async def test_a_low_budget_stops_the_cash_step_quietly(zoho, engine, monkeypatch):
+    async def pages(since, page):
+        monkeypatch.setattr(zoho_service, "daily_remaining", SYNC.daily_budget_floor - 1)
+        return [payment("p1", "t1")], True
+
+    zoho.payment_pages = pages
+    await sync.run_revenue_sync_batch()
+    await sync.run_revenue_sync_batch()
+    assert cash_kinds(zoho) == ["payments"]
+    assert sync.cash_error() is None
+    assert (await status(engine))["lastError"] is None
+    assert len((await cash_rows(engine))[0]) == 1  # the page that completed is kept

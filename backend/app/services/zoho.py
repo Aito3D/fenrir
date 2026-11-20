@@ -1031,6 +1031,32 @@ class ZohoService:
         )
         return body.get("sales_by_item") or [], bool((body.get("page_context") or {}).get("has_more_page"))
 
+    async def list_customer_payments_page(self, db: AsyncSession, since: str, page: int) -> tuple[list[dict], bool]:
+        """One page of customer payments touched since ``since``, oldest first, raw rows, plus a has-more flag.
+        ``since`` is Books' ``±HHMM`` spelling, never ``isoformat()`` (see ``aito_poll_watermark``)."""
+        body = await self._request(
+            db,
+            "GET",
+            "/customerpayments",
+            params={
+                "last_modified_time": since,
+                "sort_column": "last_modified_time",
+                "sort_order": "A",
+                "per_page": 200,
+                "page": page,
+            },
+        )
+        return body.get("customerpayments") or [], bool((body.get("page_context") or {}).get("has_more_page"))
+
+    async def get_customer_payment(self, db: AsyncSession, payment_id: str) -> dict:
+        """One payment, unmapped; its ``invoices`` list carries ``invoice_id`` and ``amount_applied``."""
+        return (await self._request(db, "GET", f"/customerpayments/{_seg(payment_id)}")).get("payment", {})
+
+    async def list_unpaid_invoices_page(self, db: AsyncSession, status: str, page: int) -> tuple[list[dict], bool]:
+        """One page of invoices in one Books status (unpaid, overdue, partially_paid), raw rows, plus a has-more flag."""
+        body = await self._request(db, "GET", "/invoices", params={"status": status, "per_page": 200, "page": page})
+        return body.get("invoices") or [], bool((body.get("page_context") or {}).get("has_more_page"))
+
     # --- Order Board: read-only listings of sales orders, purchase orders and stock ---
 
     async def _list_all(self, db: AsyncSession, path: str, key: str) -> list[dict]:

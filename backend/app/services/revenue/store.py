@@ -8,7 +8,7 @@ from contextlib import asynccontextmanager
 from datetime import datetime
 from typing import Any, cast
 
-from sqlalchemy import CursorResult, and_, delete, func, insert, select
+from sqlalchemy import CursorResult, and_, delete, func, insert, select, update
 from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine, AsyncSession
 
 from backend.app.core import database
@@ -19,8 +19,10 @@ from backend.app.models.revenue import (
     RevenueCustomer,
     RevenueDay,
     RevenueDayLine,
+    RevenueInvoiceShare,
     RevenueItem,
     RevenueMonthCheck,
+    RevenuePayment,
     RevenueScopeDecision,
     RevenueTarget,
 )
@@ -33,6 +35,8 @@ from backend.app.services.revenue.sync_plan import DayRow
 MAX_ANNOTATION_LABEL = 80
 LINE_CHUNK_SIZE = 500
 ITEMS_SYNCED_KEY = "revenue_items_synced_at"
+PAYMENTS_SINCE_KEY = "revenue_payments_since"
+CASH_SYNCED_KEY = "revenue_cash_synced_at"
 
 
 def snapshot_isolation(dialect: str) -> str:
@@ -345,16 +349,24 @@ async def replace_items(db: AsyncSession, items: list[dict], now: datetime) -> N
         await db.execute(
             insert(RevenueItem), [{**blank, "name": "", "sku": "", **i, "fetched_at": stamp} for i in items]
         )
-    setting = (await db.execute(select(Settings).where(Settings.key == ITEMS_SYNCED_KEY))).scalar_one_or_none()
-    if setting is None:
-        db.add(Settings(key=ITEMS_SYNCED_KEY, value=stamp))
-    else:
-        setting.value = stamp
+    await _put_setting(db, ITEMS_SYNCED_KEY, stamp)
     await db.commit()
 
 
+async def _put_setting(db: AsyncSession, key: str, value: str) -> None:
+    setting = (await db.execute(select(Settings).where(Settings.key == key))).scalar_one_or_none()
+    if setting is None:
+        db.add(Settings(key=key, value=value))
+    else:
+        setting.value = value
+
+
+async def get_setting(conn: AsyncConnection, key: str) -> str | None:
+    return (await conn.execute(select(Settings.value).where(Settings.key == key))).scalar_one_or_none()
+
+
 async def items_synced_at(conn: AsyncConnection) -> str | None:
-    return (await conn.execute(select(Settings.value).where(Settings.key == ITEMS_SYNCED_KEY))).scalar_one_or_none()
+    return await get_setting(conn, ITEMS_SYNCED_KEY)
 
 
 async def revenue_data_stamp(conn: AsyncConnection) -> str:
@@ -377,4 +389,143 @@ async def revenue_data_stamp(conn: AsyncConnection) -> str:
         parts.append(f"{n}@{at or ''}")
     labor = (await conn.execute(select(Settings.updated_at).where(Settings.key == "revenue_labor"))).scalar()
     parts.append(f"labor@{labor or ''}")
+    return "|".join(parts)
+
+
+# ── cash: payments and invoice balances (not cleared by a rebuild: they do not come from the day cache) ──
+
+
+async def customer_item_pairs(conn: AsyncConnection) -> list[tuple[str, str]]:
+    """Every (customer, item) pair in the whole cache: the input of the cash classification."""
+    t = RevenueDayLine
+    rows = await conn.execute(select(t.customer_id, t.item_id).where(t.customer_id != "").distinct())
+    return [(r.customer_id, r.item_id) for r in rows]
+
+
+async def read_payments(conn: AsyncConnection, from_: str) -> list[dict]:
+    t = RevenuePayment
+    rows = await conn.execute(select(t).where(t.date >= from_).order_by(t.date, t.payment_id))
+    return [
+        {
+            "paymentId": r.payment_id,
+            "customerId": r.customer_id,
+            "date": r.date,
+            "amount": r.amount,
+            "unapplied": r.unapplied,
+            "applications": r.applications,
+        }
+        for r in rows
+    ]
+
+
+async def read_invoice_shares(conn: AsyncConnection) -> list[dict]:
+    t = RevenueInvoiceShare
+    rows = await conn.execute(select(t).order_by(t.date, t.invoice_id))
+    return [
+        {
+            "invoiceId": r.invoice_id,
+            "number": r.number,
+            "customerId": r.customer_id,
+            "customerName": r.customer_name,
+            "date": r.date,
+            "dueDate": r.due_date,
+            "total": r.total,
+            "balance": r.balance,
+            "share": r.share,
+        }
+        for r in rows
+    ]
+
+
+async def save_payments(db: AsyncSession, rows: list[dict], cursor: str | None, now: datetime) -> None:
+    """Upserts listed payments (dicts of RevenuePayment columns) and moves the listing cursor in the same commit.
+    A payment Zoho touched again drops its applications, so they are read again."""
+    stamp = now.isoformat()
+    ids = [r["payment_id"] for r in rows]
+    existing = {
+        p.payment_id: p
+        for p in (await db.execute(select(RevenuePayment).where(RevenuePayment.payment_id.in_(ids)))).scalars()
+    }
+    for r in rows:
+        p = existing.get(r["payment_id"])
+        if p is None:
+            p = RevenuePayment(payment_id=r["payment_id"], applications=None)
+            db.add(p)
+            existing[r["payment_id"]] = p
+        elif p.last_modified_time != r["last_modified_time"]:
+            p.applications = None
+        for k, v in r.items():
+            setattr(p, k, v)
+        p.fetched_at = stamp
+    if cursor:
+        await _put_setting(db, PAYMENTS_SINCE_KEY, cursor)
+    await db.commit()
+
+
+async def save_payment_applications(
+    db: AsyncSession, payment_id: str, applications: list[dict], unapplied: float, now: datetime
+) -> None:
+    await db.execute(
+        update(RevenuePayment)
+        .where(RevenuePayment.payment_id == payment_id)
+        .values(applications=applications, unapplied=unapplied, fetched_at=now.isoformat())
+    )
+    await db.commit()
+
+
+async def delete_payment(db: AsyncSession, payment_id: str) -> None:
+    await _delete_one(db, delete(RevenuePayment).where(RevenuePayment.payment_id == payment_id))
+
+
+async def save_unpaid_invoices(db: AsyncSession, rows: list[dict], zero_missing: bool, now: datetime) -> None:
+    """Upserts the unpaid listings' invoices with their current balance; a total that moved forgets the share.
+    With `zero_missing` (no listing was cut short), a stored invoice none of them returned is paid."""
+    stamp = now.isoformat()
+    ids = [r["invoice_id"] for r in rows]
+    t = RevenueInvoiceShare
+    existing = {i.invoice_id: i for i in (await db.execute(select(t).where(t.invoice_id.in_(ids)))).scalars()}
+    for r in rows:
+        inv = existing.get(r["invoice_id"])
+        if inv is None:
+            inv = RevenueInvoiceShare(invoice_id=r["invoice_id"], share=None, share_total=None)
+            db.add(inv)
+            existing[r["invoice_id"]] = inv
+        elif inv.share_total != r["total"]:
+            inv.share = None
+        for k, v in r.items():
+            setattr(inv, k, v)
+        inv.fetched_at = stamp
+    if zero_missing:
+        await db.execute(update(t).where(t.balance > 0, t.invoice_id.not_in(ids)).values(balance=0.0, fetched_at=stamp))
+    await db.commit()
+
+
+async def save_invoice_detail(db: AsyncSession, row: dict, now: datetime) -> None:
+    """One read invoice (dict of RevenueInvoiceShare columns, `share` included); the share is pinned to its total."""
+    inv = await db.get(RevenueInvoiceShare, row["invoice_id"])
+    if inv is None:
+        inv = RevenueInvoiceShare(invoice_id=row["invoice_id"])
+        db.add(inv)
+    for k, v in row.items():
+        setattr(inv, k, v)
+    inv.share_total = row["total"]
+    inv.fetched_at = now.isoformat()
+    await db.commit()
+
+
+async def save_cash_synced(db: AsyncSession, now: datetime) -> None:
+    await _put_setting(db, CASH_SYNCED_KEY, now.isoformat())
+    await db.commit()
+
+
+async def cash_stamp(conn: AsyncConnection) -> str:
+    parts = []
+    for model, col in (
+        (RevenuePayment, RevenuePayment.fetched_at),
+        (RevenueInvoiceShare, RevenueInvoiceShare.fetched_at),
+    ):
+        n, at = (await conn.execute(select(func.count(), func.max(col)).select_from(model))).one()
+        parts.append(f"{n}@{at or ''}")
+    for key in (PAYMENTS_SINCE_KEY, CASH_SYNCED_KEY):
+        parts.append(await get_setting(conn, key) or "")
     return "|".join(parts)

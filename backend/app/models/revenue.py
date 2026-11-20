@@ -1,4 +1,4 @@
-from sqlalchemy import Boolean, Float, ForeignKey, Integer, String
+from sqlalchemy import JSON, Boolean, Float, ForeignKey, Integer, String
 from sqlalchemy.orm import Mapped, mapped_column
 
 from backend.app.core.database import Base
@@ -97,3 +97,37 @@ class RevenueMonthCheck(Base):
     zoho_amount: Mapped[float] = mapped_column(Float)
     cache_amount: Mapped[float] = mapped_column(Float)
     checked_at: Mapped[str] = mapped_column(String(40))
+
+
+class RevenuePayment(Base):
+    """A Zoho customer payment; `applications` ([{invoiceId, amount}]) is read only for customers the cache cannot classify."""
+
+    __tablename__ = "revenue_payments"
+
+    payment_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    customer_id: Mapped[str] = mapped_column(String(64), default="", index=True)
+    date: Mapped[str] = mapped_column(String(10), index=True)
+    amount: Mapped[float] = mapped_column(Float)
+    unapplied: Mapped[float] = mapped_column(Float, default=0.0)
+    applications: Mapped[list | None] = mapped_column(JSON(none_as_null=True), nullable=True)
+    last_modified_time: Mapped[str] = mapped_column(String(40), default="")
+    fetched_at: Mapped[str] = mapped_column(String(40))
+
+
+class RevenueInvoiceShare(Base):
+    """An invoice's balance and its 3D share of HT; `share` is NULL until the invoice is read, and read again when
+    Zoho's total moves away from `share_total`."""
+
+    __tablename__ = "revenue_invoice_shares"
+
+    invoice_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    number: Mapped[str] = mapped_column(String(100), default="")
+    customer_id: Mapped[str] = mapped_column(String(64), default="", index=True)
+    customer_name: Mapped[str] = mapped_column(String(500), default="")
+    date: Mapped[str] = mapped_column(String(10), default="")
+    due_date: Mapped[str] = mapped_column(String(10), default="")
+    total: Mapped[float] = mapped_column(Float, default=0.0)
+    balance: Mapped[float] = mapped_column(Float, default=0.0)
+    share: Mapped[float | None] = mapped_column(Float, nullable=True)
+    share_total: Mapped[float | None] = mapped_column(Float, nullable=True)
+    fetched_at: Mapped[str] = mapped_column(String(40))

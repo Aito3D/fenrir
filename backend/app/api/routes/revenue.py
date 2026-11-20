@@ -16,7 +16,7 @@ from backend.app.core import database
 from backend.app.core.auth import RequirePermissionIfAuthEnabled
 from backend.app.core.permissions import Permission
 from backend.app.models.user import User
-from backend.app.services.revenue import analysis, insights, memo, production, products, series, store, sync
+from backend.app.services.revenue import analysis, cash, insights, memo, production, products, series, store, sync
 from backend.app.services.revenue.config import REVENUE_GRANULARITIES, REVENUE_HISTORY_START
 from backend.app.services.revenue.dates import add_days, is_valid_day, org_today
 from backend.app.services.revenue.insights import attach_targets, calendar_days, yoy_pivot
@@ -64,6 +64,7 @@ async def _respond(
     live_sync: bool = False,
     flags: memo.CallerFlags | None = None,
     now: datetime,
+    extra_stamp: Callable[..., Awaitable[str]] | None = None,
 ) -> Response:
     """One snapshot per request: it computes the stamp and then feeds the build."""
     flags = flags or memo.caller_flags(user)
@@ -74,6 +75,8 @@ async def _respond(
         if live_sync:
             status = await sync.get_revenue_sync_status(conn, now)
             stamp += f"|{status}"
+        if extra_stamp is not None:
+            stamp += f"|{await extra_stamp(conn)}"
         return await memo.revenue_json(request, flags, stamp, lambda: _timed_build(request, build(conn, now, status)))
 
 
@@ -364,6 +367,34 @@ async def get_customers(
         return {"from": from_, "to": to, **result}
 
     return await _respond(request, user, build, flags=flags, now=now)
+
+
+@router.get("/cash")
+async def get_cash(request: Request, user: User | None = RequirePermissionIfAuthEnabled(Permission.REVENUE_READ)):
+    """Collected vs invoiced per month and what is owed now, 3D share only; topOverdue needs view_customers."""
+    now = datetime.now(timezone.utc)
+    today = org_today(now)
+    months = cash.last_months(today)
+    start = f"{months[0]}-01"
+
+    async def stamp(conn) -> str:
+        return f"{await store.cash_stamp(conn)}|{sync.cash_error()}"
+
+    async def build(conn, _now, _status):
+        items = await store.read_scope_items(conn)
+        decisions = await store.read_decisions(conn)
+        return cash.build_cash(
+            payments=await store.read_payments(conn, start),
+            invoices=await store.read_invoice_shares(conn),
+            classes=cash.classify_customers(await store.customer_item_pairs(conn), items, decisions),
+            invoiced_ttc=cash.invoiced_ttc_by_month(await store.read_lines(conn, start, today), items, decisions),
+            months=months,
+            today=today,
+            synced_at=await store.get_setting(conn, store.CASH_SYNCED_KEY),
+            error=sync.cash_error(),
+        )
+
+    return await _respond(request, user, build, now=now, extra_stamp=stamp)
 
 
 def _breakdown(ctx: dict, lines: list, filters: LineFilters) -> list[dict]:

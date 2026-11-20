@@ -98,6 +98,7 @@ async def tokens(db_session):
         "/targets",
         "/annotations",
         "/checks",
+        "/cash",
         "/movers",
         "/analysis?from=2025-03-01&to=2025-03-31",
     ],
@@ -597,3 +598,42 @@ async def test_refetch_drops_the_months_days_and_check(async_client, revenue_db,
         assert await store.read_day_index(conn) == []
         assert await store.read_lines(conn, "2025-03-01", "2025-03-31") == []
         assert await store.read_month_checks(conn) == []
+
+
+async def _seed_cash(engine):
+    from backend.app.services.revenue.dates import org_today
+
+    today = org_today()
+    async with async_sessionmaker(engine, expire_on_commit=False)() as db:
+        row = {"customer_id": "c1", "date": today, "amount": 500, "unapplied": 0, "last_modified_time": "t"}
+        await store.save_payments(db, [{"payment_id": "p1", **row}], "2026-11-01T00:00:00+0000", NOW)
+        invoice = {
+            "invoice_id": "i1", "number": "INV-1", "customer_id": "c1", "customer_name": "Alice",
+            "date": "2025-01-01", "due_date": "2025-02-01", "total": 300, "balance": 300,
+        }  # fmt: skip
+        await store.save_unpaid_invoices(db, [invoice], True, NOW)
+    return today
+
+
+@pytest.mark.asyncio
+async def test_cash_shape_and_customer_names_need_view_customers(async_client, revenue_db, tokens):
+    today = await _seed_cash(revenue_db)
+    body = (await async_client.get(f"{URL}/cash", headers=tokens["read_customers"])).json()
+    assert set(body) == {"months", "outstanding", "topOverdue", "coverage", "syncedAt", "error"}
+    assert len(body["months"]) == 12 and body["months"][-1]["month"] == today[:7]
+    assert body["months"][-1]["collected"] == 500  # c1 bought only 3D items in the cache
+    assert body["outstanding"] == {"total": 300, "overdue": 300, "invoices": 1, "unknown": 0}
+    assert body["topOverdue"][0]["customerName"] == "Alice"
+    assert body["coverage"] == {"known": 800, "unknown": 0}
+    plain = (await async_client.get(f"{URL}/cash", headers=tokens["read"])).json()
+    assert "topOverdue" not in plain and plain["outstanding"] == body["outstanding"]
+
+
+@pytest.mark.asyncio
+async def test_cash_etag_moves_when_cash_rows_change(async_client, revenue_db, tokens):
+    first = await async_client.get(f"{URL}/cash", headers=tokens["read"])
+    etag = first.headers["etag"]
+    assert (await async_client.get(f"{URL}/cash", headers={**tokens["read"], "If-None-Match": etag})).status_code == 304
+    await _seed_cash(revenue_db)
+    again = await async_client.get(f"{URL}/cash", headers={**tokens["read"], "If-None-Match": etag})
+    assert again.status_code == 200 and again.json()["months"][-1]["collected"] == 500
