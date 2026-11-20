@@ -3,6 +3,7 @@
 import asyncio
 import logging
 import re
+import time
 from collections.abc import Awaitable, Callable
 from datetime import datetime, timezone
 from typing import Any, TypeVar, cast
@@ -72,7 +73,22 @@ async def _respond(
         if live_sync:
             status = await sync.get_revenue_sync_status(conn, now)
             stamp += f"|{status}"
-        return await memo.revenue_json(request, flags, stamp, lambda: build(conn, now, status))
+        return await memo.revenue_json(request, flags, stamp, lambda: _timed_build(request, build(conn, now, status)))
+
+
+SLOW_BUILD_S = 0.2
+
+
+async def _timed_build(request: Request, pending: Awaitable[dict]) -> dict:
+    """Read models are built on the event loop (80-150 ms on the dev Mac, 2026-11-20); this logs when that stops holding."""
+    started = time.perf_counter()
+    body = await pending
+    elapsed = time.perf_counter() - started
+    if elapsed > SLOW_BUILD_S:
+        logger.warning(
+            "Revenue read model %s took %d ms; move its build to asyncio.to_thread", request.url.path, elapsed * 1000
+        )
+    return body
 
 
 async def _context(conn, from_: str, to: str) -> dict:
