@@ -13062,6 +13062,15 @@ export default {
     },
     customers: {
       blind: '新規とリピーター：2024年1月1日より後に始まる期間を選んでください（それ以前は、誰が既存顧客だったか履歴からは分かりません）。',
+      retention: {
+        title: '新規とリピーター',
+        new: '新規',
+        returning: 'リピーター',
+        anon: '不明',
+        withCount: '{{amount}} · 顧客数: {{n}}',
+        chart: '期間ごとの売上（新規顧客・リピーター・不明な販売）({{tax}})',
+        note: '顧客の追跡は2024年1月から：最初の数か月は全員が新規として数えられます。',
+      },
       newCustomers: '新規顧客',
       newHint: '{{amount}} HT · 期間内の初回購入',
       returning: 'リピーター',

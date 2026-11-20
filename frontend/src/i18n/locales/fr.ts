@@ -13048,6 +13048,15 @@ export default {
     },
     customers: {
       blind: 'Nouveaux vs fidèles : choisissez une période qui commence après le 1er janvier 2024 (avant, l\'historique ne dit pas qui était déjà client).',
+      retention: {
+        title: 'Nouveaux et fidèles',
+        new: 'Nouveaux',
+        returning: 'Fidèles',
+        anon: 'Non identifiés',
+        withCount: '{{amount}} · clients : {{n}}',
+        chart: 'Ventes par période des nouveaux clients, des clients fidèles et des ventes non identifiées ({{tax}})',
+        note: 'Clients suivis depuis janv. 2024 : les premiers mois comptent tout le monde comme nouveau.',
+      },
       newCustomers: 'Nouveaux clients',
       newHint: '{{amount}} HT · 1er achat sur la période',
       returning: 'Clients fidèles',

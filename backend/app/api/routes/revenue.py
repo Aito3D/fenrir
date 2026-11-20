@@ -318,25 +318,26 @@ async def get_customers(
     brand: list[str] = Query(default=[]),
     kind: str | None = None,
     segment: str | None = None,
+    granularity: str = "month",
     user: User | None = RequirePermissionIfAuthEnabled(Permission.REVENUE_READ, Permission.REVENUE_VIEW_CUSTOMERS),
 ):
     now = datetime.now(timezone.utc)
     _ordered_range(from_, to)
+    if granularity not in REVENUE_GRANULARITIES:
+        raise _unprocessable("granularity must be day, week, month or year")
     flags = memo.caller_flags(user)
     filters = _filters(flags, items, brand, kind, segment)
 
     async def build(conn, _now, _status):
         ctx = await _context(conn, from_, to)
-        result = insights.customer_breakdown(
-            ctx["lines"],
-            ctx["items"],
-            ctx["decisions"],
-            ctx["customers"],
-            filters,
-            await store.customer_first_days(conn),
-            from_,
+        scope = (ctx["items"], ctx["decisions"], ctx["customers"], filters)
+        # "New" means first purchase of what the page shows: a 2025 print customer is new to filament this month.
+        first_days = insights.first_days_in_scope(await store.customer_item_first_lines(conn), *scope)
+        result = insights.customer_breakdown(ctx["lines"], *scope, first_days, from_)
+        retention = insights.retention_series(
+            ctx["lines"], *scope, first_days, cast(series.Granularity, granularity), from_, to
         )
-        return {"from": from_, "to": to, **result}
+        return {"from": from_, "to": to, **result, "retention": retention}
 
     return await _respond(request, user, build, flags=flags, now=now)
 

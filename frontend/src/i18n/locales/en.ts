@@ -13119,6 +13119,15 @@ export default {
     },
     customers: {
       blind: 'New vs returning: choose a period that starts after 1 January 2024 (before that, the history does not say who was already a customer).',
+      retention: {
+        title: 'New and returning',
+        new: 'New',
+        returning: 'Returning',
+        anon: 'Unidentified',
+        withCount: '{{amount}} · customers: {{n}}',
+        chart: 'Sales per period from new customers, returning customers and unidentified sales ({{tax}})',
+        note: 'Customers tracked since Jan. 2024: the first months count everyone as new.',
+      },
       newCustomers: 'New customers',
       newHint: '{{amount}} HT · first purchase in the period',
       returning: 'Returning customers',

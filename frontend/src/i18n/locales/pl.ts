@@ -13268,6 +13268,15 @@ export default {
     },
     customers: {
       blind: 'Nowi a stali: wybierz okres zaczynający się po 1 stycznia 2024 (wcześniej historia nie mówi, kto był już klientem).',
+      retention: {
+        title: 'Nowi i stali',
+        new: 'Nowi',
+        returning: 'Stali',
+        anon: 'Niezidentyfikowani',
+        withCount: '{{amount}} · klientów: {{n}}',
+        chart: 'Sprzedaż w okresie od nowych i stałych klientów oraz sprzedaż niezidentyfikowana ({{tax}})',
+        note: 'Klienci śledzeni od stycznia 2024: w pierwszych miesiącach wszyscy liczą się jako nowi.',
+      },
       newCustomers: 'Nowi klienci',
       newHint: '{{amount}} HT · pierwszy zakup w okresie',
       returning: 'Stali klienci',

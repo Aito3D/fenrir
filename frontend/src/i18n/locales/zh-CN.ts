@@ -13046,6 +13046,15 @@ export default {
     },
     customers: {
       blind: '新客与老客：请选择 2024 年 1 月 1 日之后开始的期间（在此之前，历史数据无法说明谁已是老客户）。',
+      retention: {
+        title: '新客与老客',
+        new: '新客',
+        returning: '老客',
+        anon: '未识别',
+        withCount: '{{amount}} · 客户数：{{n}}',
+        chart: '各期间新客、老客及未识别销售的销售额（{{tax}}）',
+        note: '客户自 2024 年 1 月起跟踪：最初几个月所有人都算作新客。',
+      },
       newCustomers: '新客户',
       newHint: '{{amount}} HT · 期间内首次购买',
       returning: '老客户',

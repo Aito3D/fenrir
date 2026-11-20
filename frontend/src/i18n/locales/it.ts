@@ -13048,6 +13048,15 @@ export default {
     },
     customers: {
       blind: 'Nuovi vs abituali: scegli un periodo che inizi dopo il 1° gennaio 2024 (prima, lo storico non dice chi era già cliente).',
+      retention: {
+        title: 'Nuovi e abituali',
+        new: 'Nuovi',
+        returning: 'Abituali',
+        anon: 'Non identificati',
+        withCount: '{{amount}} · clienti: {{n}}',
+        chart: 'Vendite per periodo da clienti nuovi, abituali e vendite non identificate ({{tax}})',
+        note: 'Clienti seguiti da gen. 2024: nei primi mesi tutti risultano nuovi.',
+      },
       newCustomers: 'Nuovi clienti',
       newHint: '{{amount}} HT · primo acquisto nel periodo',
       returning: 'Clienti abituali',

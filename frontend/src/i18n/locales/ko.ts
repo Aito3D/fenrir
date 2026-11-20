@@ -12645,6 +12645,15 @@ export default {
     },
     customers: {
       blind: '신규 대 재구매: 2024년 1월 1일 이후에 시작하는 기간을 선택하세요(그 이전은 누가 기존 고객이었는지 이력으로 알 수 없습니다).',
+      retention: {
+        title: '신규 및 재구매',
+        new: '신규',
+        returning: '재구매',
+        anon: '미확인',
+        withCount: '{{amount}} · 고객 수: {{n}}',
+        chart: '기간별 신규 고객, 재구매 고객 및 미확인 판매 매출 ({{tax}})',
+        note: '고객은 2024년 1월부터 추적됩니다: 처음 몇 달은 모두 신규로 계산됩니다.',
+      },
       newCustomers: '신규 고객',
       newHint: '{{amount}} HT · 기간 내 첫 구매',
       returning: '재구매 고객',

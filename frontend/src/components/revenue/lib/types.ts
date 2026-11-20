@@ -293,10 +293,27 @@ export interface AnnotationsResponse {
   annotations: RevenueAnnotation[];
 }
 
+/** One period of the page granularity: sales from first-time buyers of what the page shows, earlier buyers, and unidentified sales. */
+export interface RetentionRow {
+  key: string;
+  label: string;
+  start: string;
+  end: string;
+  newHt: number;
+  returningHt: number;
+  anonHt: number;
+  newTtc: number;
+  returningTtc: number;
+  anonTtc: number;
+  newCount: number;
+  returningCount: number;
+}
+
 export interface CustomersResponse extends CustomerBreakdown {
   from: string;
   to: string;
   acquisition: Acquisition;
+  retention: RetentionRow[];
 }
 
 export interface MoversResponse extends MoversResult {

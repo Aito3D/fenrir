@@ -13120,6 +13120,15 @@ errors: {
     },
     customers: {
       blind: 'Nya kontra återkommande: välj en period som börjar efter 1 januari 2024 (före det visar historiken inte vem som redan var kund).',
+      retention: {
+        title: 'Nya och återkommande',
+        new: 'Nya',
+        returning: 'Återkommande',
+        anon: 'Oidentifierade',
+        withCount: '{{amount}} · kunder: {{n}}',
+        chart: 'Försäljning per period från nya kunder, återkommande kunder och oidentifierad försäljning ({{tax}})',
+        note: 'Kunder följs sedan jan. 2024: de första månaderna räknas alla som nya.',
+      },
       newCustomers: 'Nya kunder',
       newHint: '{{amount}} HT · första köp under perioden',
       returning: 'Återkommande kunder',

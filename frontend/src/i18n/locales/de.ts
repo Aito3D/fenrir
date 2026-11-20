@@ -13063,6 +13063,15 @@ export default {
     },
     customers: {
       blind: 'Neu vs. Stamm: Wählen Sie einen Zeitraum, der nach dem 1. Januar 2024 beginnt (davor zeigt die Historie nicht, wer schon Kunde war).',
+      retention: {
+        title: 'Neu- und Stammkunden',
+        new: 'Neukunden',
+        returning: 'Stammkunden',
+        anon: 'Nicht zugeordnet',
+        withCount: '{{amount}} · Kunden: {{n}}',
+        chart: 'Umsatz je Zeitraum von Neukunden, Stammkunden und nicht zugeordneten Verkäufen ({{tax}})',
+        note: 'Kunden werden seit Jan. 2024 erfasst: In den ersten Monaten zählt jeder als neu.',
+      },
       newCustomers: 'Neukunden',
       newHint: '{{amount}} HT · Erstkauf im Zeitraum',
       returning: 'Stammkunden',

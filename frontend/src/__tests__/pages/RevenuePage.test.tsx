@@ -218,6 +218,7 @@ describe('RevenuePage — view tabs and tax switch', () => {
             from: '2025-12-01', to: '2026-11-19', customerCount: 0, customers: [], unsplitHt: 0,
             segments: [{ segment: 'pro', ht: 100, ttc: 113, goods: 100, services: 0, goodsTtc: 113, servicesTtc: 0, customers: 1 }],
             acquisition: { newCount: 1, newHt: 100, returningCount: 0, returningHt: 0, customerDays: 1, avgBasketHt: 100 },
+            retention: [],
           })
         : series(url, init),
     );
@@ -225,7 +226,7 @@ describe('RevenuePage — view tabs and tax switch', () => {
     await flush();
     await flush();
     expect(screen.getByRole('tabpanel')).toHaveAttribute('data-slot', 'revenue-view-clients');
-    expect(fetchMock.mock.calls.map(([u]) => String(u))).toContain('/api/v1/revenue/customers?from=2025-12-01&to=2026-11-19&kind=goods');
+    expect(fetchMock.mock.calls.map(([u]) => String(u))).toContain('/api/v1/revenue/customers?from=2025-12-01&to=2026-11-19&granularity=month&kind=goods');
     fireEvent.click(within(screen.getByRole('tabpanel')).getByRole('button', { name: /^Business.+FCP/ }));
     await flush();
     expect(String(seriesCalls()[seriesCalls().length - 1][0])).toContain('&segment=pro');

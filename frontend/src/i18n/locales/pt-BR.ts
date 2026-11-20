@@ -13048,6 +13048,15 @@ export default {
     },
     customers: {
       blind: 'Novos vs recorrentes: escolha um período que comece depois de 1º de janeiro de 2024 (antes disso, o histórico não diz quem já era cliente).',
+      retention: {
+        title: 'Novos e recorrentes',
+        new: 'Novos',
+        returning: 'Recorrentes',
+        anon: 'Não identificados',
+        withCount: '{{amount}} · clientes: {{n}}',
+        chart: 'Vendas por período de clientes novos, recorrentes e vendas não identificadas ({{tax}})',
+        note: 'Clientes acompanhados desde jan. 2024: nos primeiros meses todos contam como novos.',
+      },
       newCustomers: 'Clientes novos',
       newHint: '{{amount}} HT · primeira compra no período',
       returning: 'Clientes recorrentes',

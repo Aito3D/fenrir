@@ -15,7 +15,12 @@ under **À classer** until someone decides.
   stacked column chart (by nature, brand, goods/services, customer segment, or product when products are picked) with
   the running total, targets and notes, a detail list per period with its items, and the period's movers. Click a
   column (or Enter / Space on it) to zoom into it; « Retour » steps back.
-- **Clients**: top customers and the pro / private / walk-in / unidentified split.
+- **Clients**: top customers, the pro / private / walk-in / unidentified split, and « Nouveaux et fidèles »: each
+  period of the page granularity stacked by sales from new customers (first purchase falls in that period), returning
+  customers (bought before) and unidentified sales (no customer or « client de passage »). "First purchase" means the
+  first purchase of what the page shows, over the whole cache: the 3D scope narrowed by the page filters, so a 2025
+  print customer who buys filament for the first time counts as new on the goods filter. The new / returning tiles
+  use the same test. The cache starts in January 2024, so the first months count everyone as new.
 - **Produits**: ABC (Pareto) classes, gross margin by brand or nature, and products that sold during the year but
   not in the last 90 days.
 - **Saisonnalité**: year-over-year curves, a calendar heatmap of daily sales and the average per weekday.

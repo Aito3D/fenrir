@@ -13087,6 +13087,15 @@ export default {
     },
     customers: {
       blind: 'Nieuw vs vast: kies een periode die na 1 januari 2024 begint (daarvoor vertelt de historie niet wie al klant was).',
+      retention: {
+        title: 'Nieuw en vast',
+        new: 'Nieuw',
+        returning: 'Vast',
+        anon: 'Niet herkend',
+        withCount: '{{amount}} · klanten: {{n}}',
+        chart: 'Omzet per periode van nieuwe klanten, vaste klanten en niet-herkende verkopen ({{tax}})',
+        note: 'Klanten gevolgd sinds jan. 2024: de eerste maanden telt iedereen als nieuw.',
+      },
       newCustomers: 'Nieuwe klanten',
       newHint: '{{amount}} HT · eerste aankoop in de periode',
       returning: 'Vaste klanten',

@@ -1,8 +1,20 @@
+import type { ComponentProps } from 'react';
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { render, screen, waitFor, within, fireEvent } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { RevenueCustomers } from '../../../components/revenue/RevenueCustomers';
-import type { CustomerRow, CustomerSegment, CustomersResponse, SegmentRow } from '../../../components/revenue/lib/types';
+import type { CustomerRow, CustomerSegment, CustomersResponse, RetentionRow, SegmentRow } from '../../../components/revenue/lib/types';
+
+// jsdom has no layout, so ResponsiveContainer renders nothing; pin a size.
+vi.mock('recharts', async (orig) => {
+  const actual = await orig<typeof import('recharts')>();
+  return {
+    ...actual,
+    ResponsiveContainer: (props: ComponentProps<typeof actual.ResponsiveContainer>) => (
+      <actual.ResponsiveContainer {...props} width={800} height={300} />
+    ),
+  };
+});
 
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } });
 
@@ -31,6 +43,12 @@ const customer = (customerId: string, name: string, segment: CustomerSegment, ht
   ...o,
 });
 
+const month = (key: string, label: string, newHt: number, returningHt: number, anonHt: number): RetentionRow => ({
+  key, label, start: `${key}-01`, end: `${key}-28`, newHt, returningHt, anonHt,
+  newTtc: Math.round(newHt * 1.13), returningTtc: Math.round(returningHt * 1.13), anonTtc: Math.round(anonHt * 1.13),
+  newCount: 3, returningCount: 9,
+});
+
 const payload = (o: Partial<CustomersResponse> = {}): CustomersResponse => ({
   from: '2026-01-01',
   to: '2026-11-19',
@@ -39,6 +57,7 @@ const payload = (o: Partial<CustomersResponse> = {}): CustomersResponse => ({
   customerCount: 2,
   unsplitHt: 0,
   acquisition: { newCount: 47, newHt: 300_000, returningCount: 112, returningHt: 700_000, customerDays: 180, avgBasketHt: 21_400 },
+  retention: [month('2026-09', 'sept. 2026', 100_000, 200_000, 20_000), month('2026-10', 'oct. 2026', 50_000, 300_000, 0)],
   ...o,
 });
 
@@ -49,7 +68,7 @@ function stub(body: unknown, status = 200) {
 }
 
 const view = (o: { taxMode?: 'ht' | 'ttc'; segment?: CustomerSegment | null; onSegment?: (s: CustomerSegment | null) => void; from?: string } = {}) => (
-  <RevenueCustomers from={o.from ?? '2026-01-01'} to="2026-11-19" filterParams="&kind=goods" taxMode={o.taxMode ?? 'ht'} segment={o.segment ?? null} onSegment={o.onSegment ?? (() => {})} version={0} />
+  <RevenueCustomers from={o.from ?? '2026-01-01'} to="2026-11-19" granularity="month" filterParams="&kind=goods" taxMode={o.taxMode ?? 'ht'} segment={o.segment ?? null} onSegment={o.onSegment ?? (() => {})} version={0} />
 );
 
 const tile = (label: string) => screen.getByText(label).closest('.rounded-lg') as HTMLElement;
@@ -61,7 +80,22 @@ describe('RevenueCustomers', () => {
     const fetchMock = stub(payload());
     render(view());
     expect(await screen.findByText('Atelier Moana')).toBeInTheDocument();
-    expect(fetchMock.mock.calls[0][0]).toBe('/api/v1/revenue/customers?from=2026-01-01&to=2026-11-19&kind=goods');
+    expect(fetchMock.mock.calls[0][0]).toBe('/api/v1/revenue/customers?from=2026-01-01&to=2026-11-19&granularity=month&kind=goods');
+  });
+
+  it('stacks each period into new, returning and unidentified sales, with the history note', async () => {
+    stub(payload());
+    const { container } = render(view());
+    expect(await screen.findByText('New and returning')).toBeInTheDocument();
+    expect(screen.getByRole('img', { name: /Sales per period from new customers/ })).toBeInTheDocument();
+    const legend = screen.getByRole('list', { name: 'Legend' });
+    expect(within(legend).getByText('New')).toBeInTheDocument();
+    expect(within(legend).getByText('Returning')).toBeInTheDocument();
+    expect(within(legend).getByText('Unidentified')).toBeInTheDocument();
+    expect(screen.getByText('oct. 2026')).toBeInTheDocument();
+    // Two periods × three sides, the empty October « unidentified » drawn as nothing.
+    await waitFor(() => expect(container.querySelectorAll('.recharts-bar-rectangle path').length).toBe(5));
+    expect(screen.getByText('Customers tracked since Jan. 2024: the first months count everyone as new.')).toBeInTheDocument();
   });
 
   it('shows the acquisition tiles on a range that starts after the history start', async () => {

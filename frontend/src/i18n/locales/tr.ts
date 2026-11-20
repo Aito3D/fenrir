@@ -12990,6 +12990,15 @@ export default {
     },
     customers: {
       blind: 'Yeni ve sadık: 1 Ocak 2024\'ten sonra başlayan bir dönem seçin (öncesinde geçmiş, kimin zaten müşteri olduğunu göstermez).',
+      retention: {
+        title: 'Yeni ve sadık',
+        new: 'Yeni',
+        returning: 'Sadık',
+        anon: 'Tanımsız',
+        withCount: '{{amount}} · müşteri: {{n}}',
+        chart: 'Dönem başına yeni müşteri, sadık müşteri ve tanımsız satışlar ({{tax}})',
+        note: 'Müşteriler Oca. 2024\'ten beri izleniyor: ilk aylarda herkes yeni sayılır.',
+      },
       newCustomers: 'Yeni müşteriler',
       newHint: '{{amount}} HT · dönemdeki ilk alışveriş',
       returning: 'Sadık müşteriler',

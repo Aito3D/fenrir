@@ -13046,6 +13046,15 @@ export default {
     },
     customers: {
       blind: '新客與老客：請選擇 2024 年 1 月 1 日之後開始的期間（在此之前，歷史資料無法說明誰已是老客戶）。',
+      retention: {
+        title: '新客與老客',
+        new: '新客',
+        returning: '老客',
+        anon: '未識別',
+        withCount: '{{amount}} · 客戶數：{{n}}',
+        chart: '各期間新客、老客及未識別銷售的銷售額（{{tax}}）',
+        note: '客戶自 2024 年 1 月起追蹤：最初幾個月所有人都算作新客。',
+      },
       newCustomers: '新客戶',
       newHint: '{{amount}} HT · 期間內首次購買',
       returning: '老客戶',
