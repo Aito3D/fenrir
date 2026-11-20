@@ -185,3 +185,9 @@ def test_nothing_to_upgrade_once_every_day_carries_the_current_format():
 def test_count_legacy_days_counts_the_days_below_the_format():
     days = [fetched("2026-10-01", 0, fmt=1), fetched("2026-10-02", 0, fmt=2), fetched("2026-10-03", 0, fmt=3)]
     assert count_legacy_days(days, 2) == 1
+
+
+def test_reads_a_numeric_string_quantity_as_its_number():
+    out, bad = merge_day_rows([group("", row(quantity_sold="2.00", amount="100"))])
+    assert out[0]["quantity"] == 2 and out[0]["amount"] == 100
+    assert bad == 0
