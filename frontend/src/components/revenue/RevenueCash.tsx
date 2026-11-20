@@ -18,7 +18,7 @@ function Cash({ data }: { data: CashResponse }) {
     <div className="space-y-2">
       {month && (
         <>
-          <div className="grid grid-cols-2 gap-2">
+          <div className="grid grid-cols-[repeat(auto-fit,minmax(13.5rem,1fr))] gap-2">
             <Tile label={t('revenue.cash.invoiced')} value={formatFcp(month.invoicedTtc)} />
             <Tile label={t('revenue.cash.collected')} value={formatFcp(month.collected)}
               hint={month.collectedUnknown > 0 ? t('revenue.cash.toSplit', { amount: formatFcp(month.collectedUnknown) }) : undefined} />
@@ -55,7 +55,7 @@ function Pipeline({ data }: { data: PipelineResponse }) {
   if (accepted.count === 0 && awaiting.count === 0) return <Empty>{t('revenue.pipeline.empty')}</Empty>;
   return (
     <div className="space-y-2">
-      <div className="grid grid-cols-2 gap-2">
+      <div className="grid grid-cols-[repeat(auto-fit,minmax(13.5rem,1fr))] gap-2">
         <Tile label={t('revenue.pipeline.accepted')} value={formatFcp(accepted.total)}
           hint={[t('revenue.pipeline.cards', { n: accepted.count }), accepted.missingTotal > 0 ? t('revenue.pipeline.missingTotal', { n: accepted.missingTotal }) : null].filter(Boolean).join(' · ')} />
         <Tile label={t('revenue.pipeline.retainers')} value={formatFcp(accepted.retainerPaid)} />
