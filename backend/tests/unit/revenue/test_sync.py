@@ -16,6 +16,7 @@ from backend.app.services.zoho import (
     ZohoNotConfiguredError,
     ZohoNotFound,
     ZohoRateLimited,
+    ZohoRequestRejected,
     ZohoUpstreamError,
     zoho_service,
 )
@@ -423,13 +424,37 @@ async def test_full_chains_behind_inflight(zoho, engine):
 
 async def test_pages_capped(zoho, engine):
     async def sales(day, page):
-        return [group("c1", ROW_A)], True
+        return [group("c1", ROW_A)], day == TODAY
 
     zoho.sales = sales
-    with pytest.raises(ZohoUpstreamError, match="pages"):
-        await sync.run_revenue_sync_batch()
-    assert len(zoho.sales_calls) == sync.DAY_PAGE_CAP
-    assert await day_index(engine) == []
+    r = await sync.run_revenue_sync_batch()
+    assert len([c for c in zoho.sales_calls if c[0] == TODAY]) == sync.DAY_PAGE_CAP
+    assert TODAY not in r["days"]
+    assert TODAY not in {d.day for d in await day_index(engine)}
+    assert "pages" in (await status(engine))["lastError"]
+
+
+@pytest.mark.parametrize(
+    ("failure", "message"),
+    [
+        (ZohoRequestRejected("Invalid date"), "Invalid date"),
+        (["not a customer group"], "AttributeError"),
+    ],
+    ids=["zoho-400", "odd-row-shape"],
+)
+async def test_a_day_that_fails_on_its_own_is_skipped_and_the_batch_goes_on(zoho, engine, failure, message):
+    async def sales(day, page):
+        if day == TODAY and isinstance(failure, Exception):
+            raise failure
+        return (failure if day == TODAY else [group("c1", ROW_A)]), False
+
+    zoho.sales = sales
+    r = await sync.run_revenue_sync_batch()
+    assert r["fetched"] == 9
+    assert TODAY not in r["days"] and r["days"][0] == "2026-10-14"
+    assert r["pending"] == 6
+    assert zoho.contact_calls == ["c1"]
+    assert (await status(engine))["lastError"] == message
 
 
 async def test_refresh_items_maps_zoho_fields_and_stamps(zoho, engine):
