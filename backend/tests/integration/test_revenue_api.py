@@ -122,7 +122,7 @@ async def test_series_payload_keys(async_client, revenue_db, tokens):
 @pytest.mark.asyncio
 async def test_read_user_buckets_lack_cost_and_segments_all_user_has_them(async_client, revenue_db, tokens):
     plain = (await async_client.get(URL, params=MONTH, headers=tokens["read"])).json()["buckets"][0]
-    assert not {"cost", "costedHt", "marginSplit", "costParts", "bySegment", "bySegmentTtc"} & set(plain)
+    assert not {"cost", "costedHt", "marginSplit", "costParts", "printHours", "bySegment", "bySegmentTtc"} & set(plain)
     full = (await async_client.get(URL, params=MONTH, headers=tokens["all"])).json()["buckets"][0]
     assert {"cost", "costedHt", "marginSplit", "costParts", "bySegment", "bySegmentTtc"} <= set(full)
     assert full["cost"] == 8

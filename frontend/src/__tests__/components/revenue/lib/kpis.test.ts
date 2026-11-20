@@ -110,6 +110,14 @@ describe("insightTiles", () => {
   });
 });
 
+describe("insightTiles services per machine hour", () => {
+  it("adds the tile when the bucket has services and hours, and skips it without hours", () => {
+    const t = insightTiles([bucket({ services: 4000, printHours: 8 })], "ht", "Mois");
+    expect(t).toEqual([expect.objectContaining({ label: "Services / h machine", value: 500, hint: "8 h d'impression" })]);
+    expect(insightTiles([bucket({ services: 4000, printHours: null })], "ht", "Mois")).toEqual([]);
+  });
+});
+
 describe("insightTiles without cost fields", () => {
   it("a bucket without cost and costedHt yields no margin tile and does not crash", () => {
     const b = bucket({ cost: undefined, costedHt: undefined });

@@ -13100,6 +13100,8 @@ export default {
       marginHint: 'Gross margin HT, at current cost (dealer price, else purchase price); services at their print costs (filament, energy, printer wear) and labour since July 2026',
       coverage: 'cost known on {{pct}} of revenue HT',
       coverageShort: 'cost known: {{pct}}',
+      perHour: 'Services / machine h',
+      perHourHint: 'Services revenue HT divided by the print log\'s printer hours (all prints, including stock and failed ones)',
       toDate: 'to date',
       empty: 'No Aito3D sales in this period.',
     },

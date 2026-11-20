@@ -13052,6 +13052,8 @@ export default {
       marginHint: 'Margen bruto HT, al coste actual (precio de distribuidor, si no precio de compra); servicios al coste de impresión (filamento, energía, desgaste de impresoras) y de mano de obra desde julio de 2026',
       coverage: 'coste conocido en el {{pct}} de las ventas HT',
       coverageShort: 'coste conocido: {{pct}}',
+      perHour: 'Servicios / h máquina',
+      perHourHint: 'Ventas de servicios sin IVA divididas entre las horas de impresión del registro (todas las impresiones, incluidas stock y fallidas)',
       toDate: 'hasta la fecha',
       empty: 'Sin ventas de Aito3D en este período.',
     },

@@ -101,6 +101,7 @@ notes and scope decisions are kept.
   fetched: each line keeps both, so a later price change leaves past months alone. Days cached before 2026-11-20
   have none and use the item's current values until re-fetched. The rate is the item's, not the one on the invoice.
 - Margins only cover lines that have a cost; the coverage is shown next to each margin.
+- "Services / machine h" (with `view_margin`) is services HT over the print log's printer hours: every print counts, stock and failed ones included, runs over 72 h (reconciled aborts) count none; periods before the log's first day show a dash.
 - Sync state lives in the process: one uvicorn worker, no `--reload` in production.
 - The back-fill takes about an hour, three times loki's, because the revenue lane stays below Order Board's call
   ceiling.

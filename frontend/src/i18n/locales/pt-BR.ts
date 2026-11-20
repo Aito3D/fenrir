@@ -13029,6 +13029,8 @@ export default {
       marginHint: 'Margem bruta HT, ao custo atual (preço de revendedor, senão preço de compra); serviços ao custo de impressão (filamento, energia, desgaste das impressoras) e de mão de obra desde julho de 2026',
       coverage: 'custo conhecido em {{pct}} do faturamento HT',
       coverageShort: 'custo conhecido: {{pct}}',
+      perHour: 'Serviços / h máquina',
+      perHourHint: 'Receita de serviços sem imposto dividida pelas horas de impressão do registro (todas as impressões, inclusive estoque e falhas)',
       toDate: 'até a data',
       empty: 'Nenhuma venda Aito3D neste período.',
     },

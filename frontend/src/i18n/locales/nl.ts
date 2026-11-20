@@ -13068,6 +13068,8 @@ export default {
       marginHint: 'Brutomarge HT, tegen huidige kostprijs (dealerprijs, anders inkoopprijs); diensten tegen print- (filament, energie, printerslijtage) en personeelskosten sinds juli 2026',
       coverage: 'kostprijs bekend voor {{pct}} van de omzet HT',
       coverageShort: 'kostprijs bekend: {{pct}}',
+      perHour: 'Diensten / machine-uur',
+      perHourHint: 'Omzet diensten excl. btw gedeeld door de printeruren van het printlogboek (alle prints, ook voorraad en mislukte)',
       toDate: 'tot nu toe',
       empty: 'Geen Aito3D-verkopen in deze periode.',
     },

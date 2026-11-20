@@ -55,13 +55,25 @@ describe('RevenueTable', () => {
   it('lists the periods newest first under named columns', () => {
     render(renderTable());
     expect(screen.getByRole('table', { name: 'Detail by period' })).toBeInTheDocument();
-    expect(screen.getAllByRole('columnheader').map((h) => h.textContent)).toEqual(['Period', 'Revenue HT', 'Revenue TTC', 'Change', 'Over a year', 'Margin', 'Running total', 'Units']);
+    expect(screen.getAllByRole('columnheader').map((h) => h.textContent)).toEqual(['Period', 'Revenue HT', 'Revenue TTC', 'Change', 'Over a year', 'Margin', 'Services / machine h', 'Running total', 'Units']);
     const rows = bodyRows();
     expect(rows[0]).toHaveTextContent('oct. 2026');
     expect(rows[1]).toHaveTextContent('sept. 2026');
     expect(within(rows[0]).getByText('620.000 FCP')).toBeInTheDocument();
     expect(within(rows[0]).getByText('▲ 24%')).toBeInTheDocument();
     expect(within(rows[0]).getByText('52')).toBeInTheDocument();
+  });
+
+  it('shows services revenue per printer hour with the margin figures, and a dash without hours', () => {
+    const withHours = { ...sept, services: 400_000, printHours: 80 };
+    const noLog = { ...oct, services: 0, printHours: null };
+    const { unmount } = render(renderTable({ buckets: [withHours, noLog] }));
+    const [octRow, septRow] = bodyRows();
+    expect(within(septRow).getByText('5.000 FCP /h')).toBeInTheDocument();
+    expect(octRow).not.toHaveTextContent('/h');
+    unmount();
+    render(renderTable({ buckets: [withHours], canMargin: false }));
+    expect(screen.queryByText('Services / machine h')).toBeNull();
   });
 
   it('marks an approximate TTC with ≈', () => {
@@ -87,7 +99,7 @@ describe('RevenueTable', () => {
     expect(within(cells[4]).getByText('▲ 55%')).toBeInTheDocument();
     expect(within(cells[3]).getByText('to date')).toBeInTheDocument();
     expect(within(cells[4]).getByText('to date')).toBeInTheDocument();
-    expect(within(cells[6]).getByText('1.120.000 FCP')).toBeInTheDocument();
+    expect(within(cells[7]).getByText('1.120.000 FCP')).toBeInTheDocument();
     expect(within(septRow).getAllByRole('cell')[4]).toHaveTextContent('—');
     expect(within(septRow).queryByText('to date')).toBeNull();
   });
@@ -168,7 +180,7 @@ describe('RevenueTable', () => {
     expect(screen.queryByText('14.000 FCP')).toBeNull();
     unmount();
     const { unmount: u1 } = render(renderTable());
-    expect(within(bodyRows()[0]).getAllByRole('cell')).toHaveLength(8);
+    expect(within(bodyRows()[0]).getAllByRole('cell')).toHaveLength(9);
     u1();
     unmount();
     const strip = ({ cost: _c, costedHt: _h, ...b }: RevenueBucket) => b as RevenueBucket;

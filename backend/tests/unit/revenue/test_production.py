@@ -55,6 +55,17 @@ def test_costs_by_day_buckets_on_the_org_day_from_the_start_date():
     assert out.first_day == "2026-09-01"
 
 
+def test_costs_by_day_sums_printer_hours_per_org_day_and_skips_reconciled_aborts():
+    runs = [
+        run(seconds=5400, at=datetime(2026, 9, 2, 5)),
+        run(seconds=1800, at=datetime(2026, 9, 2, 6)),
+        run(seconds=73 * 3600, at=datetime(2026, 9, 2, 7)),
+        run(seconds=3600, at=datetime(2026, 6, 30, 20)),
+    ]
+    out = costs_by_day(runs, {1: RATE}, 50, FilamentPrices([]), since="2026-07-01")
+    assert out.hours_by_day == {"2026-09-01": 2.0}
+
+
 def test_labor_costs_each_provider_on_its_working_days_from_its_start_up_to_yesterday():
     alice = {"hourlyRate": 1500, "hoursPerDay": 8, "daysPerWeek": 5, "since": None}
     bob = {"hourlyRate": 1800, "hoursPerDay": 8, "daysPerWeek": 6, "since": "2026-11-14"}

@@ -378,7 +378,11 @@ def build_revenue_series(
         d[0] += m.line.amount
         d[1] += ttc_of(m.line, m.item)[0]
         totals.setdefault(bucket_key_for(m.line.day, g), _Acc()).add(m.line, m.item, m.segment, production_from)
+    print_hours: dict[str, float] = {}
     if production:
+        for day, hours in production.hours_by_day.items():
+            key = bucket_key_for(day, g)
+            print_hours[key] = print_hours.get(key, 0.0) + hours
         for day, parts in production.by_day.items():
             acc = totals.setdefault(bucket_key_for(day, g), _Acc())
             for part, cost in parts.items():
@@ -463,6 +467,12 @@ def build_revenue_series(
                 # What the cost is made of: Zoho item costs, then the services' print and labour costs.
                 "costParts": _round_record({"items": acc.cost, **acc.prod_parts}),
                 "costedHt": js_round(acc.costed_ht),
+                # Null before the print log began: no data, not zero hours.
+                **(
+                    {"printHours": round(print_hours.get(key, 0.0), 1) if end >= production_from else None}
+                    if production_from
+                    else {}
+                ),
                 "projection": projection,
                 "projectionMethod": projection_method,
                 "quantity": acc.quantity,

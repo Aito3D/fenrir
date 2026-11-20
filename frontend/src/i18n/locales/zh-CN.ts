@@ -13027,6 +13027,8 @@ export default {
       marginHint: '毛利 HT，按当前成本计算（经销商价格，否则为采购价）；服务按 2026 年 7 月起的打印成本（耗材、电费、打印机损耗）和人工成本计算',
       coverage: '已知成本覆盖营业额 HT 的 {{pct}}',
       coverageShort: '已知成本：{{pct}}',
+      perHour: '服务收入 / 机时',
+      perHourHint: '服务收入(不含税)除以打印日志中的打印机工时(含库存和失败的全部打印)',
       toDate: '截至今日',
       empty: '此期间没有 Aito3D 销售。',
     },

@@ -13029,6 +13029,8 @@ export default {
       marginHint: 'Marge brute HT, au coût actuel (Prix Dealer, sinon prix d\'achat) ; services au coût des impressions (filament, énergie, usure) et de la main-d\'œuvre depuis juillet 2026',
       coverage: 'coût connu sur {{pct}} du CA HT',
       coverageShort: 'coût connu : {{pct}}',
+      perHour: 'Services / h machine',
+      perHourHint: 'CA services HT divisé par les heures d\'impression du journal (toutes impressions, y compris stock et ratés)',
       toDate: 'à date',
       empty: 'Aucune vente Aito3D sur cette période.',
     },

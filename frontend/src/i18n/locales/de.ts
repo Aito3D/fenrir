@@ -13044,6 +13044,8 @@ export default {
       marginHint: 'Bruttomarge HT, zu aktuellen Kosten (Händlerpreis, sonst Einkaufspreis); Dienstleistungen zu Druck- (Filament, Energie, Druckerverschleiß) und Personalkosten seit Juli 2026',
       coverage: 'Kosten bekannt für {{pct}} des Umsatzes HT',
       coverageShort: 'Kosten bekannt: {{pct}}',
+      perHour: 'Services / Maschinenstd.',
+      perHourHint: 'Service-Umsatz netto geteilt durch die Druckerstunden des Druckprotokolls (alle Drucke, auch Lager und Fehldrucke)',
       toDate: 'bis heute',
       empty: 'Keine Aito3D-Verkäufe in diesem Zeitraum.',
     },

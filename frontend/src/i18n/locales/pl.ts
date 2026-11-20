@@ -13249,6 +13249,8 @@ export default {
       marginHint: 'Marża brutto HT, po bieżącym koszcie (cena dealerska, w przeciwnym razie cena zakupu); usługi po kosztach druku (filament, energia, zużycie drukarek) i pracy od lipca 2026',
       coverage: 'koszt znany dla {{pct}} przychodu HT',
       coverageShort: 'koszt znany: {{pct}}',
+      perHour: 'Usługi / godz. maszyny',
+      perHourHint: 'Przychód z usług netto podzielony przez godziny pracy drukarek z dziennika (wszystkie wydruki, także na zapas i nieudane)',
       toDate: 'do dziś',
       empty: 'Brak sprzedaży Aito3D w tym okresie.',
     },

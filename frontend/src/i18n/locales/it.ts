@@ -13029,6 +13029,8 @@ export default {
       marginHint: 'Margine lordo HT, al costo attuale (prezzo rivenditore, altrimenti prezzo di acquisto); servizi al costo di stampa (filamento, energia, usura delle stampanti) e di manodopera da luglio 2026',
       coverage: 'costo noto sul {{pct}} del fatturato HT',
       coverageShort: 'costo noto: {{pct}}',
+      perHour: 'Servizi / h macchina',
+      perHourHint: 'Ricavi dei servizi IVA esclusa divisi per le ore di stampa del registro (tutte le stampe, comprese scorta e fallite)',
       toDate: 'a oggi',
       empty: 'Nessuna vendita Aito3D in questo periodo.',
     },

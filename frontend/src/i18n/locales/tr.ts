@@ -12971,6 +12971,8 @@ export default {
       marginHint: 'Brüt marj HT, güncel maliyetle (bayi fiyatı, yoksa alış fiyatı); hizmetler Temmuz 2026\'dan beri baskı (filament, enerji, yazıcı aşınması) ve işçilik maliyetiyle',
       coverage: 'maliyet, HT cironun {{pct}} kadarı için biliniyor',
       coverageShort: 'bilinen maliyet: {{pct}}',
+      perHour: 'Hizmetler / makine saati',
+      perHourHint: 'KDV hariç hizmet cirosunun günlükteki yazıcı saatlerine bölümü (stok ve başarısız olanlar dahil tüm baskılar)',
       toDate: 'bugüne kadar',
       empty: 'Bu dönemde Aito3D satışı yok.',
     },

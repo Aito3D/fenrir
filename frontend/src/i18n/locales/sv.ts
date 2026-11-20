@@ -13101,6 +13101,8 @@ errors: {
       marginHint: 'Bruttomarginal HT, till aktuell kostnad (återförsäljarpris, annars inköpspris); tjänster till utskrifts- (filament, energi, skrivarslitage) och personalkostnad sedan juli 2026',
       coverage: 'kostnad känd för {{pct}} av omsättningen HT',
       coverageShort: 'kostnad känd: {{pct}}',
+      perHour: 'Tjänster / maskintimme',
+      perHourHint: 'Tjänsteintäkter exkl. moms delat med skrivartimmarna i utskriftsloggen (alla utskrifter, även lager och misslyckade)',
       toDate: 'hittills',
       empty: 'Ingen Aito3D-försäljning under perioden.',
     },
