@@ -26,10 +26,11 @@ from backend.app.services.revenue.sync_plan import (
     plan_revenue_sync,
 )
 from backend.app.services.zoho import (
+    ZohoAmbiguous,
     ZohoNotConfiguredError,
     ZohoNotFound,
     ZohoRateLimited,
-    ZohoUnreachable,
+    ZohoRequestRejected,
     ZohoUpstreamError,
     zoho_service,
 )
@@ -42,6 +43,9 @@ ITEM_PAGE_CAP = 100
 MONTH_PAGE_CAP = 20  # ungrouped: one row per item sold in the month
 CEILING_POLL_S = 1.0
 DAY_RETRY_CAP_S = 6 * 3600
+# A 5xx can be one heavy day or Zoho itself: retried soon, so an outage that marks days one by one heals quickly.
+DAY_RETRY_CAP_5XX_S = 600
+STEP_RETRY_S = 6 * 3600  # a customer lookup or month check Zoho rejects (4xx)
 FAILED_DAYS_SHOWN = 5
 CASH_PAGE_CAP = 10  # 2 000 payments a run; a capped run resumes from the cursor
 UNPAID_STATUSES = ("unpaid", "overdue", "partially_paid")  # Books' statuses overlap: their union is safe
@@ -64,8 +68,13 @@ _last_call_at = float("-inf")
 _loop_task: asyncio.Task | None = None
 _lane = asyncio.Lock()
 _day_failures: dict[str, DayFailure] = {}
+_step_retry: dict[str, float] = {}  # "c:<customer id>" / "m:<month>" -> monotonic time it may run again
 _cash_at = float("-inf")
 _cash_error: str | None = None
+
+
+class _DayTooLarge(ZohoUpstreamError):
+    """A day's report runs past DAY_PAGE_CAP pages: that day's own problem."""
 
 
 class _BudgetLow(Exception):
@@ -101,13 +110,18 @@ def _record_error(exc: BaseException) -> None:
 
 def _mark_day_failed(day: str, exc: BaseException) -> None:
     attempts = (_day_failures[day].attempts if day in _day_failures else 0) + 1
-    wait = min(SYNC.error_backoff_s * 2 ** (attempts - 1), DAY_RETRY_CAP_S)
+    cap = DAY_RETRY_CAP_5XX_S if isinstance(exc, ZohoAmbiguous) else DAY_RETRY_CAP_S
+    wait = min(SYNC.error_backoff_s * 2 ** (attempts - 1), cap)
     _day_failures[day] = DayFailure(
         attempts=attempts,
         next_retry=time.monotonic() + wait,
         next_retry_at=(_utcnow() + timedelta(seconds=wait)).isoformat(),
         error=_public_error(exc),
     )
+
+
+def _step_ready(key: str) -> bool:
+    return _step_retry.get(key, float("-inf")) <= time.monotonic()
 
 
 def _in_back_off(day: str) -> bool:
@@ -135,7 +149,7 @@ async def _fetch_day(db, day: str) -> list[dict]:
         groups.extend(rows)
         if not more:
             return groups
-    raise ZohoUpstreamError(f"Zoho sales report for {day} has more than {DAY_PAGE_CAP} pages")
+    raise _DayTooLarge(f"Zoho sales report for {day} has more than {DAY_PAGE_CAP} pages")
 
 
 async def _check_month(db, month: str) -> None:
@@ -149,7 +163,7 @@ async def _check_month(db, month: str) -> None:
         if not more:
             break
     else:
-        raise ZohoUpstreamError(f"Zoho sales report for {month} has more than {MONTH_PAGE_CAP} pages")
+        raise _DayTooLarge(f"Zoho sales report for {month} has more than {MONTH_PAGE_CAP} pages")
     await store.save_month_check(db, month, zoho_amount, await store.month_line_sum(db, month), _utcnow())
 
 
@@ -264,6 +278,8 @@ async def _refresh_cash_on_its_own(db) -> None:
     _cash_at = time.monotonic()
     try:
         await _refresh_cash(db)
+    except ZohoRateLimited:
+        raise  # the loop honours Retry-After
     except (ZohoUpstreamError, ZohoNotConfiguredError) as exc:
         message = _public_error(exc)
         if message != _cash_error:
@@ -302,6 +318,7 @@ async def _execute_batch(full: bool) -> dict:
             if full:
                 await store.clear_revenue_cache(db)
                 _day_failures.clear()
+                _step_retry.clear()
             now = _utcnow()
             async with store.snapshot() as conn:
                 index = await store.read_day_index(conn)
@@ -328,10 +345,9 @@ async def _execute_batch(full: bool) -> dict:
                     today_at_fetch = org_today()
                     try:
                         merged, malformed = merge_day_rows(await _fetch_day(db, day))
-                    except (ZohoRateLimited, ZohoUnreachable):
-                        raise
-                    except ZohoUpstreamError as exc:
+                    except (ZohoRequestRejected, ZohoAmbiguous, _DayTooLarge) as exc:
                         # This day's report itself fails: it waits out its own back-off so the queue moves on.
+                        # Token, network, rate-limit and other errors are Zoho's, not the day's: nothing is marked.
                         _mark_day_failed(day, exc)
                         raise
                     if malformed:
@@ -353,7 +369,7 @@ async def _execute_batch(full: bool) -> dict:
                     await store.write_day(db, day, day_lines, day < today_at_fetch, _utcnow(), REVENUE_LINE_FORMAT)
                     _day_failures.pop(day, None)
                     days.append(day)
-                unknown = await store.unknown_customer_ids(db)
+                unknown = [c for c in await store.unknown_customer_ids(db) if _step_ready(f"c:{c}")]
                 for customer_id in unknown[: SYNC.customer_lookups]:
                     try:
                         c = await _paced(zoho_service.get_contact, db, customer_id)
@@ -364,10 +380,17 @@ async def _execute_batch(full: bool) -> dict:
                         }
                     except ZohoNotFound:
                         facts = None
+                    except ZohoRequestRejected as exc:
+                        # One contact Zoho refuses must not stop the steps after it on every batch.
+                        _step_retry[f"c:{customer_id}"] = time.monotonic() + STEP_RETRY_S
+                        _record_error(exc)
+                        looked_up += 1
+                        continue
                     await store.save_customer(db, customer_id, facts, _utcnow())
                     looked_up += 1
-                # Only on a complete cache (no day left, none waiting out a back-off): a gap must mean Zoho differs.
-                if len(days) == len(planned):
+                # Every day this batch could fetch was fetched (days in back-off wait); a month holding a failed
+                # day is never complete in the planner, so a gap still means Zoho differs.
+                if len(days) == len(plan):
                     async with store.snapshot() as conn:
                         index = await store.read_day_index(conn)
                     month = plan_month_check(
@@ -376,10 +399,15 @@ async def _execute_batch(full: bool) -> dict:
                         today=org_today(),
                         now=_utcnow(),
                         history_start=REVENUE_HISTORY_START,
+                        skip=frozenset(k[2:] for k in _step_retry if k.startswith("m:") and not _step_ready(k)),
                     )
                     if month:
-                        await _check_month(db, month)
-                        checked = month
+                        try:
+                            await _check_month(db, month)
+                            checked = month
+                        except (ZohoRequestRejected, _DayTooLarge) as exc:
+                            _step_retry[f"m:{month}"] = time.monotonic() + STEP_RETRY_S
+                            _record_error(exc)
                     if time.monotonic() - _cash_at >= SYNC.cash_ttl_s:
                         await _refresh_cash_on_its_own(db)
             except _BudgetLow:
@@ -521,3 +549,4 @@ def reset_revenue_sync_state_for_tests() -> None:
     _last_read_at = _last_call_at = _cash_at = float("-inf")
     _lane = asyncio.Lock()
     _day_failures.clear()
+    _step_retry.clear()

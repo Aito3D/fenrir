@@ -62,7 +62,13 @@ def month_window(month: str, history_start: str) -> tuple[str, str]:
 
 
 def plan_month_check(
-    *, days: list[DayRow], checks: dict[str, str], today: str, now: datetime, history_start: str
+    *,
+    days: list[DayRow],
+    checks: dict[str, str],
+    today: str,
+    now: datetime,
+    history_start: str,
+    skip: frozenset[str] = frozenset(),
 ) -> str | None:
     """The closed, fully cached month to check against Zoho next: never checked (newest first), then one with a day
     re-fetched since its check, then last month again once its check is a day old. `checks` maps month to checked_at."""
@@ -72,7 +78,7 @@ def plan_month_check(
     while month < today[:7]:
         window = all_days(*month_window(month, history_start))
         rows = [by_day[d] for d in window if d in by_day and by_day[d].closed]
-        if len(rows) == len(window):
+        if len(rows) == len(window) and month not in skip:  # skip: months whose check Zoho refuses, for now
             complete[month] = rows
         month = _next_month(month)
     newest = sorted(complete, reverse=True)

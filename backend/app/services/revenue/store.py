@@ -225,12 +225,19 @@ async def set_decision(db: AsyncSession, item_id: str, included: bool, now: date
         db.add(RevenueScopeDecision(item_id=item_id, included=included, decided_at=decided_at))
     else:
         row.included, row.decided_at = included, decided_at
+    await _forget_invoice_shares(db)
     await db.commit()
     return {"itemId": item_id, "included": included, "decidedAt": decided_at}
 
 
 async def clear_decision(db: AsyncSession, item_id: str) -> bool:
+    await _forget_invoice_shares(db)
     return await _delete_one(db, delete(RevenueScopeDecision).where(RevenueScopeDecision.item_id == item_id))
+
+
+async def _forget_invoice_shares(db: AsyncSession) -> None:
+    """A scope decision changes what counts as 3D: the cash step re-reads the invoices it had split."""
+    await db.execute(update(RevenueInvoiceShare).values(share=None, share_total=None))
 
 
 async def _delete_one(db: AsyncSession, stmt: Any) -> bool:

@@ -247,3 +247,12 @@ def test_re_checks_a_month_with_a_day_re_fetched_after_its_check():
 def test_re_checks_last_month_once_its_check_is_a_day_old_never_an_older_month():
     assert check_plan(AUG_SEP, {"2026-08": at(29 * D), "2026-09": at(25 * H)}) == "2026-09"
     assert check_plan(AUG_SEP, {"2026-08": at(29 * D), "2026-09": at(23 * H)}) is None
+
+
+def test_a_skipped_month_is_passed_over_for_the_next_one():
+    assert (
+        plan_month_check(
+            days=AUG_SEP, checks={}, today="2026-10-15", now=T0, history_start="2026-08-01", skip=frozenset({"2026-09"})
+        )
+        == "2026-08"
+    )

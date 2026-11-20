@@ -13,9 +13,11 @@ from backend.app.services.revenue import store, sync
 from backend.app.services.revenue.config import SYNC
 from backend.app.services.revenue.series import RevenueLine
 from backend.app.services.zoho import (
+    ZohoAmbiguous,
     ZohoNotConfiguredError,
     ZohoNotFound,
     ZohoRateLimited,
+    ZohoRequestRejected,
     ZohoUpstreamError,
     zoho_service,
 )
@@ -602,7 +604,7 @@ def _fail_on(day, exc):
 
 
 async def test_a_failing_day_is_skipped_by_the_next_batch_and_the_queue_moves_on(zoho, engine):
-    zoho.sales = _fail_on(BAD_DAY, ZohoUpstreamError("Zoho Books error (HTTP 400)"))
+    zoho.sales = _fail_on(BAD_DAY, ZohoRequestRejected("Zoho rejected the request"))
     with pytest.raises(ZohoUpstreamError):
         await sync.run_revenue_sync_batch()
     assert [d.day for d in await day_index(engine)] == [TODAY]
@@ -617,7 +619,7 @@ async def test_a_failing_day_is_skipped_by_the_next_batch_and_the_queue_moves_on
 async def test_a_failing_days_back_off_doubles_and_caps_at_six_hours(zoho, monkeypatch):
     clock = {"t": 1000.0}
     monkeypatch.setattr(sync.time, "monotonic", lambda: clock["t"])
-    zoho.sales = _fail_on(TODAY, ZohoUpstreamError("bad day"))
+    zoho.sales = _fail_on(TODAY, ZohoRequestRejected("bad day"))
     waits = []
     for _ in range(10):
         with pytest.raises(ZohoUpstreamError):
@@ -643,7 +645,7 @@ async def test_a_rate_limit_or_transport_error_marks_no_day(zoho):
 async def test_a_successful_fetch_clears_the_days_failure(zoho, monkeypatch):
     clock = {"t": 1000.0}
     monkeypatch.setattr(sync.time, "monotonic", lambda: clock["t"])
-    zoho.sales = _fail_on(TODAY, ZohoUpstreamError("bad day"))
+    zoho.sales = _fail_on(TODAY, ZohoRequestRejected("bad day"))
     with pytest.raises(ZohoUpstreamError):
         await sync.run_revenue_sync_batch()
     assert TODAY in sync._day_failures
@@ -655,7 +657,7 @@ async def test_a_successful_fetch_clears_the_days_failure(zoho, monkeypatch):
 
 
 async def test_a_full_rebuild_clears_every_failure(zoho):
-    zoho.sales = _fail_on(TODAY, ZohoUpstreamError("bad day"))
+    zoho.sales = _fail_on(TODAY, ZohoRequestRejected("bad day"))
     with pytest.raises(ZohoUpstreamError):
         await sync.run_revenue_sync_batch()
     zoho.sales = zoho.default_sales
@@ -667,7 +669,7 @@ async def test_a_full_rebuild_clears_every_failure(zoho):
 async def test_status_lists_failed_days_newest_first_and_stops_backfilling_when_only_they_remain(zoho, engine):
     async def sales(day, page):
         if day <= "2026-10-06":
-            raise ZohoUpstreamError(f"bad {day}")
+            raise ZohoRequestRejected(f"bad {day}")
         return [], False
 
     zoho.sales = sales
@@ -958,3 +960,78 @@ async def test_a_low_budget_stops_the_cash_step_quietly(zoho, engine, monkeypatc
     assert sync.cash_error() is None
     assert (await status(engine))["lastError"] is None
     assert len((await cash_rows(engine))[0]) == 1  # the page that completed is kept
+
+
+# ── review fixes: what marks a day, steps that Zoho refuses, cash beside a failed day ───────────
+
+
+async def test_a_token_or_other_zoho_wide_error_marks_no_day(zoho):
+    zoho.sales = _fail_on(TODAY, ZohoUpstreamError("Token refresh failed (HTTP 400)"))
+    with pytest.raises(ZohoUpstreamError):
+        await sync.run_revenue_sync_batch()
+    assert sync._day_failures == {}
+
+
+async def test_a_5xx_marks_the_day_but_its_back_off_stops_at_ten_minutes(zoho, monkeypatch):
+    clock = {"t": 1000.0}
+    monkeypatch.setattr(sync.time, "monotonic", lambda: clock["t"])
+    zoho.sales = _fail_on(TODAY, ZohoAmbiguous("Zoho Books error (HTTP 502)"))
+    waits = []
+    for _ in range(5):
+        with pytest.raises(ZohoAmbiguous):
+            await sync.run_revenue_sync_batch()
+        f = sync._day_failures[TODAY]
+        waits.append(f.next_retry - clock["t"])
+        clock["t"] = f.next_retry + 1
+    assert waits[0] == SYNC.error_backoff_s
+    assert max(waits) == sync.DAY_RETRY_CAP_5XX_S
+
+
+async def test_a_contact_zoho_refuses_waits_and_the_lookups_after_it_still_run(zoho, engine):
+    async def sales(day, page):
+        return ([group("c1", ROW_A), group("c2", {**ROW_A, "item_id": "i2"})] if day == TODAY else []), False
+
+    async def contact(customer_id):
+        if customer_id == "c1":
+            raise ZohoRequestRejected("bad contact")
+        return {"name": "Two"}
+
+    zoho.sales, zoho.contact = sales, contact
+    await sync.run_revenue_sync_batch()
+    assert zoho.contact_calls == ["c1", "c2"]
+    zoho.contact_calls.clear()
+    await sync.run_revenue_sync_batch()
+    assert "c1" not in zoho.contact_calls
+
+
+async def test_a_month_check_zoho_refuses_waits_and_does_not_fail_the_batch(with_september, engine):
+    async def range_rows(from_date, to_date, page):
+        raise ZohoRequestRejected("bad month")
+
+    with_september.range_rows = range_rows
+    await sync.run_revenue_sync_batch()
+    r = await sync.run_revenue_sync_batch()
+    assert r["checked"] is None
+    assert len(with_september.range_calls) == 1
+    with_september.range_calls.clear()
+    await sync.run_revenue_sync_batch()
+    assert with_september.range_calls == []
+
+
+async def test_cash_still_refreshes_while_a_day_waits_out_its_back_off(zoho):
+    zoho.sales = _fail_on(BAD_DAY, ZohoRequestRejected("bad day"))
+    with pytest.raises(ZohoUpstreamError):
+        await sync.run_revenue_sync_batch()
+    for _ in range(3):
+        await sync.run_revenue_sync_batch()
+    assert "payments" in cash_kinds(zoho)
+
+
+async def test_a_rate_limit_in_the_cash_step_reaches_the_loop(zoho, monkeypatch):
+    async def pages(since, page):
+        raise ZohoRateLimited("429")
+
+    zoho.payment_pages = pages
+    await sync.run_revenue_sync_batch()
+    with pytest.raises(ZohoRateLimited):
+        await sync.run_revenue_sync_batch()

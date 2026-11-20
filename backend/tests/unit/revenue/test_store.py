@@ -408,3 +408,27 @@ async def test_a_full_cache_clear_drops_the_month_checks(engine, db):
     await store.clear_revenue_cache(db)
     async with store.snapshot(engine) as conn:
         assert await store.read_month_checks(conn) == []
+
+
+async def test_a_scope_decision_forgets_every_invoice_share_so_the_cash_step_re_reads_them(engine, db):
+    row = {
+        "invoice_id": "inv1",
+        "number": "INV-1",
+        "customer_id": "c1",
+        "customer_name": "C",
+        "date": "2026-10-01",
+        "due_date": "2026-10-10",
+        "total": 100.0,
+        "balance": 100.0,
+        "share": 0.5,
+    }
+    await store.save_invoice_detail(db, row, NOW)
+    await store.set_decision(db, "i9", True, NOW)
+    async with store.snapshot(engine) as conn:
+        [inv] = await store.read_invoice_shares(conn)
+    assert inv["share"] is None
+    await store.save_invoice_detail(db, row, NOW)
+    await store.clear_decision(db, "i9")
+    async with store.snapshot(engine) as conn:
+        [inv] = await store.read_invoice_shares(conn)
+    assert inv["share"] is None
