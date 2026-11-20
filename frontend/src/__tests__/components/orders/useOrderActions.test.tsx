@@ -109,6 +109,24 @@ describe('useOrderActions', () => {
     expect(done).toHaveBeenCalledWith(undefined, 'so1');
   });
 
+  it('a refused cancel rejects, hands the error to its callback and leaves the board alone', async () => {
+    server.use(http.post('*/order-board/orders/so1/cancel', () => HttpResponse.json({ detail: 'already_invoiced' }, { status: 409 })));
+    const client = new QueryClient({ defaultOptions: { mutations: { retry: false } } });
+    const wrapper = ({ children }: { children: ReactNode }) => <QueryClientProvider client={client}>{children}</QueryClientProvider>;
+    const failed = vi.fn();
+    const done = vi.fn();
+    const { result } = renderHook(() => useOrderActions({ cancel: { onSuccess: done, onError: failed } }), { wrapper });
+    const kept = { ...board, computed_at: 'kept' } as OrderBoardResponse;
+    client.setQueryData(['order-board'], kept);
+    await act(async () => {
+      await expect(result.current.cancelOrder.mutateAsync('so1')).rejects.toThrow();
+    });
+    expect(failed).toHaveBeenCalledTimes(1);
+    expect(failed.mock.calls[0][0]).toBeInstanceOf(Error);
+    expect(done).not.toHaveBeenCalled();
+    expect(client.getQueryData(['order-board'])).toBe(kept);
+  });
+
   it('the sheet fetcher returns the PDF and refetches the board once printed', async () => {
     server.use(http.post('*/order-board/orders/so1/prep-sheet', () => new HttpResponse(new Blob(['%PDF-']), { headers: { 'Content-Type': 'application/pdf' } })));
     const { client, result } = setup();

@@ -4,6 +4,7 @@ endpoints, not the general settings API, because Operators hold
 ``settings:read`` only and must still be able to tune the board.
 """
 
+import asyncio
 from dataclasses import asdict
 from datetime import datetime
 from typing import Annotated, Literal
@@ -14,7 +15,7 @@ from sqlalchemy import and_, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.app.api.routes.order_board._common import _logged, _pdf, _require_order, _run, logger, router
+from backend.app.api.routes.order_board._common import _by, _logged, _pdf, _require_order, _run, logger, router
 from backend.app.core.auth import RequirePermissionIfAuthEnabled
 from backend.app.core.database import get_db
 from backend.app.core.permissions import Permission
@@ -263,12 +264,11 @@ async def print_prep_sheet(
         await _run(order_board_actions.picklist_content(db, salesorder_id, picklist_id, whole)) if picklist_id else None
     )
     row = await _run(
-        order_board_actions.stamp_print(
-            db, salesorder_id, user.username if user else "", content["number"] if content else None
-        )
+        order_board_actions.stamp_print(db, salesorder_id, _by(user) or "", content["number"] if content else None)
     )
     base = await aito_tracking.external_url(db)
-    pdf = render_prep_sheet(
+    pdf = await asyncio.to_thread(  # reportlab is CPU-bound: keep it off the event loop
+        render_prep_sheet,
         row,
         printed_at=datetime.now(),
         order_url=f"{base}/orders?order={salesorder_id}" if base else None,
@@ -281,6 +281,13 @@ async def print_prep_sheet(
 
 class PrepSheetBatchBody(BaseModel):
     ids: list[Annotated[str, StringConstraints(min_length=1, max_length=64)]] = Field(min_length=1, max_length=30)
+
+
+async def _stamp_unless_gone(db: AsyncSession, salesorder_id: str, by: str) -> dict | None:
+    try:
+        return await order_board_actions.stamp_print(db, salesorder_id, by)
+    except (order_board_actions.OrderNotOnBoard, order_board_sync.OrderNotStored):
+        return None
 
 
 @router.post("/prep-sheet/batch")
@@ -299,11 +306,17 @@ async def print_prep_sheet_batch(
     ]
     if not ids:
         raise HTTPException(status_code=404, detail="No order to prepare.")
-    by = user.username if user else ""
-    rows = [await _run(order_board_actions.stamp_print(db, i, by)) for i in ids]
+    by = _by(user) or ""
+    stamped = [(i, await _run(_stamp_unless_gone(db, i, by))) for i in ids]
+    stamped = [(i, row) for i, row in stamped if row is not None]  # an order that left the board is skipped
+    if not stamped:
+        raise HTTPException(status_code=404, detail="Order not found.")
+    ids = [i for i, _row in stamped]
+    rows = [row for _i, row in stamped]
     items = (await db.execute(select(OrderBoardDoc).where(OrderBoardDoc.kind == "item"))).scalars()
     base = await aito_tracking.external_url(db)
-    pdf = render_batch_prep_sheet(
+    pdf = await asyncio.to_thread(
+        render_batch_prep_sheet,
         rows,
         {d.zoho_id: (d.header or {}).get("brand") or "" for d in items},
         printed_at=datetime.now(),

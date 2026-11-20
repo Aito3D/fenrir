@@ -111,6 +111,14 @@
   "queue:start_unreviewed",
   "queue:update_all",
   "queue:update_own",
+  "revenue:export",
+  "revenue:manage_notes",
+  "revenue:manage_scope",
+  "revenue:manage_targets",
+  "revenue:read",
+  "revenue:sync",
+  "revenue:view_customers",
+  "revenue:view_margin",
   "settings:backup",
   "settings:read",
   "settings:restore",
@@ -276,6 +284,16 @@
    "queue:start_unreviewed",
    "queue:update_all",
    "queue:update_own"
+  ],
+  "Revenue": [
+   "revenue:export",
+   "revenue:manage_notes",
+   "revenue:manage_scope",
+   "revenue:manage_targets",
+   "revenue:read",
+   "revenue:sync",
+   "revenue:view_customers",
+   "revenue:view_margin"
   ],
   "Settings": [
    "settings:backup",
@@ -450,6 +468,14 @@
     "aito:delete",
     "orders:read",
     "orders:update",
+    "revenue:read",
+    "revenue:export",
+    "revenue:manage_scope",
+    "revenue:manage_targets",
+    "revenue:manage_notes",
+    "revenue:sync",
+    "revenue:view_customers",
+    "revenue:view_margin",
     "websocket:connect"
    ]
   },

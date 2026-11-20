@@ -1203,6 +1203,45 @@
    },
    "security": true
   },
+  "DELETE /api/v1/revenue/annotations/{annotation_id}": {
+   "operationId": "delete_annotation_api_v1_revenue_annotations__annotation_id__delete",
+   "params": [
+    "header:X-API-Key",
+    "path:annotation_id!"
+   ],
+   "requestBody": {},
+   "responses": {
+    "200": null,
+    "422": "HTTPValidationError"
+   },
+   "security": true
+  },
+  "DELETE /api/v1/revenue/scope/{item_id}": {
+   "operationId": "delete_scope_api_v1_revenue_scope__item_id__delete",
+   "params": [
+    "header:X-API-Key",
+    "path:item_id!"
+   ],
+   "requestBody": {},
+   "responses": {
+    "200": null,
+    "422": "HTTPValidationError"
+   },
+   "security": true
+  },
+  "DELETE /api/v1/revenue/targets/{month}": {
+   "operationId": "delete_target_api_v1_revenue_targets__month__delete",
+   "params": [
+    "header:X-API-Key",
+    "path:month!"
+   ],
+   "requestBody": {},
+   "responses": {
+    "200": null,
+    "422": "HTTPValidationError"
+   },
+   "security": true
+  },
   "DELETE /api/v1/scheduled-dryings/{scheduled_drying_id}": {
    "operationId": "cancel_scheduled_drying_api_v1_scheduled_dryings__scheduled_drying_id__delete",
    "params": [
@@ -6309,6 +6348,196 @@
    },
    "security": true
   },
+  "GET /api/v1/revenue": {
+   "operationId": "get_revenue_api_v1_revenue_get",
+   "params": [
+    "header:X-API-Key",
+    "query:brand",
+    "query:from",
+    "query:granularity",
+    "query:items",
+    "query:kind",
+    "query:preset",
+    "query:segment",
+    "query:to"
+   ],
+   "requestBody": {},
+   "responses": {
+    "200": null,
+    "422": "HTTPValidationError"
+   },
+   "security": true
+  },
+  "GET /api/v1/revenue/analysis": {
+   "operationId": "get_analysis_api_v1_revenue_analysis_get",
+   "params": [
+    "header:X-API-Key",
+    "query:brand",
+    "query:from",
+    "query:items",
+    "query:kind",
+    "query:segment",
+    "query:to"
+   ],
+   "requestBody": {},
+   "responses": {
+    "200": null,
+    "422": "HTTPValidationError"
+   },
+   "security": true
+  },
+  "GET /api/v1/revenue/annotations": {
+   "operationId": "get_annotations_api_v1_revenue_annotations_get",
+   "params": [
+    "header:X-API-Key"
+   ],
+   "requestBody": {},
+   "responses": {
+    "200": null,
+    "422": "HTTPValidationError"
+   },
+   "security": true
+  },
+  "GET /api/v1/revenue/customers": {
+   "operationId": "get_customers_api_v1_revenue_customers_get",
+   "params": [
+    "header:X-API-Key",
+    "query:brand",
+    "query:from",
+    "query:items",
+    "query:kind",
+    "query:segment",
+    "query:to"
+   ],
+   "requestBody": {},
+   "responses": {
+    "200": null,
+    "422": "HTTPValidationError"
+   },
+   "security": true
+  },
+  "GET /api/v1/revenue/daily": {
+   "operationId": "get_daily_api_v1_revenue_daily_get",
+   "params": [
+    "header:X-API-Key",
+    "query:brand",
+    "query:from",
+    "query:items",
+    "query:kind",
+    "query:segment",
+    "query:to"
+   ],
+   "requestBody": {},
+   "responses": {
+    "200": null,
+    "422": "HTTPValidationError"
+   },
+   "security": true
+  },
+  "GET /api/v1/revenue/items": {
+   "operationId": "get_items_api_v1_revenue_items_get",
+   "params": [
+    "header:X-API-Key",
+    "query:brand",
+    "query:from",
+    "query:items",
+    "query:kind",
+    "query:segment",
+    "query:to"
+   ],
+   "requestBody": {},
+   "responses": {
+    "200": null,
+    "422": "HTTPValidationError"
+   },
+   "security": true
+  },
+  "GET /api/v1/revenue/movers": {
+   "operationId": "get_movers_api_v1_revenue_movers_get",
+   "params": [
+    "header:X-API-Key",
+    "query:brand",
+    "query:cfrom",
+    "query:cto",
+    "query:from",
+    "query:granularity",
+    "query:items",
+    "query:key",
+    "query:kind",
+    "query:segment",
+    "query:to"
+   ],
+   "requestBody": {},
+   "responses": {
+    "200": null,
+    "422": "HTTPValidationError"
+   },
+   "security": true
+  },
+  "GET /api/v1/revenue/products": {
+   "operationId": "get_products_api_v1_revenue_products_get",
+   "params": [
+    "header:X-API-Key"
+   ],
+   "requestBody": {},
+   "responses": {
+    "200": null,
+    "422": "HTTPValidationError"
+   },
+   "security": true
+  },
+  "GET /api/v1/revenue/review": {
+   "operationId": "get_review_api_v1_revenue_review_get",
+   "params": [
+    "header:X-API-Key"
+   ],
+   "requestBody": {},
+   "responses": {
+    "200": null,
+    "422": "HTTPValidationError"
+   },
+   "security": true
+  },
+  "GET /api/v1/revenue/sync": {
+   "operationId": "get_sync_api_v1_revenue_sync_get",
+   "params": [
+    "header:X-API-Key"
+   ],
+   "requestBody": {},
+   "responses": {
+    "200": null,
+    "422": "HTTPValidationError"
+   },
+   "security": true
+  },
+  "GET /api/v1/revenue/targets": {
+   "operationId": "get_targets_api_v1_revenue_targets_get",
+   "params": [
+    "header:X-API-Key"
+   ],
+   "requestBody": {},
+   "responses": {
+    "200": null,
+    "422": "HTTPValidationError"
+   },
+   "security": true
+  },
+  "GET /api/v1/revenue/yoy": {
+   "operationId": "get_yoy_api_v1_revenue_yoy_get",
+   "params": [
+    "header:X-API-Key",
+    "query:brand",
+    "query:items",
+    "query:kind",
+    "query:segment"
+   ],
+   "requestBody": {},
+   "responses": {
+    "200": null,
+    "422": "HTTPValidationError"
+   },
+   "security": true
+  },
   "GET /api/v1/scheduled-dryings": {
    "operationId": "list_scheduled_dryings_api_v1_scheduled_dryings_get",
    "params": [
@@ -7179,6 +7408,18 @@
    "requestBody": {},
    "responses": {
     "200": "[UserResponse]",
+    "422": "HTTPValidationError"
+   },
+   "security": true
+  },
+  "GET /api/v1/users/me/ui-prefs": {
+   "operationId": "get_my_ui_prefs_api_v1_users_me_ui_prefs_get",
+   "params": [
+    "header:X-API-Key"
+   ],
+   "requestBody": {},
+   "responses": {
+    "200": "object",
     "422": "HTTPValidationError"
    },
    "security": true
@@ -13134,6 +13375,31 @@
    },
    "security": true
   },
+  "POST /api/v1/revenue/annotations": {
+   "operationId": "post_annotation_api_v1_revenue_annotations_post",
+   "params": [
+    "header:X-API-Key"
+   ],
+   "requestBody": {},
+   "responses": {
+    "201": null,
+    "422": "HTTPValidationError"
+   },
+   "security": true
+  },
+  "POST /api/v1/revenue/sync": {
+   "operationId": "post_sync_api_v1_revenue_sync_post",
+   "params": [
+    "header:X-API-Key",
+    "query:full"
+   ],
+   "requestBody": {},
+   "responses": {
+    "200": null,
+    "422": "HTTPValidationError"
+   },
+   "security": true
+  },
   "POST /api/v1/scheduled-dryings": {
    "operationId": "create_scheduled_drying_api_v1_scheduled_dryings_post",
    "params": [
@@ -14647,6 +14913,32 @@
    },
    "security": true
   },
+  "PUT /api/v1/revenue/scope/{item_id}": {
+   "operationId": "put_scope_api_v1_revenue_scope__item_id__put",
+   "params": [
+    "header:X-API-Key",
+    "path:item_id!"
+   ],
+   "requestBody": {},
+   "responses": {
+    "200": null,
+    "422": "HTTPValidationError"
+   },
+   "security": true
+  },
+  "PUT /api/v1/revenue/targets/{month}": {
+   "operationId": "put_target_api_v1_revenue_targets__month__put",
+   "params": [
+    "header:X-API-Key",
+    "path:month!"
+   ],
+   "requestBody": {},
+   "responses": {
+    "200": null,
+    "422": "HTTPValidationError"
+   },
+   "security": true
+  },
   "PUT /api/v1/settings/": {
    "operationId": "update_settings_api_v1_settings__put",
    "params": [
@@ -14780,6 +15072,21 @@
    },
    "responses": {
     "200": "UserEmailPreferenceResponse",
+    "422": "HTTPValidationError"
+   },
+   "security": true
+  },
+  "PUT /api/v1/users/me/ui-prefs/{key}": {
+   "operationId": "put_my_ui_pref_api_v1_users_me_ui_prefs__key__put",
+   "params": [
+    "header:X-API-Key",
+    "path:key!"
+   ],
+   "requestBody": {
+    "application/json": "object"
+   },
+   "responses": {
+    "204": null,
     "422": "HTTPValidationError"
    },
    "security": true
@@ -16739,6 +17046,7 @@
     "mqtt_use_tls": "boolean",
     "mqtt_username": "string",
     "notification_language": "string",
+    "notification_submitter_email_enabled": "boolean",
     "nozzle_temp_presets": "string",
     "obico_action": "string",
     "obico_enabled": "boolean",
@@ -16779,7 +17087,9 @@
     "queue_keep_bed_warm": "boolean",
     "queue_keep_warm_bed_temp": "integer",
     "queue_keep_warm_max_minutes": "integer",
+    "queue_loaded_filament_first": "boolean",
     "queue_max_concurrent_uploads": "integer",
+    "queue_max_wait_hours": "anyOf(integer,null)",
     "queue_shortest_first": "boolean",
     "require_plate_clear": "boolean",
     "save_thumbnails": "boolean",
@@ -16924,6 +17234,7 @@
     "mqtt_use_tls": "anyOf(boolean,null)",
     "mqtt_username": "anyOf(string,null)",
     "notification_language": "anyOf(string,null)",
+    "notification_submitter_email_enabled": "anyOf(boolean,null)",
     "nozzle_temp_presets": "anyOf(string,null)",
     "obico_action": "anyOf(string,null)",
     "obico_enabled": "anyOf(boolean,null)",
@@ -16963,7 +17274,9 @@
     "queue_keep_bed_warm": "anyOf(boolean,null)",
     "queue_keep_warm_bed_temp": "anyOf(integer,null)",
     "queue_keep_warm_max_minutes": "anyOf(integer,null)",
+    "queue_loaded_filament_first": "anyOf(boolean,null)",
     "queue_max_concurrent_uploads": "anyOf(integer,null)",
+    "queue_max_wait_hours": "anyOf(integer,null)",
     "queue_shortest_first": "anyOf(boolean,null)",
     "require_plate_clear": "anyOf(boolean,null)",
     "save_thumbnails": "anyOf(boolean,null)",
@@ -27176,6 +27489,7 @@
   },
   "ZohoContactPatch": {
    "properties": {
+    "contact_person_id": "anyOf(string,null)",
     "email": "anyOf(string,null)",
     "phone": "anyOf(string,null)",
     "phone_field": "string"

@@ -1410,6 +1410,8 @@ CREATE TABLE print_log_entries (
 	notes TEXT, 
 	quantity INTEGER, 
 	ended_offline BOOLEAN, 
+	planned_cost FLOAT, 
+	planned_grams FLOAT, 
 	PRIMARY KEY (id), 
 	FOREIGN KEY(archive_id) REFERENCES print_archives (id) ON DELETE SET NULL, 
 	FOREIGN KEY(queue_item_id) REFERENCES print_queue (id) ON DELETE SET NULL, 
@@ -1724,6 +1726,66 @@ CREATE TABLE projects (
 	PRIMARY KEY (id), 
 	FOREIGN KEY(parent_id) REFERENCES projects (id), 
 	FOREIGN KEY(folder_id) REFERENCES project_folders (id) ON DELETE SET NULL
+);
+CREATE TABLE revenue_annotations (
+	id INTEGER NOT NULL, 
+	day VARCHAR(10) NOT NULL, 
+	label VARCHAR(80) NOT NULL, 
+	created_at VARCHAR(40) NOT NULL, 
+	PRIMARY KEY (id)
+);
+CREATE TABLE revenue_customers (
+	customer_id VARCHAR(64) NOT NULL, 
+	name VARCHAR(500) NOT NULL, 
+	company_name VARCHAR(500) NOT NULL, 
+	sub_type VARCHAR(32), 
+	found BOOLEAN NOT NULL, 
+	fetched_at VARCHAR(40) NOT NULL, 
+	PRIMARY KEY (customer_id)
+);
+CREATE TABLE revenue_day_lines (
+	day VARCHAR(10) NOT NULL, 
+	item_id VARCHAR(64) NOT NULL, 
+	customer_id VARCHAR(64) NOT NULL, 
+	name VARCHAR(500) NOT NULL, 
+	sku VARCHAR(255) NOT NULL, 
+	quantity FLOAT NOT NULL, 
+	amount FLOAT NOT NULL, 
+	PRIMARY KEY (day, item_id, customer_id), 
+	FOREIGN KEY(day) REFERENCES revenue_days (day) ON DELETE CASCADE
+);
+CREATE TABLE revenue_days (
+	day VARCHAR(10) NOT NULL, 
+	closed BOOLEAN NOT NULL, 
+	fetched_at VARCHAR(40) NOT NULL, 
+	format INTEGER NOT NULL, 
+	PRIMARY KEY (day)
+);
+CREATE TABLE revenue_items (
+	item_id VARCHAR(64) NOT NULL, 
+	name VARCHAR(500) NOT NULL, 
+	sku VARCHAR(255) NOT NULL, 
+	brand VARCHAR(255), 
+	nature VARCHAR(255), 
+	item_type VARCHAR(32), 
+	tax_percentage FLOAT, 
+	purchase_rate FLOAT, 
+	dealer_price FLOAT, 
+	status VARCHAR(32), 
+	fetched_at VARCHAR(40) NOT NULL, 
+	PRIMARY KEY (item_id)
+);
+CREATE TABLE revenue_scope_decisions (
+	item_id VARCHAR(64) NOT NULL, 
+	included BOOLEAN NOT NULL, 
+	decided_at VARCHAR(40) NOT NULL, 
+	PRIMARY KEY (item_id)
+);
+CREATE TABLE revenue_targets (
+	month VARCHAR(7) NOT NULL, 
+	amount_ht FLOAT NOT NULL, 
+	updated_at VARCHAR(40) NOT NULL, 
+	PRIMARY KEY (month)
 );
 CREATE TABLE scheduled_dryings (
 	id INTEGER NOT NULL, 
@@ -2220,7 +2282,8 @@ CREATE TABLE users (
 	orca_cloud_user_id VARCHAR(64), 
 	orca_cloud_pending_verifier VARCHAR(64), 
 	orca_cloud_pending_state VARCHAR(32), 
-	orca_cloud_pending_at DATETIME
+	orca_cloud_pending_at DATETIME, 
+	ui_prefs JSON
 );
 CREATE TABLE virtual_printers (
 	id INTEGER NOT NULL, 

@@ -177,6 +177,49 @@ async def test_credit_and_rating_read_the_stored_customer(async_client, tokens, 
 
 
 @pytest.mark.asyncio
+async def test_client_rating_reads_the_stored_customer_and_needs_orders_read(async_client, tokens, order, monkeypatch):  # noqa: F811
+    from backend.app.schemas.aito import AitoClientRatingResponse
+
+    seen = []
+
+    async def rating(db, customer_id, **kwargs):
+        seen.append(customer_id)
+        return AitoClientRatingResponse(
+            tier="good", reason="punctual", settled_count=4, on_time_count=4, computed_at=None, stale=False
+        )
+
+    monkeypatch.setattr("backend.app.api.routes.order_board.documents.read_client_rating", rating)
+    r = await async_client.get(f"{BASE}/client-rating", headers=tokens["read"])
+    assert r.status_code == 200
+    assert (r.json()["tier"], r.json()["reason"], r.json()["settled_count"]) == ("good", "punctual", 4)
+    assert seen == ["c1"]
+    r = await async_client.get("/api/v1/order-board/orders/nope/client-rating", headers=tokens["read"])
+    assert r.status_code == 404 and seen == ["c1"]
+    assert (await async_client.get(f"{BASE}/client-rating", headers=tokens["none"])).status_code == 403
+    assert seen == ["c1"]
+
+
+@pytest.mark.asyncio
+async def test_sync_is_refused_with_503_while_zoho_is_busy_and_reads_nothing(async_client, tokens, order, monkeypatch):  # noqa: F811
+    calls = []
+
+    async def board_row(db, salesorder_id):
+        calls.append("row")
+        return {"id": "so1", "payment": {}}
+
+    async def refresh(db, salesorder_id):
+        calls.append("refresh")
+
+    monkeypatch.setattr(order_board_sync, "find_board_row", board_row)
+    monkeypatch.setattr(order_board_sync, "refresh_order", refresh)
+    monkeypatch.setattr(order_board_sync, "zoho_busy", lambda: True)
+    r = await async_client.post(f"{BASE}/sync", headers=tokens["both"])
+    assert r.status_code == 503
+    assert r.json()["detail"] == "Zoho is busy, try again shortly."
+    assert calls == []
+
+
+@pytest.mark.asyncio
 async def test_contact_edit_writes_the_orders_person(async_client, tokens, order, monkeypatch, db_session):  # noqa: F811
     calls = []
 

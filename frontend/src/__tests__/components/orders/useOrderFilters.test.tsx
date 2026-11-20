@@ -98,6 +98,60 @@ describe('useOrderFilters', () => {
     fireEvent.click(screen.getByText('sort'));
     expect(putUiPref).toHaveBeenLastCalledWith('orders', { pay: 'unpaid', sort: 'value', flip: true });
     fireEvent.click(screen.getByText('core'));
-    expect(putUiPref).toHaveBeenLastCalledWith('orders', { pay: 'unpaid', sort: 'value', flip: true, coreOnly: false });
+    // the second save waits for the first to settle
+    await waitFor(() =>
+      expect(putUiPref).toHaveBeenLastCalledWith('orders', { pay: 'unpaid', sort: 'value', flip: true, coreOnly: false }),
+    );
+  });
+
+  it('keeps a pick made before the account answered and saves it merged over the account copy', async () => {
+    let answer!: (v: unknown) => void;
+    getUiPrefs.mockReturnValue(new Promise(r => (answer = r)));
+    mount('/orders');
+    fireEvent.click(screen.getByText('sort'));
+    expect(putUiPref).not.toHaveBeenCalled();
+    expect(screen.getByTestId('state').textContent).toBe('all|null|value|true|true');
+    await act(async () => answer({ orders: { pay: 'unpaid', follow: 'x', coreOnly: false } }));
+    await waitFor(() => expect(putUiPref).toHaveBeenCalledTimes(1));
+    expect(putUiPref).toHaveBeenCalledWith('orders', { pay: 'unpaid', follow: 'x', coreOnly: false, sort: 'value', flip: true });
+    expect(screen.getByTestId('state').textContent).toBe('all|null|value|true|true');
+  });
+
+  it('never writes a partial copy over the account after the prefs failed to load', async () => {
+    let fail!: (e: Error) => void;
+    getUiPrefs.mockReturnValue(new Promise((_, rej) => (fail = rej)));
+    mount('/orders');
+    fireEvent.click(screen.getByText('sort'));
+    await act(async () => fail(new Error('down')));
+    fireEvent.click(screen.getByText('core'));
+    expect(putUiPref).not.toHaveBeenCalled();
+    expect(screen.getByTestId('state').textContent).toBe('all|null|value|true|false');
+  });
+
+  it('sends the saves in pick order even when the first one is slower, and a failed one blocks nothing', async () => {
+    getUiPrefs.mockResolvedValue({});
+    const arrived: unknown[] = [];
+    let release!: () => void;
+    putUiPref.mockImplementationOnce((_k: string, v: unknown) => {
+      // the first PUT only reaches the server once released: a later one sent at once would overtake it
+      return new Promise((_, rej) => (release = () => (arrived.push(v), rej(new Error('down')))));
+    });
+    putUiPref.mockImplementation((_k: string, v: unknown) => {
+      arrived.push(v);
+      return Promise.resolve();
+    });
+    mount('/orders');
+    await waitFor(() => expect(getUiPrefs).toHaveBeenCalled());
+    await act(async () => {});
+    fireEvent.click(screen.getByText('sort'));
+    fireEvent.click(screen.getByText('core'));
+    await act(async () => {});
+    expect(putUiPref).toHaveBeenCalledTimes(1);
+    await act(async () => release());
+    await waitFor(() => expect(putUiPref).toHaveBeenCalledTimes(2));
+    expect(arrived).toEqual([
+      { sort: 'value', flip: true },
+      { sort: 'value', flip: true, coreOnly: false },
+    ]);
   });
 });

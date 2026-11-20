@@ -15,6 +15,7 @@ from backend.app.models.order_board_doc import OrderBoardDoc
 from backend.app.models.order_board_event import OrderBoardEvent
 from backend.app.services import order_board_actions, order_board_sync
 from backend.app.services.aito_manual_payments import (
+    AmountAboveBalance,
     ManualPaymentOutcomeUnknown,
     ManualPaymentPartial,
     ManualPaymentUnrecorded,
@@ -1087,3 +1088,33 @@ async def test_manual_payment_failures_map_to_502_codes(
     assert r.json()["detail"]["code"] == code
     assert needle in r.json()["detail"]["message"]
     assert bool(rollbacks) == (code == "upstream")
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("mode", ["card", "cheque", "cash"])
+async def test_manual_amount_above_balance_is_422_and_records_nothing(
+    async_client,
+    tokens,  # noqa: F811
+    order,
+    live_invoice,
+    books_payments,
+    db_session,
+    monkeypatch,
+    mode,
+):
+    await order({"invoices": [INVOICE_NEW]})
+
+    async def over(*a, **kw):
+        raise AmountAboveBalance(5000)
+
+    monkeypatch.setattr(routes, "record_order_manual_payment", over)
+    r = await async_client.post(
+        f"{BASE}/manual-payment",
+        json={"amount": 7000, "mode": mode, "reference": "chq-1"},
+        headers=tokens["both"],
+    )
+    assert r.status_code == 422, r.text
+    assert r.json()["detail"]["code"] == "amount_above_balance"
+    assert "5000" in r.json()["detail"]["message"]
+    assert books_payments.payments == []
+    assert await _events(db_session, "payment.received") == []

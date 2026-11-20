@@ -830,6 +830,62 @@ async def test_batch_prep_sheet_stamps_each_preparable_order_once_and_returns_on
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("gone_error", ["not_on_board", "not_stored"])
+async def test_batch_prep_sheet_skips_an_order_that_vanishes_mid_batch(async_client, tokens, monkeypatch, gone_error):
+    from backend.app.services import order_board_actions as actions
+
+    rows = {i: {"id": i, "number": i, "lines": [{"id": "l", "item_id": "A", "packable": 1}]} for i in ("a", "b", "c")}
+    stamped, seen = [], {}
+    error = actions.OrderNotOnBoard if gone_error == "not_on_board" else order_board_sync.OrderNotStored
+
+    async def fake_board(db):
+        return {"rows": list(rows.values())}
+
+    async def fake_stamp(db, salesorder_id, by, picklist=None):
+        if salesorder_id == "b":
+            raise error("b")
+        stamped.append(salesorder_id)
+        return rows[salesorder_id]
+
+    def fake_render(got, brands, **kw):
+        seen.update(rows=[r["id"] for r in got], urls=sorted(kw["order_urls"]))
+        return b"%PDF-fake"
+
+    monkeypatch.setattr(order_board_sync, "read_board", fake_board)
+    monkeypatch.setattr(actions, "stamp_print", fake_stamp)
+    monkeypatch.setattr("backend.app.api.routes.order_board.board.render_batch_prep_sheet", fake_render)
+    r = await async_client.post(f"{BASE}/prep-sheet/batch", json={"ids": ["a", "b", "c"]}, headers=tokens["both"])
+    assert r.status_code == 200 and r.content == b"%PDF-fake"
+    assert stamped == ["a", "c"] and seen["rows"] == ["a", "c"]
+
+    async def all_gone(db, salesorder_id, by, picklist=None):
+        raise error(salesorder_id)
+
+    stamped.clear()
+    monkeypatch.setattr(actions, "stamp_print", all_gone)
+    r = await async_client.post(f"{BASE}/prep-sheet/batch", json={"ids": ["a", "b"]}, headers=tokens["both"])
+    assert r.status_code == 404 and r.json()["detail"] == "Order not found."
+
+
+@pytest.mark.asyncio
+async def test_batch_prep_sheet_other_stamp_errors_still_propagate(async_client, tokens, monkeypatch):
+    from backend.app.services import order_board_actions as actions
+
+    row = {"id": "a", "number": "A", "lines": [{"id": "l", "item_id": "A", "packable": 1}]}
+
+    async def fake_board(db):
+        return {"rows": [row]}
+
+    async def busy(db, salesorder_id, by, picklist=None):
+        raise actions.OrderBusy("a")
+
+    monkeypatch.setattr(order_board_sync, "read_board", fake_board)
+    monkeypatch.setattr(actions, "stamp_print", busy)
+    r = await async_client.post(f"{BASE}/prep-sheet/batch", json={"ids": ["a"]}, headers=tokens["both"])
+    assert r.status_code == 409
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize("ids", [[], [f"so{i}" for i in range(31)], [""], ["x" * 65]])
 async def test_batch_prep_sheet_refuses_no_ids_too_many_and_bad_ids(async_client, tokens, ids):
     r = await async_client.post(f"{BASE}/prep-sheet/batch", json={"ids": ids}, headers=tokens["both"])

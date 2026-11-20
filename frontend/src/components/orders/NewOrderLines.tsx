@@ -31,6 +31,9 @@ export function NewOrderLines({ lines, currency, disabled, onChange }: { lines: 
   const [leaving, setLeaving] = useState<string | null>(null);
   const leaveTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
   useEffect(() => () => clearTimeout(leaveTimer.current), []);
+  // The leave timer fires 200 ms after the render that started it: it must act on the draft as it is then.
+  const latest = useRef({ lines, onChange });
+  latest.current = { lines, onChange };
   const add = (item: OrderItemHit) => {
     const i = lines.findIndex(l => l.item.id === item.id);
     setPulse({ id: item.id, isNew: i < 0, n: (pulse?.n ?? 0) + 1 });
@@ -42,7 +45,7 @@ export function NewOrderLines({ lines, currency, disabled, onChange }: { lines: 
     clearTimeout(leaveTimer.current);
     leaveTimer.current = setTimeout(() => {
       setLeaving(null);
-      onChange(lines.filter(l => l.item.id !== id));
+      latest.current.onChange(latest.current.lines.filter(l => l.item.id !== id));
     }, LEAVE_MS);
   };
 

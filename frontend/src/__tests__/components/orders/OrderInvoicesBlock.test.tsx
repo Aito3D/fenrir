@@ -348,6 +348,22 @@ describe('OrderInvoicesBlock', () => {
     });
 
     it.each([
+      ['doc-quote', 'quote', 'est1', 'Download quote'],
+      ['doc-retainer', 'retainer', 'r1', 'Download retainer invoice'],
+    ] as const)('%s download fetches the document PDF of this order, kind and id', async (testid, kind, id, label) => {
+      let hit = false;
+      server.use(
+        http.get(`*/order-board/orders/so1/documents/${kind}/${id}/pdf`, () => {
+          hit = true;
+          return new HttpResponse(new Blob(['%PDF-']), { headers: { 'Content-Type': 'application/pdf' } });
+        }),
+      );
+      render(<OrderInvoicesBlock row={row([], { facts, retainers })} />);
+      await userEvent.setup().click(within(screen.getByTestId(testid)).getByRole('button', { name: label }));
+      await waitFor(() => expect(hit).toBe(true));
+    });
+
+    it.each([
       ['Send quote', 'doc-quote', 'quote', 'est1', 'Send quote by email'],
       ['Send retainer invoice', 'doc-retainer', 'retainer', 'r1', 'Send retainer invoice by email'],
     ] as const)('%s opens the email dialog for that document and closes it', async (label, testid, kind, id, title) => {

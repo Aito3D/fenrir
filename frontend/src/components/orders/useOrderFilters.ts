@@ -64,23 +64,55 @@ export function useOrderFilters() {
   const queryClient = useQueryClient();
   const prefs = useQuery({ queryKey: PREFS_QUERY, queryFn: api.getUiPrefs, staleTime: Infinity });
   const saved = useRef<OrderPrefs | null>(null);
+  // Picks made before the account's answer: merged over it once it arrives, never PUT alone (a PUT replaces `orders`).
+  const pending = useRef<OrderPrefs | null>(null);
+  // Saves go out one after another, so the last PUT the server gets is the latest pick; a failed one never
+  // blocks the next. With nothing in flight a save is sent at once.
+  const saving = useRef<Promise<void> | null>(null);
+  const save = (prefsToSave: OrderPrefs) => {
+    const send = () => api.putUiPref(PREF_KEY, prefsToSave);
+    const mine: Promise<void> = (saving.current ? saving.current.then(send) : send())
+      .then(() => {}, () => {}) // unsaved, the choice still holds for this visit
+      .then(() => {
+        if (saving.current === mine) saving.current = null;
+      });
+    saving.current = mine;
+  };
+  const readFailed = useRef(false); // a failed read never becomes a write of a partial copy
   const [urlNamedFilters] = useState(() => URL_FILTERS.some(k => params.has(k)));
   useEffect(() => {
     if (saved.current || !(prefs.isSuccess || prefs.isError)) return;
     const mine = (prefs.data?.[PREF_KEY] ?? {}) as OrderPrefs;
+    const queued = pending.current;
+    pending.current = null;
+    readFailed.current = prefs.isError;
+    if (queued) {
+      // the viewer already chose: their picks stay on screen, the account's other keys are kept as they are
+      saved.current = prefs.isError ? {} : { ...mine, ...queued };
+      if (!prefs.isError) {
+        queryClient.setQueryData<UiPrefs>(PREFS_QUERY, d => ({ ...d, [PREF_KEY]: saved.current }));
+        save(saved.current);
+      }
+      return;
+    }
     saved.current = mine;
     if (typeof mine.coreOnly === 'boolean') setCoreOnly(mine.coreOnly);
     if (urlNamedFilters) return; // a link that names its filters shows them
     if (mine.pay) setPayFilter(pick(mine.pay, PAY_VALUES, 'all'));
     if (mine.follow !== undefined) setFollow((FOLLOW_KEYS as string[]).includes(mine.follow ?? '') ? (mine.follow as FollowKey) : null);
     if (mine.sort) setSort({ key: pick(mine.sort, SORTS, 'age'), flipped: !!mine.flip });
-  }, [prefs.isSuccess, prefs.isError, prefs.data, urlNamedFilters]);
+  }, [prefs.isSuccess, prefs.isError, prefs.data, urlNamedFilters, queryClient]);
 
   const persist = (patch: OrderPrefs) => {
+    if (!saved.current) {
+      pending.current = { ...pending.current, ...patch };
+      return;
+    }
     const next = { ...saved.current, ...patch };
     saved.current = next;
     queryClient.setQueryData<UiPrefs>(PREFS_QUERY, d => ({ ...d, [PREF_KEY]: next }));
-    api.putUiPref(PREF_KEY, next).catch(() => {}); // unsaved, the choice still holds for this visit
+    if (readFailed.current) return;
+    save(next);
   };
   const choosePayFilter = (value: PayFilter) => {
     setPayFilter(value);

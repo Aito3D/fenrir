@@ -10,7 +10,15 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from backend.app.api.routes.aito import (
     _check_zoho_email_rate_limit,
 )
-from backend.app.api.routes.order_board._common import _by, _guarded_email, _logged, _pdf, _run, router
+from backend.app.api.routes.order_board._common import (
+    _by,
+    _guarded_email,
+    _logged,
+    _pdf,
+    _run,
+    _with_default_email,
+    router,
+)
 from backend.app.core.auth import RequirePermissionIfAuthEnabled
 from backend.app.core.database import get_db
 from backend.app.core.permissions import Permission
@@ -19,7 +27,6 @@ from backend.app.schemas.aito import AitoClientRatingResponse
 from backend.app.services import order_board_actions, order_board_sync
 from backend.app.services.aito_client_rating import read_client_rating
 from backend.app.services.aito_customer_credit import read_customer_credit
-from backend.app.services.order_board_payment import order_contact
 from backend.app.services.zoho import ZohoAmbiguous, ZohoUnreachable
 
 Kind = Literal["quote", "retainer"]
@@ -60,11 +67,8 @@ async def _document_email(db: AsyncSession, salesorder_id: str, kind: Kind, docu
     document = await _run(order_board_actions.listed_document(db, salesorder_id, kind, document_id))
     content = await _run(order_board_actions.document_email_content(db, kind, document_id))
     stored = await order_board_sync.find_stored(db, salesorder_id)
-    own = ((order_contact((stored.detail if stored else None) or {}) or {}).get("email") or "").lower()
-    emails = [r["email"] for r in content["recipients"]]
     content = {
-        **content,
-        "default_email": next((e for e in emails if e.lower() == own), emails[0] if emails else None),
+        **_with_default_email(content, stored.detail if stored else None),
         "document_id": document_id,
         "document_number": document["number"],
     }

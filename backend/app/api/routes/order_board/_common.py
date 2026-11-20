@@ -20,6 +20,7 @@ from backend.app.services import (
     order_board_sync,
 )
 from backend.app.services.aito_events import utc_now_naive
+from backend.app.services.order_board_payment import order_contact
 from backend.app.services.zoho import ZohoNotConfiguredError, ZohoUnreachable, ZohoUpstreamError
 from backend.app.utils.http import build_content_disposition
 
@@ -112,6 +113,13 @@ def _pdf(content: bytes, filename: str) -> Response:
             "Cache-Control": "no-store",
         },
     )
+
+
+def _with_default_email(content: dict, order_detail: dict | None) -> dict:
+    """Books' email content plus the address to preselect: the order's own contact when offered, else Books' first."""
+    emails = [r["email"] for r in content["recipients"]]
+    own = ((order_contact(order_detail or {}) or {}).get("email") or "").lower()
+    return {**content, "default_email": next((e for e in emails if e.lower() == own), emails[0] if emails else None)}
 
 
 def _by(user: User | None) -> str | None:
