@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { TrendingUp } from 'lucide-react';
 import { bearerAuthHeaders } from '../api/client';
 import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '../contexts/ToastContext';
@@ -374,9 +375,12 @@ export function RevenuePage() {
 
   return (
     <div className="space-y-4 p-4 pb-24 md:p-8">
-      <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-3">
+      <div className="mb-6 flex flex-wrap items-center justify-between gap-x-6 gap-y-3 animate-rise-lg vt-page-title">
         <div className="min-w-0">
-          <h1 className="text-2xl font-bold text-white">{t('revenue.title')}</h1>
+          <h1 className="flex items-center gap-3 text-2xl font-bold text-white max-md:hidden">
+            <TrendingUp className="h-7 w-7 text-bambu-green" />
+            {t('revenue.title')}
+          </h1>
           {data && <RevenueSyncBanner sync={data.sync} canSync={can.sync} onRetry={retry} />}
         </div>
         <div className="flex flex-wrap items-center gap-3">
@@ -403,7 +407,7 @@ export function RevenuePage() {
         </div>
       </div>
 
-      <div data-slot="revenue-controls" className="border-t border-bambu-dark-tertiary pt-5">
+      <div data-slot="revenue-controls">
         <ControlsRow
           granularity={active.granularity}
           onGranularity={(granularity) => setControls({ granularity })}
