@@ -145,10 +145,17 @@ describe('RevenueChart', () => {
     expect(props.onDrill).toHaveBeenCalledWith(1);
     const week = (key: string, start: string) => bucket({ key, label: key, start, end: start, ht: 100, ttc: 113, goods: 100, byNature: { Imprimantes: 100 } });
     // The drilled window arrives: the focused column is gone, « Retour » is there.
-    rerenderChart({ drillDepth: 1, payload: payload([week('2026-W06', '2026-02-02'), week('2026-W07', '2026-02-09')]) });
+    const weeks = payload([week('2026-W06', '2026-02-02'), week('2026-W07', '2026-02-09')]);
+    // Drill-in has the same gap: « Retour » shows before the weekly payload, and focus stays on the column meanwhile.
+    rerenderChart({ drillDepth: 1 });
+    expect(col).toHaveFocus();
+    rerenderChart({ drillDepth: 1, payload: weeks });
     expect(screen.getByRole('button', { name: '← Back' })).toHaveFocus();
     fireEvent.click(screen.getByRole('button', { name: '← Back' }));
     expect(props.onBack).toHaveBeenCalled();
+    // The page drops the drill at once but keeps the weekly payload until the monthly one is fetched.
+    rerenderChart({ drillDepth: 0, payload: weeks });
+    expect(screen.getByRole('button', { name: '2026-W06 – 100 FCP' })).not.toHaveFocus();
     rerenderChart({ drillDepth: 0 });
     expect(screen.getByRole('button', { name: 'janv. 2026 – 600 FCP' })).toHaveFocus();
   });

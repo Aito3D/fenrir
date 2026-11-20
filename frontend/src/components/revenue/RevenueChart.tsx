@@ -155,6 +155,8 @@ export function RevenueChart({ payload, controls, can, onStack, onDrill, drillDe
   const refocus = useRef(false);
   const backRef = useRef<HTMLButtonElement>(null);
   const groupRef = useRef<HTMLDivElement>(null);
+  // The payload shown when the last « Retour » was pressed: its columns are about to be replaced.
+  const backFrom = useRef<RevenueResponse | null>(null);
   useEffect(() => {
     if (!refocus.current) return;
     const at = document.activeElement;
@@ -162,14 +164,19 @@ export function RevenueChart({ payload, controls, can, onStack, onDrill, drillDe
       if (at !== backRef.current && !groupRef.current?.contains(at)) refocus.current = false;
       return;
     }
-    // After the last « Retour » the columns come with the next payload: wait for them.
-    const target = backRef.current ?? groupRef.current?.querySelector<SVGGElement>('g[role="button"]');
+    // After the last « Retour » the coarser columns come with the next payload: wait for them.
+    const target = backRef.current ?? (payload === backFrom.current ? null : groupRef.current?.querySelector<SVGGElement>('g[role="button"]'));
     if (!target) return;
     refocus.current = false;
+    backFrom.current = null;
     target.focus();
   });
   const drillFrom = onDrill && ((i: number) => { refocus.current = true; onDrill(i); });
-  const back = () => { refocus.current = drillDepth === 1; onBack(); };
+  const back = () => {
+    refocus.current = drillDepth === 1;
+    backFrom.current = payload;
+    onBack();
+  };
   const annotations = notes.data?.annotations ?? [];
 
   const series = chartSeries(buckets, stack);
