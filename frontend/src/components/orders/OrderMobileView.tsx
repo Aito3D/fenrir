@@ -1,9 +1,10 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { ChevronLeft, MoreHorizontal } from 'lucide-react';
 import type { OrderBoardRow, OrderPanelRow } from '../../api/client';
 import { useAuth } from '../../contexts/AuthContext';
+import { useDismissableDialog } from '../../hooks/useDismissableDialog';
 import { formatMoney } from '../../utils/pricing';
 import { PanelTabs } from '../aito/PanelTabs';
 import { Sheet } from '../mobile/Sheet';
@@ -15,7 +16,7 @@ import { useHandOverPending } from './useOrderActions';
 import { PaymentPill } from './PaymentPill';
 import { KIND, STATUS_META, TONE } from './orderStatus';
 
-const BAR_BTN = 'min-h-11 rounded-xl px-4 text-sm font-medium focus:outline-none focus-visible:ring-2 focus-visible:ring-bambu-green';
+const BAR_BTN = 'btn-press min-h-11 rounded-xl px-4 text-sm font-medium focus:outline-none focus-visible:ring-2 focus-visible:ring-bambu-green';
 
 /** One order, full screen on the phone: header, summary, a tab per part of the panel, and the next step in a bar at the bottom. */
 export function OrderMobileView({
@@ -48,10 +49,10 @@ export function OrderMobileView({
   const [more, setMore] = useState(false);
   const tabScope = `order-${row.id}-m-`;
   const handingOver = useHandOverPending(row.id);
-  const root = useRef<HTMLDivElement>(null);
-  // A full-screen layer: focus moves in, and back to the order's row when it closes.
+  // Escape is handled on the element below (a bar or sheet inside may own it first), so the hook's window listener does nothing.
+  const { closing, requestClose, dialogRef: root } = useDismissableDialog(onClose, { animationMs: 200, onEscape: () => {} });
+  // A full-screen layer: focus moves in (the hook), and back to the order's row when it closes.
   useEffect(() => {
-    root.current?.focus();
     const id = row.id;
     return () => document.querySelector<HTMLElement>(`#order-${id} [data-order-row]`)?.focus();
   }, [row.id]);
@@ -75,19 +76,19 @@ export function OrderMobileView({
       onKeyDown={e => {
         // Not while a bar, the ⋯ sheet or a modal inside the view owns Escape.
         if (e.key !== 'Escape' || barOpen || more || (e.target as Element).closest('[role="dialog"]') !== root.current) return;
-        onClose();
+        requestClose();
       }}
-      className="fixed inset-0 z-[45] flex flex-col bg-bambu-dark focus:outline-none"
+      className={`fixed inset-0 z-[45] flex flex-col bg-bambu-dark focus:outline-none ${closing ? 'animate-drawer-out' : 'animate-drawer-in'}`}
     >
       <header className="flex items-center gap-1 border-b border-bambu-dark-tertiary px-2 py-2">
-        <button type="button" onClick={onClose} aria-label={t('orders.mobile.back')} className="grid h-11 w-11 shrink-0 place-items-center rounded-lg text-bambu-gray hover:text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-bambu-green">
+        <button type="button" onClick={requestClose} aria-label={t('orders.mobile.back')} className="btn-press grid h-11 w-11 shrink-0 place-items-center rounded-lg text-bambu-gray hover:text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-bambu-green">
           <ChevronLeft aria-hidden="true" className="h-5 w-5" />
         </button>
         <div className="min-w-0 flex-1">
           <div className="truncate font-medium text-white">{row.customer || '–'}</div>
           <div className="font-mono text-xs text-bambu-gray">{row.number}</div>
         </div>
-        <button type="button" onClick={() => setMore(true)} aria-label={t('orders.mobile.more')} className="grid h-11 w-11 shrink-0 place-items-center rounded-lg text-bambu-gray hover:text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-bambu-green">
+        <button type="button" onClick={() => setMore(true)} aria-label={t('orders.mobile.more')} className="btn-press grid h-11 w-11 shrink-0 place-items-center rounded-lg text-bambu-gray hover:text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-bambu-green">
           <MoreHorizontal aria-hidden="true" className="h-5 w-5" />
         </button>
       </header>
@@ -125,7 +126,7 @@ export function OrderMobileView({
         <OrderLinesPanel row={row} phoneTab={tab} tabScope={tabScope} onBarOpen={setBarOpen} start={start} startTick={startTick} onGoto={onGoto} others={others} onEdited={onEdited} />
       </div>
       {!barOpen && (collect || kind) && (
-        <div data-testid="order-mobile-bar" className="flex gap-2 border-t border-bambu-dark-tertiary bg-bambu-dark-secondary px-3 pt-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))]">
+        <div data-testid="order-mobile-bar" className="animate-rise-sm flex gap-2 border-t border-bambu-dark-tertiary bg-bambu-dark-secondary px-3 pt-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))]">
           {collect && (
             <button type="button" onClick={() => setTab('billing')} className={`${BAR_BTN} flex-1 bg-bambu-dark-tertiary text-white`}>
               {t('orders.mobile.collect')}

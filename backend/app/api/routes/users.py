@@ -1,8 +1,9 @@
+import json
 from datetime import datetime, timezone
 from typing import Annotated
 
 import jwt as _jwt
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Body, Depends, HTTPException, Path, Query, Response, status
 from fastapi.security import HTTPAuthorizationCredentials
 from sqlalchemy import delete, func, select, update as sql_update
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -17,6 +18,7 @@ from backend.app.core.auth import (
     RequirePermissionIfAuthEnabled,
     get_current_user_optional,
     get_password_hash,
+    require_auth_if_enabled,
     revoke_jti,
     security,
     verify_password,
@@ -257,6 +259,35 @@ async def list_users_slim(
     """
     result = await db.execute(select(User.id, User.username).order_by(User.username))
     return [UserSlim(id=row.id, username=row.username) for row in result.all()]
+
+
+_UI_PREF_MAX_BYTES = 4096
+
+
+@router.get("/me/ui-prefs")
+async def get_my_ui_prefs(current_user: User | None = Depends(require_auth_if_enabled)) -> dict:
+    """The caller's saved view settings, keyed by view. Nobody signed in (auth off, API key) has none.
+
+    Declared before ``/{user_id}`` so "me" is not parsed as the int path parameter."""
+    return dict(current_user.ui_prefs or {}) if current_user is not None else {}
+
+
+@router.put("/me/ui-prefs/{key}", status_code=204)
+async def put_my_ui_pref(
+    key: Annotated[str, Path(pattern=r"^[a-zA-Z0-9_.-]{1,64}$")],
+    value: Annotated[dict, Body()],
+    db: AsyncSession = Depends(get_db, scope="function"),
+    current_user: User | None = Depends(require_auth_if_enabled),
+):
+    """Replace one view's settings. The value is the UI's own; only its size is checked."""
+    if len(json.dumps(value)) > _UI_PREF_MAX_BYTES:
+        raise HTTPException(status_code=413, detail="preference too large")
+    if current_user is not None:
+        user = await db.get(User, current_user.id)
+        if user is not None:
+            user.ui_prefs = {**(user.ui_prefs or {}), key: value}  # a new dict: JSON columns miss in-place edits
+            await db.commit()
+    return Response(status_code=204)
 
 
 @router.get("/{user_id}", response_model=UserResponse)

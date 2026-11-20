@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import DateTime, String, func
+from sqlalchemy import JSON, DateTime, String, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from backend.app.core.database import Base
@@ -83,6 +83,8 @@ class User(Base):
     orca_cloud_pending_verifier: Mapped[str | None] = mapped_column(String(64), nullable=True, default=None)
     orca_cloud_pending_state: Mapped[str | None] = mapped_column(String(32), nullable=True, default=None)
     orca_cloud_pending_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, default=None)
+    # The user's own view settings (a board's sort and filters), keyed by view; the UI reads and writes it.
+    ui_prefs: Mapped[dict | None] = mapped_column(JSON, nullable=True, default=None)
 
     # Relationship to groups through association table
     groups: Mapped[list[Group]] = relationship(

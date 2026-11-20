@@ -1,0 +1,266 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Commandes mobile</title>
+<style>
+:root{--bg:#0c131b;--card:#141c26;--card2:#1a2430;--line:#253142;--txt:#e8edf2;--mut:#8b96a5;--acc:#1fbfa5;--red:#f05252;--orange:#fb923c;--blue:#60a5fa;--amber:#fbbf24;--green:#22c55e}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:#05080c;color:var(--txt);font:14px/1.35 -apple-system,BlinkMacSystemFont,"Inter",system-ui,sans-serif;padding:24px 16px 60px}
+button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
+h1{font-size:20px;margin-bottom:4px}
+.intro{max-width:1300px;margin:0 auto 18px;color:var(--mut)}
+.intro b{color:var(--txt)}
+.switch{display:flex;gap:8px;flex-wrap:wrap;margin:12px 0}
+.switch button{border:1px solid var(--line);border-radius:999px;padding:8px 14px;background:var(--card)}
+.switch button[aria-pressed=true]{border-color:var(--acc);background:#1fbfa522}
+.stage{display:flex;gap:40px;justify-content:center;flex-wrap:wrap;align-items:flex-start}
+.col{width:390px;max-width:100%}
+.col h2{font-size:14px;margin-bottom:8px}.col p.note{color:var(--mut);font-size:12.5px;margin-top:10px;line-height:1.5}
+.col p.note b{color:var(--txt)}
+.phone{width:390px;max-width:100%;height:844px;border-radius:44px;border:10px solid #1d232b;background:var(--bg);position:relative;overflow:hidden;box-shadow:0 30px 80px #000a}
+.screen{position:absolute;inset:0;display:flex;flex-direction:column}
+.top{height:52px;flex:none;display:flex;align-items:center;gap:12px;padding:0 14px;border-bottom:1px solid var(--line);background:#0b1118}
+.top .logo{font-weight:800;letter-spacing:.18em;font-size:15px}.top .logo i{color:var(--acc);font-style:normal}
+.top .ttl{font-weight:600}.top .bell{margin-left:auto;font-size:17px;position:relative}
+.top .bell:after{content:"9+";position:absolute;top:-8px;right:-10px;background:var(--acc);color:#000;font-size:9px;border-radius:9px;padding:1px 4px;font-weight:700}
+.scroll{flex:1;overflow-y:auto;overscroll-behavior:contain}
+.scroll::-webkit-scrollbar{display:none}
+.chips{display:flex;gap:6px;overflow-x:auto;padding:10px 12px 8px;scrollbar-width:none}.chips::-webkit-scrollbar{display:none}
+.chip{flex:none;border:1px solid var(--line);background:var(--card);border-radius:999px;padding:6px 11px;font-size:12.5px;color:var(--mut);display:flex;gap:6px;align-items:center}
+.chip b{color:var(--txt);font-weight:600}.chip[aria-pressed=true]{border-color:var(--acc);background:#1fbfa522;color:var(--txt)}
+.dot{width:7px;height:7px;border-radius:50%;flex:none}
+.searchrow{display:flex;gap:8px;padding:2px 12px 10px}
+.search{flex:1;border:1px solid var(--line);background:var(--card);border-radius:10px;padding:9px 12px;color:var(--mut);font-size:13px}
+.iconbtn{border:1px solid var(--line);background:var(--card);border-radius:10px;width:40px;display:grid;place-items:center;position:relative;font-size:15px}
+.badge{position:absolute;top:-5px;right:-5px;background:var(--acc);color:#000;font-size:10px;font-weight:700;border-radius:9px;padding:0 5px}
+.sumline{display:flex;justify-content:space-between;color:var(--mut);font-size:12px;padding:0 14px 8px}
+.row{display:block;width:100%;text-align:left;border-top:1px solid var(--line);padding:11px 14px 10px;position:relative}
+.row:active{background:var(--card)}
+.r1{display:flex;gap:8px;align-items:baseline}.num{font-family:ui-monospace,Menlo,monospace;font-size:12px;color:var(--mut)}
+.cust{font-weight:600;flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.amt{font-variant-numeric:tabular-nums;font-weight:600}
+.r2{display:flex;gap:8px;align-items:center;margin-top:5px;font-size:12px;color:var(--mut)}
+.st{display:inline-flex;gap:5px;align-items:center;font-size:11.5px}
+.pay{margin-left:auto;font-size:11px;border-radius:999px;padding:2px 8px;border:1px solid}
+.bar{height:3px;border-radius:2px;background:#2a3544;margin-top:8px;overflow:hidden;display:flex}.bar i{display:block;height:100%}
+.age{font-size:11px;padding:1px 6px;border-radius:5px;background:#2a3544}
+.next{position:absolute;right:12px;bottom:8px}
+.fab{position:absolute;right:16px;bottom:20px;width:54px;height:54px;border-radius:50%;background:var(--acc);color:#002;font-size:28px;display:grid;place-items:center;box-shadow:0 8px 24px #0009}
+/* order screen */
+.ohead{height:52px;flex:none;display:flex;align-items:center;gap:10px;padding:0 10px;border-bottom:1px solid var(--line);background:#0b1118}
+.ohead .back{font-size:22px;width:34px}.ohead .t{flex:1;min-width:0}.ohead .t b{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.ohead .t span{font-size:11.5px;color:var(--mut);font-family:ui-monospace,Menlo,monospace}
+.ohead .more{font-size:20px;width:34px}
+.osum{padding:12px 14px;border-bottom:1px solid var(--line)}
+.osum .big{display:flex;justify-content:space-between;align-items:center}.osum .big b{font-size:20px}
+.paybar{margin-top:10px;height:22px;border-radius:999px;background:#2a3544;overflow:hidden;position:relative;font-size:11.5px}
+.paybar i{position:absolute;inset:0 auto 0 0;background:#15803d}.paybar span{position:relative;padding:0 10px;line-height:22px}
+.tabs{display:flex;border-bottom:1px solid var(--line);padding:0 6px;flex:none;background:var(--bg)}
+.tabs button{flex:1;padding:11px 0 9px;font-size:12.5px;color:var(--mut);border-bottom:2px solid transparent}.tabs button[aria-selected=true]{color:var(--txt);border-color:var(--acc)}
+.band{display:flex;align-items:center;gap:8px;padding:9px 14px;background:#1fbfa514;font-size:11.5px;text-transform:uppercase;letter-spacing:.05em;font-weight:600;border-bottom:1px solid var(--line)}
+.band .n{color:var(--mut);font-weight:400;text-transform:none}.band button{margin-left:auto;text-transform:none;letter-spacing:0;font-weight:500;border:1px solid var(--line);border-radius:8px;padding:4px 9px}
+.line{display:flex;gap:10px;padding:10px 14px;border-bottom:1px solid var(--line);align-items:center}
+.line .nm{flex:1;min-width:0}.line .nm div:first-child{font-size:13px}.line .sku{font-family:ui-monospace,Menlo,monospace;font-size:10.5px;color:var(--mut);margin-top:2px}
+.qty{font-weight:700;font-size:15px;min-width:30px;text-align:right}.stock{font-size:11px;border-radius:6px;padding:2px 6px;min-width:52px;text-align:center}
+.ok{background:#22c55e1f;color:var(--green)}.ko{background:#f052521f;color:var(--red)}
+.card{margin:12px;border:1px solid var(--line);background:var(--card);border-radius:12px;padding:12px}
+.card h4{font-size:11px;color:var(--mut);text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px;font-weight:600}
+.kv{display:flex;justify-content:space-between;padding:5px 0;font-size:13px}.kv span:first-child{color:var(--mut)}
+.seg3{display:grid;grid-template-columns:repeat(3,1fr);border:1px solid var(--line);border-radius:9px;margin-top:10px}.seg3 button{padding:9px 0;font-size:12.5px;border-right:1px solid var(--line)}.seg3 button:last-child{border:0}
+.doc{display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-top:1px solid var(--line);font-size:13px}.doc small{display:block;color:var(--mut);font-size:11.5px}
+.actbar{flex:none;display:flex;gap:8px;padding:10px 12px 22px;border-top:1px solid var(--line);background:#0b1118}
+.btn{flex:1;border-radius:11px;padding:12px 0;font-weight:600;border:1px solid var(--line);background:var(--card)}.btn.p{background:var(--acc);color:#012;border-color:var(--acc);flex:1.6}
+.act{padding:10px 14px;border-bottom:1px solid var(--line);font-size:12.5px}.act small{color:var(--mut);display:block}
+/* sheets */
+.scrim{position:absolute;inset:0;background:#000a;opacity:0;pointer-events:none;transition:opacity .2s;z-index:5}
+.sheet{position:absolute;left:0;right:0;bottom:0;background:var(--card);border-radius:18px 18px 0 0;transform:translateY(105%);transition:transform .28s cubic-bezier(.2,.8,.2,1);z-index:6;max-height:92%;display:flex;flex-direction:column}
+.open>.scrim{opacity:1;pointer-events:auto}.open>.sheet{transform:none}
+.grab{width:38px;height:4px;border-radius:2px;background:#3a4656;margin:8px auto 4px;flex:none}
+.sheet h3{font-size:15px;padding:6px 16px 10px}
+.sheet .grp{padding:4px 16px 12px}.sheet .grp>div:first-child{font-size:11px;color:var(--mut);text-transform:uppercase;letter-spacing:.06em;margin-bottom:7px}
+.wrap{display:flex;flex-wrap:wrap;gap:6px}
+.pick{display:flex;align-items:center;gap:10px;width:100%;padding:13px 16px;border-top:1px solid var(--line);text-align:left}.pick b{margin-left:auto}
+.pick[aria-current=true]{background:#1fbfa514}
+/* pager (B) */
+.phead{height:46px;flex:none;display:flex;align-items:center;gap:8px;padding:0 12px}
+.phead .name{font-weight:700;font-size:16px;display:flex;gap:6px;align-items:center}
+.strip{display:flex;gap:3px;padding:0 12px 8px;flex:none}.strip i{flex:1;height:3px;border-radius:2px;background:#2a3544}
+.pager{flex:1;display:flex;overflow-x:auto;scroll-snap-type:x mandatory;scrollbar-width:none}.pager::-webkit-scrollbar{display:none}
+.page{flex:none;width:100%;scroll-snap-align:start;overflow-y:auto}
+/* C inline */
+.tilestrip{display:flex;gap:8px;overflow-x:auto;padding:10px 12px;scrollbar-width:none}.tilestrip::-webkit-scrollbar{display:none}
+.tile{flex:none;width:118px;border:1px solid var(--line);border-left:3px solid;border-radius:10px;background:var(--card);padding:7px 10px;text-align:left}
+.tile small{color:var(--mut);font-size:11px;display:block}.tile b{font-size:19px}
+.inl{background:#0f1720;border-top:1px solid var(--line)}
+.fold{display:flex;justify-content:space-between;padding:11px 14px;border-top:1px solid var(--line);font-size:13px;width:100%}
+.fold span{color:var(--mut)}
+.hidden{display:none!important}
+.rec{display:inline-block;background:#1fbfa522;color:var(--acc);border-radius:6px;padding:1px 7px;font-size:11px;margin-left:6px;vertical-align:2px}
+</style>
+</head>
+<body>
+<div class="intro">
+  <h1>Page Commandes sur téléphone — 3 propositions</h1>
+  <div>Chaque téléphone est cliquable : touchez une commande, les onglets, le bouton filtre, le titre (B). Aujourd'hui sur 390 px : les 6 tuiles prennent tout le premier écran, les filtres s'empilent sur 4 lignes, la commande ouverte met la facturation avant les produits et le tableau des produits déborde (colonne « Manque » coupée).</div>
+  <div class="switch" id="sw">
+    <button data-v="A">A · Liste + fiche plein écran</button>
+    <button data-v="B">B · Pages par statut (comme Aito / File)</button>
+    <button data-v="C">C · Même page, resserrée</button>
+    <button data-v="ALL">Les trois côte à côte</button>
+  </div>
+</div>
+<div class="stage" id="stage"></div>
+
+<script>
+const ST={to_ship:['À expédier','var(--green)'],partial:['Partielle','var(--blue)'],incoming:['En arrivage','var(--amber)'],to_order:['À commander','var(--red)'],finished:['Terminée','var(--mut)']};
+const PAY={paid:['Payée','#22c55e'],unpaid:['Impayée','#8b96a5'],p50:['50 %','#22c55e'],p70:['70 %','#22c55e']};
+const rows=[
+ {n:'SO-00273',c:'Coral Gardeners',a:'633 725',s:'partial',d:'1 j',u:'0/23 expédiés · 91 % prêt',r:91,p:'p70',next:'📋'},
+ {n:'SO-00270',c:'Cabinet Sage-Femme',a:'6 360',s:'to_ship',d:'1 j',u:'0/3 · 3 emballés',r:100,p:'paid',next:'🤝'},
+ {n:'SO-00266',c:'Hiroarii CHONG',a:'560 000',s:'to_order',d:'6 j',u:'0/1 expédiés',r:0,p:'paid'},
+ {n:'SO-00248',c:'Stanislas Michalik',a:'209 500',s:'to_order',d:'18 j',u:'0/1 expédiés',r:0,p:'p70'},
+ {n:'SO-00235',c:'Thomas Valero',a:'241 451',s:'partial',d:'30 j',u:'0/19 · 18 emballés',r:95,p:'paid',next:'🤝'},
+ {n:'SO-00231',c:'FAIRY MEE DESIGN & CO',a:'200 880',s:'to_ship',d:'34 j',u:'0/5 · 5 emballés',r:100,p:'p50',next:'🤝'},
+ {n:'SO-00215',c:'Clovis ROUBERTIE',a:'21 250',s:'to_order',d:'46 j',u:'0/1 expédiés',r:0,p:'unpaid'},
+ {n:'SO-00123',c:"Ecole de Voile d'Arue",a:'2 394 212',s:'to_order',d:'234 j',u:'0/12 expédiés',r:0,p:'unpaid'},
+];
+const lines=[
+ ['Bambu Lab - H3C Combo','PF008-P+SA017-EU',1,0],
+ ['SUNLU - ASA - Noir (Black) - 1.75mm - 1kg','SNL-ASA-BSC-175-1000S-BLK01',3,47],
+ ['SUNLU - ASA - Blanc (White) - 1.75mm - 1kg','SNL-ASA-BSC-175-1000S-WHT01',2,49],
+ ['Inslogic - PETG Pro - Noir (Black) - 1kg','INS-PTG-PRO-175-1000S-BLK01',2,130],
+ ['Bambu Lab - PAHT-CF - Noir - 1.75mm - 1kg','N04-K0-1.75-1000-SPL',1,4],
+ ['eSUN - TPU 95A - Bleu (Blue) - 1kg','TPU-95A175U1Y1',2,9],
+ ['Magigoo - SuperGrip 50ml','MS2025',1,20],
+ ['Bambu Lab - AMS Silicone Desiccant','SAA029',2,1],
+];
+const counts={to_ship:2,partial:2,incoming:0,to_order:5,all:7,finished:142};
+
+const topBar=()=>`<div class="top"><span>☰</span><span class="logo">AITO<i>3D</i></span><span class="ttl">Commandes</span><span class="bell">🔔</span></div>`;
+const rowH=(r,i)=>{const [sl,sc]=ST[r.s],[pl,pc]=PAY[r.p];return `<button class="row" data-open="${i}">
+ <div class="r1"><span class="cust">${r.c}</span><span class="amt">${r.a} F</span></div>
+ <div class="r2"><span class="num">${r.n}</span><span class="st" style="color:${sc}"><span class="dot" style="background:${sc}"></span>${sl}</span><span class="age">${r.d}</span><span class="pay" style="color:${pc};border-color:${pc}55">${pl}</span></div>
+ <div class="r2" style="margin-top:3px"><span>${r.u}</span></div>
+ <div class="bar"><i style="width:${r.r}%;background:var(--green)"></i><i style="width:${100-r.r}%;background:${r.r?'var(--red)':'var(--red)'}"></i></div>
+</button>`};
+const linesH=()=>`<div class="band">📋 À préparer <span class="n">23 unités</span><button>✏️ Modifier</button></div>`+
+ lines.map(([n,s,q,st])=>`<div class="line"><div class="nm"><div>${n}</div><div class="sku">${s}</div></div><span class="qty">×${q}</span><span class="stock ${st>=q?'ok':'ko'}">${st>=q?st+' dispo':'manque '+(q-st)}</span></div>`).join('')+
+ `<div class="band" style="background:#ffffff08">🧾 Autres lignes <span class="n">2</span></div><div class="line"><div class="nm"><div>Filaments (service)</div></div><span class="qty">×1</span><span class="stock" style="color:var(--mut)">–</span></div>`;
+const billH=()=>`<div class="card"><h4>Facturation</h4>
+ <div class="doc"><div>Devis<small>DEV26-3010</small></div><span>🖨 ⬇ ✉ ↗</span></div>
+ <div class="doc"><div>Facture d'acompte<small style="color:var(--green)">Payée · 443 608 F</small></div><span>🖨 ⬇ ✉</span></div>
+ <div class="doc"><div style="color:var(--mut);font-size:12px">Pas encore de facture</div><button style="border:1px solid var(--acc);color:var(--acc);border-radius:8px;padding:5px 9px;font-size:12px">Facturer</button></div>
+ <div class="kv" style="border-top:1px solid var(--line);margin-top:4px;padding-top:9px"><span>Acompte disponible</span><span style="color:var(--acc)">443 608 F</span></div>
+ <div class="kv"><span>Reste à payer</span><b>190 117 F</b></div>
+ <div class="seg3"><button>🔗 Lien</button><button>📱 Terminal</button><button>💵 Manuel</button></div></div>`;
+const contactH=()=>`<div class="card"><h4>Contact <span style="background:#fbbf2422;color:var(--amber);border-radius:999px;padding:1px 7px;text-transform:none;letter-spacing:0">● Moyen</span></h4>
+ <div style="font-weight:600;margin-bottom:6px">Coral Gardeners</div>
+ <div class="kv"><span>Téléphone</span><span style="color:var(--mut)">aucun dans Zoho</span></div>
+ <div class="kv"><span>E-mail</span><span style="color:var(--acc)">experiences@coral…</span></div>
+ <div class="seg3" style="grid-template-columns:repeat(2,1fr)"><button>💬 SMS</button><button>✉ E-mail</button></div></div>
+ <div class="card"><h4>Références</h4><div class="kv"><span>Zoho Books</span><span>SO-00273 ↗</span></div><div class="kv"><span>Devis</span><span>DEV26-3010 ↗</span></div><div class="kv"><span>Suivi client</span><span>Copier le lien</span></div></div>`;
+const actH=()=>[['Paiement reçu · acompte 443 608 F','il y a 12 h · Heimdall'],['Bon de préparation imprimé','hier 16:40 · Paul'],['Commande reçue','17 nov · Shopify #1080']].map(([a,b])=>`<div class="act">${a}<small>${b}</small></div>`).join('');
+const TABS=[['lines','Produits 23'],['bill','Facturation'],['contact','Client'],['act','Activité']];
+const tabBody=t=>t==='lines'?linesH():t==='bill'?billH():t==='contact'?contactH():actH();
+const orderInner=(r,tab)=>`<div class="osum"><div class="big"><b>${r.a} F</b><span class="st" style="color:${ST[r.s][1]}"><span class="dot" style="background:${ST[r.s][1]}"></span>${ST[r.s][0]}</span></div>
+ <div style="color:var(--mut);font-size:12px;margin-top:3px">${r.u} · reçue il y a ${r.d}</div>
+ <div class="paybar"><i style="width:70%"></i><span>70 % payé · reste 190 117 F</span></div></div>
+ <div class="tabs">${TABS.map(([k,l])=>`<button data-tab="${k}" aria-selected="${tab===k}">${l}</button>`).join('')}</div>`;
+const filterSheet=()=>`<div class="scrim" data-close></div><div class="sheet"><div class="grab"></div><h3>Filtres et tri</h3>
+ <div class="grp"><div>Marques</div><div class="wrap"><span class="chip" aria-pressed="true">📦 3D seulement <b>+15 masquées</b></span></div></div>
+ <div class="grp"><div>Paiement</div><div class="wrap"><span class="chip" aria-pressed="true">Tous <b>7</b></span><span class="chip">Impayée <b>1</b></span><span class="chip">Partielle <b>3</b></span><span class="chip">Payée <b>3</b></span></div></div>
+ <div class="grp"><div>À relancer</div><div class="wrap"><span class="chip" style="color:var(--red);border-color:#f0525255">Non facturé <b>2</b></span><span class="chip" style="color:var(--orange);border-color:#fb923c55">Pas retiré <b>1</b></span></div></div>
+ <div class="grp"><div>Trier par</div><div class="wrap"><span class="chip" aria-pressed="true">Âge ↓</span><span class="chip">Valeur</span><span class="chip">Client</span><span class="chip">% prêt</span></div></div>
+ <div class="grp"><div>Chiffres</div><div class="wrap"><span class="chip">Afficher le bandeau Chiffres</span></div></div>
+ <div style="padding:6px 16px 24px"><button class="btn p" style="width:100%" data-close>Voir 7 commandes</button></div></div>`;
+
+/* ---------- A ---------- */
+function A(el,st){
+ st=st||{scr:'list',tab:'lines',sel:0,f:false,chip:'all'};
+ const r=rows[st.sel];
+ const list=`<div class="screen">${topBar()}
+  <div class="chips">${[['all','En cours','var(--txt)'],['to_ship','À expédier','var(--green)'],['partial','Partielle','var(--blue)'],['incoming','En arrivage','var(--amber)'],['to_order','À commander','var(--red)'],['finished','Terminées','var(--mut)']].map(([k,l,c])=>`<button class="chip" data-chip="${k}" aria-pressed="${st.chip===k}"><span class="dot" style="background:${c}"></span>${l} <b>${counts[k]}</b></button>`).join('')}</div>
+  <div class="searchrow"><div class="search">🔍 N°, client, produit, SKU…</div><button class="iconbtn" data-filter>⚙︎<span class="badge">1</span></button></div>
+  <div class="sumline"><span>1 873 166 F · 80 % payé</span><span>à jour il y a 8 min ⟳</span></div>
+  <div class="scroll">${rows.filter(x=>st.chip==='all'||x.s===st.chip).map(x=>rowH(x,rows.indexOf(x))).join('')}<div style="height:90px"></div></div>
+  <button class="fab">+</button>
+  <div class="${st.f?'open':''}" style="position:absolute;inset:0;pointer-events:${st.f?'auto':'none'}">${filterSheet()}</div></div>`;
+ const order=`<div class="screen"><div class="ohead"><button class="back" data-back>‹</button><div class="t"><b>${r.c}</b><span>${r.n}</span></div><button class="more">⋯</button></div>
+  ${orderInner(r,st.tab)}<div class="scroll">${tabBody(st.tab)}</div>
+  <div class="actbar"><button class="btn">💳 Encaisser</button><button class="btn p">📋 Préparer 23</button></div></div>`;
+ el.innerHTML=`<div class="phone">${st.scr==='list'?list:order}</div>`;
+ el.onclick=e=>{const t=e.target.closest('button,[data-close]');if(!t)return;
+  if(t.dataset.open){st.sel=+t.dataset.open;st.scr='order';st.tab='lines'}
+  else if(t.dataset.back!==undefined)st.scr='list';
+  else if(t.dataset.tab)st.tab=t.dataset.tab;
+  else if(t.dataset.filter!==undefined)st.f=true;
+  else if(t.dataset.close!==undefined)st.f=false;
+  else if(t.dataset.chip)st.chip=t.dataset.chip;
+  else return; A(el,st)};
+}
+/* ---------- B ---------- */
+const PAGES=[['to_ship','À expédier','var(--green)'],['partial','Partielle','var(--blue)'],['incoming','En arrivage','var(--amber)'],['to_order','À commander','var(--red)'],['finished','Terminées','var(--mut)']];
+function B(el,st){
+ st=st||{p:0,pick:false,sheet:false,tab:'lines',sel:0};
+ const r=rows[st.sel];
+ el.innerHTML=`<div class="phone"><div class="screen">${topBar()}
+  <div class="phead"><button class="name" data-pick><span class="dot" style="background:${PAGES[st.p][2]}"></span>${PAGES[st.p][1]} <span style="color:var(--mut);font-weight:400">${st.p===4?142:counts[PAGES[st.p][0]]}</span> ⌄</button>
+   <span style="margin-left:auto;display:flex;gap:6px"><button class="iconbtn" style="height:34px">🔍</button><button class="iconbtn" style="height:34px">⚙︎<span class="badge">1</span></button></span></div>
+  <div class="strip">${PAGES.map((x,i)=>`<i style="background:${i===st.p?x[2]:''}"></i>`).join('')}</div>
+  <div class="pager" id="pg">${PAGES.map(([k])=>{const rs=k==='finished'?[]:rows.filter(x=>x.s===k);return `<div class="page">${rs.length?rs.map(x=>rowH(x,rows.indexOf(x))).join(''):`<div style="color:var(--mut);text-align:center;padding:60px 20px">${k==='finished'?'142 commandes terminées<br><small>la plus récente en haut</small>':'Rien en arrivage'}</div>`}<div style="height:90px"></div></div>`}).join('')}</div>
+  <button class="fab">+</button>
+  <div class="${st.pick?'open':''}" style="position:absolute;inset:0;pointer-events:${st.pick?'auto':'none'}"><div class="scrim" data-close></div><div class="sheet"><div class="grab"></div><h3>Aller à</h3>
+   ${PAGES.map((x,i)=>`<button class="pick" data-go="${i}" aria-current="${i===st.p}"><span class="dot" style="background:${x[2]}"></span>${x[1]}<b>${i===4?142:counts[x[0]]}</b></button>`).join('')}<div style="height:24px"></div></div></div>
+  <div class="${st.sheet?'open':''}" style="position:absolute;inset:0;pointer-events:${st.sheet?'auto':'none'}"><div class="scrim" data-close></div>
+   <div class="sheet" style="height:92%;background:var(--bg)"><div class="grab"></div>
+    <div style="display:flex;align-items:baseline;gap:8px;padding:2px 14px 6px"><b style="font-size:16px;flex:1">${r.c}</b><span class="num">${r.n}</span><button data-close style="font-size:18px;padding-left:8px">✕</button></div>
+    ${orderInner(r,st.tab)}<div class="scroll">${tabBody(st.tab)}</div>
+    <div class="actbar"><button class="btn">💳 Encaisser</button><button class="btn p">📋 Préparer 23</button></div></div></div>
+ </div></div>`;
+ const pg=el.querySelector('#pg');pg.scrollLeft=st.p*pg.clientWidth;
+ let tm;pg.onscroll=()=>{clearTimeout(tm);tm=setTimeout(()=>{const p=Math.round(pg.scrollLeft/pg.clientWidth);if(p!==st.p){st.p=p;B(el,st)}},140)};
+ el.onclick=e=>{const t=e.target.closest('button,[data-close]');if(!t)return;
+  if(t.dataset.open){st.sel=+t.dataset.open;st.sheet=true;st.tab='lines'}
+  else if(t.dataset.pick!==undefined)st.pick=true;
+  else if(t.dataset.go){st.p=+t.dataset.go;st.pick=false}
+  else if(t.dataset.close!==undefined){st.pick=false;st.sheet=false}
+  else if(t.dataset.tab)st.tab=t.dataset.tab;
+  else return;B(el,st)};
+}
+/* ---------- C ---------- */
+function C(el,st){
+ st=st||{open:0,bill:false,contact:false};
+ const tiles=[['to_ship','À expédier','var(--green)'],['partial','Partielle','var(--blue)'],['incoming','En arrivage','var(--amber)'],['to_order','À commander','var(--red)'],['all','En cours','var(--txt)'],['finished','Terminées','var(--mut)']];
+ el.innerHTML=`<div class="phone"><div class="screen">${topBar()}<div class="scroll">
+  <div class="tilestrip">${tiles.map(([k,l,c])=>`<div class="tile" style="border-left-color:${c}"><small>${l}</small><b style="color:${c}">${counts[k]}</b></div>`).join('')}</div>
+  <div class="searchrow"><div class="search">🔍 N°, client, produit, SKU…</div><button class="iconbtn">⚙︎<span class="badge">1</span></button><button class="iconbtn" style="background:var(--acc);color:#012;border-color:var(--acc)">+</button></div>
+  ${rows.map((x,i)=>rowH(x,i)+(st.open===i?`<div class="inl">${linesH()}
+    <button class="fold" data-fold="bill">💳 Facturation <span>reste 190 117 F ${st.bill?'⌃':'⌄'}</span></button>${st.bill?billH():''}
+    <button class="fold" data-fold="contact">👤 Client et références <span>${st.contact?'⌃':'⌄'}</span></button>${st.contact?contactH():''}
+    <button class="fold">🕘 Activité <span>3 ⌄</span></button>
+    <div style="display:flex;gap:8px;padding:10px 12px 14px"><button class="btn">💳 Encaisser</button><button class="btn p">📋 Préparer 23</button></div></div>`:'')).join('')}
+ </div></div></div>`;
+ el.onclick=e=>{const t=e.target.closest('button');if(!t)return;
+  if(t.dataset.open){const i=+t.dataset.open;st.open=st.open===i?-1:i}
+  else if(t.dataset.fold)st[t.dataset.fold]=!st[t.dataset.fold];
+  else return;C(el,st)};
+}
+const NOTES={
+ A:`<h2>A · Liste + fiche plein écran <span class="rec">ma recommandation</span></h2>`,
+ B:`<h2>B · Pages par statut</h2>`,
+ C:`<h2>C · Même page, resserrée</h2>`};
+const TXT={
+ A:`<b>Liste</b> : les 6 tuiles deviennent une rangée de pastilles qui défile, les filtres paiement / relance / tri / 3D vont dans une feuille (⚙︎), lignes de commande sur 3 lignes compactes, bouton + flottant.<br><b>Commande</b> : s'ouvre en plein écran (le bouton Retour du téléphone la ferme, l'adresse <code>?order=</code> marche déjà ainsi). Onglets Produits / Facturation / Client / Activité, produits en cartes (plus de tableau qui déborde), barre d'action en bas avec l'étape suivante (Préparer, Remettre, Encaisser) toujours sous le pouce.`,
+ B:`Même fiche que A mais la liste est une page par statut qu'on balaie du doigt, avec le même en-tête que la File et les tableaux Aito (nom + ⌄ ouvre la liste des statuts, bande de segments). La commande s'ouvre en feuille montante (92 %) au lieu d'un plein écran.<br><b>Coût</b> : on ne voit plus toutes les commandes en cours d'un coup ni le total ; la recherche doit chercher dans toutes les pages.`,
+ C:`On garde la page telle quelle, ouverture dans la liste comprise, et on resserre : tuiles en bandeau défilant, filtres dans une feuille, produits en cartes et AVANT la facturation, facturation / client / activité repliables.<br><b>Coût</b> : la commande ouverte reste longue et les boutons d'action sont en bas de la commande, pas sous le pouce ; le moins de travail des trois.`};
+function render(v){
+ document.querySelectorAll('#sw button').forEach(b=>b.setAttribute('aria-pressed',b.dataset.v===v));
+ const st=document.getElementById('stage');st.innerHTML='';
+ for(const k of v==='ALL'?['A','B','C']:[v]){const c=document.createElement('div');c.className='col';c.innerHTML=NOTES[k]+'<div></div><p class="note">'+TXT[k]+'</p>';st.appendChild(c);({A,B,C})[k](c.children[1]);}
+ location.hash=v;
+}
+document.getElementById('sw').onclick=e=>{const b=e.target.closest('button');if(b)render(b.dataset.v)};
+render((location.hash.slice(1)||'ALL').split(',')[0]);
+</script>
+</body>
+</html>

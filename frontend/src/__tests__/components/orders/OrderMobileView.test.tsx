@@ -70,7 +70,7 @@ describe('OrderMobileView', () => {
     const onClose = vi.fn();
     const { unmount } = render(view(panelRow(), { onClose }));
     fireEvent.keyDown(screen.getByRole('dialog', { name: 'SO-00412' }), { key: 'Escape' });
-    expect(onClose).toHaveBeenCalledTimes(1);
+    await waitFor(() => expect(onClose).toHaveBeenCalledTimes(1));
     unmount();
     const open = vi.fn();
     render(view(panelRow(), { onClose: open, start: 'pick', startTick: 1 }));
@@ -99,7 +99,7 @@ describe('OrderMobileView', () => {
     const onClose = vi.fn();
     render(view(panelRow(), { onClose }));
     await userEvent.click(screen.getByRole('button', { name: 'Back to orders' }));
-    expect(onClose).toHaveBeenCalled();
+    await waitFor(() => expect(onClose).toHaveBeenCalled());
   });
 
   it('the primary button follows nextStep and calls onStart', async () => {

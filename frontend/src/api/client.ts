@@ -1954,6 +1954,9 @@ export interface AppSettings {
 
 export type AppSettingsUpdate = Partial<Omit<AppSettings, 'octoeverywhere_api_key_configured'>>;
 
+/** The signed-in user's saved view settings, keyed by view; each value belongs to the view that wrote it. */
+export type UiPrefs = Record<string, unknown>;
+
 // Settings as a page sees them: everything from GET /settings for a user who
 // may read it, otherwise the subset /settings/ui-preferences and
 // /settings/ui-flags serve, which reports G-code snippets only as set or not.
@@ -10159,6 +10162,9 @@ export const api = {
   /** `upTo`: the newest id the user was shown; rows newer than it stay unread. */
   markInboxAllRead: (upTo?: number) =>
     request<void>(upTo === undefined ? '/inbox/read-all' : `/inbox/read-all?up_to=${upTo}`, { method: 'POST' }),
+  getUiPrefs: () => request<UiPrefs>('/users/me/ui-prefs'),
+  putUiPref: (key: string, value: object) =>
+    request<void>(`/users/me/ui-prefs/${encodeURIComponent(key)}`, { method: 'PUT', body: JSON.stringify(value) }),
   getInboxPreferences: () => request<InboxPreferences>('/inbox/preferences'),
   putInboxPreferences: (body: InboxPreferencesUpdate) =>
     request<InboxPreferences>('/inbox/preferences', { method: 'PUT', body: JSON.stringify(body) }),
