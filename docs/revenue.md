@@ -45,8 +45,10 @@ process) that keeps a local copy of Zoho's sales-by-item report, one row per day
   Board stops at 30, so it keeps headroom), and no batch while Zoho's daily budget is known to be below 5 000. A 429
   ends the batch and the loop sleeps the longer of 2 minutes and Zoho's `Retry-After`; any other error backs off
   2 minutes.
-- A day whose own report fails (a Zoho error for that day, not a 429 or a network error) gets its own back-off:
-  2 minutes, then doubling up to 6 hours. Later batches skip it until then, so the rest of the history keeps
+- A day whose own report fails gets its own back-off: Zoho refused that day's request (HTTP 400) or its report ran
+  past 20 pages (2 minutes, then doubling up to 6 hours), or Zoho answered 5xx (same doubling, capped at 10 minutes,
+  since a 5xx may be Zoho itself). A 429, a network error, a token failure or any other Zoho-wide error marks no day.
+  A customer lookup or month check that Zoho refuses (400) waits 6 hours on its own instead of failing every batch. Later batches skip it until then, so the rest of the history keeps
   loading; a successful fetch or a full rebuild clears it. The banner names the failed day (or the count) and the
   next retry, and the page stops fast polling once only failed days are missing.
 - The loop stops 30 minutes after the last read and starts again with the next one.
@@ -65,7 +67,8 @@ the cache's sum of every line of the month (all items, no scope, no filter) with
 as a match. Same report, different window: it catches a missing or failed day, a lost page or a day filed under the
 wrong date. It does not catch an error on an invoice in Zoho itself.
 
-- When: after a batch's day work, only when no day is left to fetch (none missing, stale or waiting out a back-off),
+- When: after a batch's day work, once every day the batch could fetch was fetched (a day waiting out a back-off
+  waits; its month is never complete, so it is never checked),
   at most one month per batch, through the same pacing, ceiling and budget rules. First every month never checked,
   newest first; then a month with a day re-fetched since its check; then last month again once its check is a day
   old (late edits to last month's invoices are common). Older months are never re-checked on their own.
@@ -99,7 +102,8 @@ per item, so every amount is cut to its 3D share.
   (stripped without `revenue:view_customers`).
 - **Coverage**: raw amounts (payments of the 12 months plus open balances) whose share is known vs still unknown.
 
-Refresh: a step of the batch, after the day work and the month check, only when no day is left to fetch, at most
+Refresh: a step of the batch, after the day work and the month check, once every day the batch could fetch was fetched (a day waiting
+out a back-off does not hold it up), at most
 every 10 minutes (process-local). Each run (a) pages through payments modified since the cursor (the
 `revenue_payments_since` row of `settings`, Books' `+0000` timestamp; first value: the 1st of the month 12 months
 back), at most 10 pages a run, the cursor moving to the last row's `last_modified_time` after each page so a capped
