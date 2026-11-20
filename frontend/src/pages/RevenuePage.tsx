@@ -9,6 +9,7 @@ import { RevenueSegmented } from '../components/revenue/RevenueSegmented';
 import { RevenueSyncBanner } from '../components/revenue/RevenueSyncBanner';
 import { RevenueFinding, RevenueHero } from '../components/revenue/RevenueHero';
 import { RevenuePace } from '../components/revenue/RevenuePace';
+import { RevenueCash } from '../components/revenue/RevenueCash';
 import { RevenueChart } from '../components/revenue/RevenueChart';
 import { RevenueTable } from '../components/revenue/RevenueTable';
 import { RevenueMovers } from '../components/revenue/RevenueMovers';
@@ -372,8 +373,9 @@ export function RevenuePage() {
     }
   };
   // The targets editor prints each month's actual HT only when the page shows the unfiltered book by month.
+  const unfiltered = !!data && !data.items && !data.brands && !data.kind && !data.segment;
   const actualByMonth =
-    data && data.granularity === 'month' && !data.items && !data.brands && !data.kind && !data.segment
+    data && data.granularity === 'month' && unfiltered
       ? Object.fromEntries(data.buckets.map((b) => [b.key, b.ht]))
       : null;
   // The menu puts focus back on ⋯ before it runs a pick, so the focused element is the opener there.
@@ -516,6 +518,8 @@ export function RevenuePage() {
                   <RevenuePace monthKey={(lastBucket.end > today ? today : lastBucket.end).slice(0, 7)} filterParams={filterParams} taxMode={active.taxMode} version={data} />
                 )}
               </Split>
+              {/* Whole-business figures: a filtered page would show numbers that ignore its filter. */}
+              {unfiltered && <RevenueCash version={data} />}
               <RevenueChart payload={data} controls={active} can={can} onStack={(stack) => setControls({ stack })}
                 onDrill={data.granularity !== 'day' ? drill : undefined} drillDepth={drillStack.length} onBack={drillBack} today={today} />
               <Split>

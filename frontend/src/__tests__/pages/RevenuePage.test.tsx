@@ -912,3 +912,24 @@ describe('RevenuePage — chart drill-down', () => {
     expect(localStorage.getItem('revenue-stack')).toBe('kind');
   });
 });
+
+describe('RevenuePage — cash and order book', () => {
+  beforeEach(() => vi.useFakeTimers());
+  const cashCalls = () => fetchMock.mock.calls.filter(([u]) => /\/revenue\/(cash|pipeline)/.test(String(u)));
+
+  it('shows the panel on the unfiltered page', async () => {
+    stubFetch(payload());
+    renderPage();
+    await flush();
+    expect(cashCalls().map(([u]) => String(u)).sort()).toEqual(['/api/v1/revenue/cash', '/api/v1/revenue/pipeline']);
+    expect(within(screen.getByRole('tabpanel')).getByText('Order book')).toBeInTheDocument();
+  });
+
+  it('hides it when the page is filtered', async () => {
+    stubFetch(payload({ kind: 'goods' }));
+    renderPage();
+    await flush();
+    expect(cashCalls()).toEqual([]);
+    expect(screen.queryByText('Order book')).toBeNull();
+  });
+});

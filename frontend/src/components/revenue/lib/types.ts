@@ -261,6 +261,34 @@ export interface ChecksResponse {
   checks: RevenueMonthCheck[];
 }
 
+export interface CashMonth {
+  month: string;
+  invoicedTtc: number;
+  collected: number;
+  collectedUnknown: number;
+}
+
+export interface CashResponse {
+  months: CashMonth[];
+  outstanding: { total: number; overdue: number; invoices: number; unknown: number };
+  /** Absent without revenue:view_customers. */
+  topOverdue?: Array<{ number: string; customerName: string; dueDate: string; daysOverdue: number; balance: number }>;
+  coverage: { known: number; unknown: number };
+  syncedAt: string | null;
+  error: string | null;
+}
+
+export interface PipelineResponse {
+  accepted: {
+    count: number;
+    total: number;
+    retainerPaid: number;
+    missingTotal: number;
+    byColumn: Array<{ column: string; count: number; total: number }>;
+  };
+  awaiting: { count: number; total: number; oldestDays: number | null };
+}
+
 export interface ItemsResponse {
   items: RevenueItemRow[];
   from: string;

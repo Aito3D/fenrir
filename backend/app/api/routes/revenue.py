@@ -16,7 +16,18 @@ from backend.app.core import database
 from backend.app.core.auth import RequirePermissionIfAuthEnabled
 from backend.app.core.permissions import Permission
 from backend.app.models.user import User
-from backend.app.services.revenue import analysis, cash, insights, memo, production, products, series, store, sync
+from backend.app.services.revenue import (
+    analysis,
+    cash,
+    insights,
+    memo,
+    pipeline,
+    production,
+    products,
+    series,
+    store,
+    sync,
+)
 from backend.app.services.revenue.config import REVENUE_GRANULARITIES, REVENUE_HISTORY_START
 from backend.app.services.revenue.dates import add_days, is_valid_day, org_today
 from backend.app.services.revenue.insights import attach_targets, calendar_days, yoy_pivot
@@ -396,6 +407,17 @@ async def get_cash(request: Request, user: User | None = RequirePermissionIfAuth
         )
 
     return await _respond(request, user, build, now=now, extra_stamp=stamp)
+
+
+@router.get("/pipeline")
+async def get_pipeline(request: Request, user: User | None = RequirePermissionIfAuthEnabled(Permission.REVENUE_READ)):
+    """Order book from the Aito board: accepted quotes not invoiced yet, sent quotes awaiting an answer."""
+    now = datetime.now(timezone.utc)
+
+    async def build(conn, now, _status):
+        return pipeline.build_pipeline(await pipeline.read_cards(conn), now.replace(tzinfo=None))
+
+    return await _respond(request, user, build, now=now, extra_stamp=pipeline.pipeline_stamp)
 
 
 def _breakdown(ctx: dict, lines: list, filters: LineFilters) -> list[dict]:

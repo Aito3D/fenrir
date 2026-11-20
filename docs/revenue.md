@@ -11,7 +11,9 @@ scope: an item counts when its Zoho nature or brand is one of the 3D natures or 
 `backend/app/services/revenue/config.py`, or when someone included it by hand. Items that match neither are listed
 under **À classer** until someone decides.
 
-- **Évolution**: the month's headline against its target, a pace chart, the current period with its projection, a
+- **Évolution**: the month's headline against its target, a pace chart, the current period with its projection,
+  « Trésorerie et carnet » (this month's collected vs invoiced TTC, what is owed and overdue, then the order book; see
+  [Cash](#cash) and [Order book](#order-book); whole-business figures, so shown only when no filter is set), a
   stacked column chart (by nature, brand, goods/services, customer segment, or product when products are picked) with
   the running total, targets and notes, a detail list per period with its items, and the period's movers. Click a
   column (or Enter / Space on it) to zoom into it; « Retour » steps back.
@@ -128,6 +130,31 @@ Reads: `GET /api/v1/revenue/cash` (`revenue:read`):
   "coverage": {"known": n, "unknown": n},
   "syncedAt": iso | null,  // last complete cash refresh
   "error": string | null   // last cash refresh failure, process-local
+}
+```
+
+## Order book
+
+What is sold but not invoiced yet, read from the Aito board in the local database (zero Zoho calls). Every Aito card
+is a 3D service, so there is no scope cut; goods orders on the Order Board are not included (that org-wide data also
+holds the sailing business). Active cards only (`status = 'active'`; trash is `deleted`). Amounts are the card's
+snapshot of the Zoho quote total (TTC), so a quote changed in Zoho shows here once the board syncs it.
+
+- **accepted**: `quote_status = 'accepted'` and not `quote_invoiced` → count, Σ `quote_total`, Σ `retainer_paid_total`
+  (deposits already collected on them), and the same per board column. A card without a quote total counts in
+  `count` and `missingTotal`, not in the sum.
+- **awaiting**: `quote_status` `sent` or `viewed` → count, Σ `quote_total`, and the age in days of the oldest
+  `quote_sent_at`.
+
+The ETag moves on any card write (count and max `updated_at` of `aito_projects`) and each org day.
+
+Reads: `GET /api/v1/revenue/pipeline` (`revenue:read`):
+
+```
+{
+  "accepted": {"count": n, "total": n, "retainerPaid": n, "missingTotal": n,
+               "byColumn": [{"column": "print", "count": n, "total": n}]},  // board order, empty columns left out
+  "awaiting": {"count": n, "total": n, "oldestDays": n | null}
 }
 ```
 

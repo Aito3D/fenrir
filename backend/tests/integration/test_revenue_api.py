@@ -99,6 +99,7 @@ async def tokens(db_session):
         "/annotations",
         "/checks",
         "/cash",
+        "/pipeline",
         "/movers",
         "/analysis?from=2025-03-01&to=2025-03-31",
     ],
@@ -663,3 +664,28 @@ async def test_cash_etag_moves_when_cash_rows_change(async_client, revenue_db, t
     await _seed_cash(revenue_db)
     again = await async_client.get(f"{URL}/cash", headers={**tokens["read"], "If-None-Match": etag})
     assert again.status_code == 200 and again.json()["months"][-1]["collected"] == 500
+
+
+@pytest.mark.asyncio
+async def test_pipeline_reads_aito_cards_and_etag_moves_on_card_change(async_client, revenue_db, tokens):
+    from backend.app.models.aito_project import AitoProject
+
+    first = await async_client.get(f"{URL}/pipeline", headers=tokens["read"])
+    assert first.json()["accepted"]["count"] == 0
+    async with async_sessionmaker(revenue_db, expire_on_commit=False)() as db:
+        db.add_all(
+            [
+                AitoProject(description="a", board_column="print", quote_status="accepted", quote_total=800),
+                AitoProject(description="b", board_column="devis", quote_status="sent", quote_total=200),
+                AitoProject(description="c", board_column="print", status="deleted", quote_status="accepted"),
+            ]
+        )
+        await db.commit()
+    again = await async_client.get(
+        f"{URL}/pipeline", headers={**tokens["read"], "If-None-Match": first.headers["etag"]}
+    )
+    assert again.status_code == 200
+    body = again.json()
+    assert body["accepted"]["count"] == 1 and body["accepted"]["total"] == 800
+    assert body["accepted"]["byColumn"] == [{"column": "print", "count": 1, "total": 800}]
+    assert body["awaiting"]["count"] == 1 and body["awaiting"]["total"] == 200
