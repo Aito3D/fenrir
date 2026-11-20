@@ -12499,6 +12499,12 @@ export default {
       cancel: '취소',
       rebuildStarted: '다시 구축을 시작했습니다. 내역은 백그라운드에서 Zoho로부터 다시 불러옵니다.',
       rebuildRefused: '다시 구축을 시작하지 않았습니다. Zoho가 설정되지 않았거나 오늘의 API 할당량이 거의 소진되었습니다. 아무것도 삭제되지 않았습니다.',
+      mismatch: 'Zoho와 맞지 않는 달: {{n}}',
+      checkOk: 'Zoho와 일치 ({{date}} 확인)',
+      checkGap: 'Zoho와 차이: Zoho {{zoho}}, Fenrir {{cache}}',
+      reloadMonth: '다시 불러오기',
+      reloadMonthHint: '{{month}}을(를) 지우고 Zoho에서 다시 불러오기',
+      monthReloading: '{{month}}을(를) 지웠습니다. Zoho에서 다시 불러오는 중입니다.',
     },
     hero: {
       partial: '{{period}} · 진행 중, {{total}}일 중 {{day}}일째',

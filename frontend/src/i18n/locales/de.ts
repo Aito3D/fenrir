@@ -12917,6 +12917,12 @@ export default {
       cancel: 'Abbrechen',
       rebuildStarted: 'Neuaufbau gestartet — der Verlauf wird im Hintergrund aus Zoho neu geladen.',
       rebuildRefused: 'Neuaufbau nicht gestartet: Zoho ist nicht eingerichtet oder das heutige API-Kontingent ist fast aufgebraucht. Es wurde nichts gelöscht.',
+      mismatch: 'Monate mit Abweichung zu Zoho: {{n}}',
+      checkOk: 'Stimmt mit Zoho überein (geprüft am {{date}})',
+      checkGap: 'Abweichung zu Zoho: Zoho {{zoho}}, Fenrir {{cache}}',
+      reloadMonth: 'Neu laden',
+      reloadMonthHint: '{{month}} löschen und neu aus Zoho laden',
+      monthReloading: '{{month}} gelöscht, wird neu aus Zoho geladen.',
     },
     hero: {
       partial: '{{period}} · laufend, Tag {{day}} von {{total}}',

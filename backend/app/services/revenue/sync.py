@@ -18,7 +18,13 @@ from backend.app.services.revenue import store
 from backend.app.services.revenue.config import REVENUE_HISTORY_START, REVENUE_LINE_FORMAT, SYNC
 from backend.app.services.revenue.dates import days_between, org_today
 from backend.app.services.revenue.series import RevenueLine
-from backend.app.services.revenue.sync_plan import count_legacy_days, merge_day_rows, plan_revenue_sync
+from backend.app.services.revenue.sync_plan import (
+    count_legacy_days,
+    merge_day_rows,
+    month_window,
+    plan_month_check,
+    plan_revenue_sync,
+)
 from backend.app.services.zoho import (
     ZohoNotConfiguredError,
     ZohoNotFound,
@@ -33,6 +39,7 @@ logger = logging.getLogger(__name__)
 # shortcut: a day of the shop's sales is a few hundred lines (1–2 pages); a runaway has_more stops here, not at 200
 DAY_PAGE_CAP = 20
 ITEM_PAGE_CAP = 100
+MONTH_PAGE_CAP = 20  # ungrouped: one row per item sold in the month
 CEILING_POLL_S = 1.0
 DAY_RETRY_CAP_S = 6 * 3600
 FAILED_DAYS_SHOWN = 5
@@ -127,6 +134,21 @@ async def _fetch_day(db, day: str) -> list[dict]:
     raise ZohoUpstreamError(f"Zoho sales report for {day} has more than {DAY_PAGE_CAP} pages")
 
 
+async def _check_month(db, month: str) -> None:
+    """Zoho's salesbyitem total for the month's cached window against the cache's sum of every line."""
+    from_date, to_date = month_window(month, REVENUE_HISTORY_START)
+    zoho_amount = 0.0
+    for page in range(1, MONTH_PAGE_CAP + 1):
+        rows, more = await _paced(zoho_service.sales_by_item_range, db, from_date, to_date, page)
+        # Read like the daily rows, so a row the cache would skip is skipped here too.
+        zoho_amount += sum(m["amount"] for m in merge_day_rows([{"sales": rows}])[0])
+        if not more:
+            break
+    else:
+        raise ZohoUpstreamError(f"Zoho sales report for {month} has more than {MONTH_PAGE_CAP} pages")
+    await store.save_month_check(db, month, zoho_amount, await store.month_line_sum(db, month), _utcnow())
+
+
 def _num(v) -> float | None:
     try:
         return float(v) if v not in (None, "") else None
@@ -178,6 +200,7 @@ async def _execute_batch(full: bool) -> dict:
             async with store.snapshot() as conn:
                 index = await store.read_day_index(conn)
                 items = await store.read_scope_items(conn)
+                checks = {c["month"]: c["checkedAt"] for c in await store.read_month_checks(conn)}
             planned = plan_revenue_sync(
                 days=index,
                 today=org_today(now),
@@ -192,6 +215,7 @@ async def _execute_batch(full: bool) -> dict:
             days: list[str] = []
             unknown: list[str] = []
             looked_up = 0
+            checked = None
             try:
                 for day in plan[: SYNC.day_batch_size]:
                     # Read before the request: a day that ends mid-fetch stays open, the report may predate its close.
@@ -236,6 +260,20 @@ async def _execute_batch(full: bool) -> dict:
                         facts = None
                     await store.save_customer(db, customer_id, facts, _utcnow())
                     looked_up += 1
+                # Only on a complete cache (no day left, none waiting out a back-off): a gap must mean Zoho differs.
+                if len(days) == len(planned):
+                    async with store.snapshot() as conn:
+                        index = await store.read_day_index(conn)
+                    month = plan_month_check(
+                        days=index,
+                        checks=checks,
+                        today=org_today(),
+                        now=_utcnow(),
+                        history_start=REVENUE_HISTORY_START,
+                    )
+                    if month:
+                        await _check_month(db, month)
+                        checked = month
             except _BudgetLow:
                 pass
         _last_batch_at = _utcnow().isoformat()
@@ -245,6 +283,7 @@ async def _execute_batch(full: bool) -> dict:
             "pending": len(plan) - len(days) + len(unknown) - looked_up,
             "days": days,
             "customers": looked_up,
+            "checked": checked,
         }
     except Exception as exc:
         _record_error(exc)

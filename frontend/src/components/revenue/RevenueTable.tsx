@@ -8,7 +8,7 @@ import { asDelta } from './lib/finding';
 import { evolutionFor, yearOverYear } from './lib/kpis';
 import { formatFcp } from './lib/format';
 import { toggleInSet } from './lib/dashboard';
-import type { ItemsResponse, RevenueBucket, RevenueGranularity, TaxMode } from './lib/types';
+import type { ItemsResponse, RevenueBucket, RevenueGranularity, RevenueMonthCheck, TaxMode } from './lib/types';
 import { useRevenueResource } from './useRevenueResource';
 import { MarginBreakdown } from './MarginBreakdown';
 
@@ -24,6 +24,26 @@ function Evo({ v, elapsedDays }: { v: number | null; elapsedDays: number | null 
       {v == null ? <span data-missing className="text-bambu-gray">—</span> : <DeltaBadge delta={asDelta(v)} />}
       {v != null && elapsedDays !== null && <span className="ml-1 block text-[10px] text-bambu-gray">{t('revenue.table.toDate')}</span>}
     </span>
+  );
+}
+
+/** ✓ or ⚠ beside a closed month checked against Zoho's own total; a gap offers « Recharger » to whoever may sync. */
+function CheckMark({ check, label, onRefetch }: { check: RevenueMonthCheck; label: string; onRefetch?: (month: string, label: string) => void }) {
+  const { t, i18n } = useTranslation();
+  const title = check.ok
+    ? t('revenue.sync.checkOk', { date: new Intl.DateTimeFormat(i18n.language, { day: 'numeric', month: 'short' }).format(new Date(check.checkedAt)) })
+    : t('revenue.sync.checkGap', { zoho: formatFcp(check.zohoHt), cache: formatFcp(check.cacheHt) });
+  const tone = check.ok ? 'text-bambu-green' : 'text-amber-700 dark:text-amber-400';
+  return (
+    <>
+      <span role="img" aria-label={title} title={title} className={`shrink-0 text-xs ${tone}`}>{check.ok ? '✓' : '⚠'}</span>
+      {!check.ok && onRefetch && (
+        <button type="button" onClick={() => onRefetch(check.month, label)} aria-label={t('revenue.sync.reloadMonthHint', { month: label })}
+          className={`shrink-0 rounded text-[11px] underline underline-offset-2 hover:text-white ${tone} ${focusRingCls}`}>
+          {t('revenue.sync.reloadMonth')}
+        </button>
+      )}
+    </>
   );
 }
 
@@ -62,13 +82,16 @@ function ItemRows({ bucket, filterParams, version, cols, margin }: { bucket: Rev
 }
 
 /** « Détail par période »: one row per bucket, newest first; a row opens onto the items sold in it. */
-export function RevenueTable({ buckets, granularity, taxMode, canMargin, filterParams, version }: {
+export function RevenueTable({ buckets, granularity, taxMode, canMargin, filterParams, version, checks, onRefetch }: {
   buckets: RevenueBucket[];
   granularity: RevenueGranularity;
   taxMode: TaxMode;
   canMargin: boolean;
   filterParams: string;
   version: unknown;
+  /** Month checks against Zoho, passed only when the page shows the unfiltered book by month. */
+  checks?: RevenueMonthCheck[];
+  onRefetch?: (month: string, label: string) => void;
 }) {
   const { t } = useTranslation();
   const hintId = useId();
@@ -77,6 +100,7 @@ export function RevenueTable({ buckets, granularity, taxMode, canMargin, filterP
   const margin = canMargin && buckets.some((b) => b.costedHt !== undefined);
   const cols = `minmax(0,1.5fr) repeat(${margin ? 7 : 6},minmax(0,1fr))`;
   const rows = [...buckets].reverse();
+  const checkOf = new Map(granularity === 'month' ? (checks ?? []).map((c) => [c.month, c]) : []);
   const heads = [
     { id: 'period', label: granularity === 'day' ? t('revenue.controls.day') : t('revenue.table.period') },
     { id: 'ht', label: t('revenue.table.ht') },
@@ -109,11 +133,14 @@ export function RevenueTable({ buckets, granularity, taxMode, canMargin, filterP
             <Fragment key={b.key}>
               <div role="row" className={`${ROW} rounded-lg bg-bambu-dark py-2`} style={{ gridTemplateColumns: cols }}>
                 <span role="cell" className="min-w-0">
+                  <span className="flex min-w-0 items-baseline gap-1.5">
                   <button type="button" aria-expanded={expanded} onClick={() => setOpen((o) => toggleInSet(o, b.key))}
                     className={`flex min-w-0 max-w-full items-baseline gap-1 rounded text-left text-bambu-gray-light hover:text-white ${focusRingCls}`}>
                     <ChevronRight aria-hidden className={`h-3.5 w-3.5 shrink-0 self-center transition-transform ${expanded ? 'rotate-90' : ''}`} />
                     <span className="truncate">{b.label}</span>
                   </button>
+                  {checkOf.has(b.key) && <CheckMark check={checkOf.get(b.key)!} label={b.label} onRefetch={onRefetch} />}
+                  </span>
                   {(b.partial || b.missingDays > 0) && (
                     <span className="ml-[18px] flex flex-wrap gap-x-2 text-[11px] text-amber-700 dark:text-amber-400">
                       {b.partial && <span>{t('revenue.chart.inProgress')}</span>}

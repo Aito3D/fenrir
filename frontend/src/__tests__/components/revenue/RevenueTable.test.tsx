@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { render, screen, waitFor, within, fireEvent } from '@testing-library/react';
 import { RevenueTable } from '../../../components/revenue/RevenueTable';
-import type { RevenueBucket, RevenueItemRow } from '../../../components/revenue/lib/types';
+import type { RevenueBucket, RevenueItemRow, RevenueMonthCheck } from '../../../components/revenue/lib/types';
 import { bucket } from './lib/fixtures';
 
 const json = (body: unknown) => new Response(JSON.stringify(body), { status: 200, headers: { 'Content-Type': 'application/json' } });
@@ -43,8 +43,11 @@ function stubItems(items: RevenueItemRow[]) {
   return fetchMock;
 }
 
-const renderTable = (o: { buckets?: RevenueBucket[]; canMargin?: boolean; filterParams?: string; version?: unknown } = {}) => (
-  <RevenueTable buckets={o.buckets ?? [sept, oct]} granularity="month" taxMode="ht" canMargin={o.canMargin ?? true} filterParams={o.filterParams ?? ''} version={o.version ?? 0} />
+const renderTable = (
+  o: { buckets?: RevenueBucket[]; canMargin?: boolean; filterParams?: string; version?: unknown; checks?: RevenueMonthCheck[]; onRefetch?: (month: string, label: string) => void } = {},
+) => (
+  <RevenueTable buckets={o.buckets ?? [sept, oct]} granularity="month" taxMode="ht" canMargin={o.canMargin ?? true} filterParams={o.filterParams ?? ''} version={o.version ?? 0}
+    checks={o.checks} onRefetch={o.onRefetch} />
 );
 
 const bodyRows = () => screen.getAllByRole('row').filter((r) => within(r).queryAllByRole('columnheader').length === 0);
@@ -209,5 +212,39 @@ describe('RevenueTable', () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
     rerender(renderTable({ version: 2 }));
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+  });
+
+  describe('month checks against Zoho', () => {
+    const check = (o: Partial<RevenueMonthCheck> = {}): RevenueMonthCheck => ({
+      month: '2026-09', zohoHt: 500_000, cacheHt: 500_000, gap: 0, ok: true, checkedAt: '2026-11-18T10:00:00.000Z', ...o,
+    });
+
+    it('marks a month that matches Zoho with a green check named by its date', () => {
+      render(renderTable({ checks: [check()] }));
+      const mark = screen.getByRole('img', { name: 'Matches Zoho (checked Nov 18)' });
+      expect(mark).toHaveTextContent('✓');
+      expect(mark).toHaveClass('text-bambu-green');
+      expect(screen.queryByRole('button', { name: /reload/i })).toBeNull();
+    });
+
+    it('marks a gap in amber with both totals and offers the reload to whoever may sync', () => {
+      const onRefetch = vi.fn();
+      render(renderTable({ checks: [check({ zohoHt: 1_234_567, cacheHt: 1_230_000, gap: 4_567, ok: false })], onRefetch }));
+      const mark = screen.getByRole('img', { name: 'Differs from Zoho: Zoho 1.234.567 FCP, Fenrir 1.230.000 FCP' });
+      expect(mark).toHaveClass('text-amber-700', 'dark:text-amber-400');
+      fireEvent.click(screen.getByRole('button', { name: 'Clear sept. 2026 and reload it from Zoho' }));
+      expect(onRefetch).toHaveBeenCalledWith('2026-09', 'sept. 2026');
+    });
+
+    it('shows no reload without the sync right', () => {
+      render(renderTable({ checks: [check({ ok: false, gap: 9 })] }));
+      expect(screen.getByRole('img', { name: /Differs from Zoho/ })).toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: /reload/i })).toBeNull();
+    });
+
+    it('shows no mark outside the month view', () => {
+      render(<RevenueTable buckets={[sept]} granularity="week" taxMode="ht" canMargin filterParams="" version={0} checks={[check()]} />);
+      expect(screen.queryByRole('img', { name: /Zoho/ })).toBeNull();
+    });
   });
 });

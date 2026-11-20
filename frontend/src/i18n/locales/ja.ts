@@ -12916,6 +12916,12 @@ export default {
       cancel: 'キャンセル',
       rebuildStarted: '再構築を開始しました。履歴はバックグラウンドで Zoho から再読み込みされます。',
       rebuildRefused: '再構築は開始されませんでした。Zoho が未設定か、本日の API 割り当てがほぼ上限に達しています。何も削除されていません。',
+      mismatch: 'Zoho と一致しない月: {{n}}',
+      checkOk: 'Zoho と一致 ({{date}} に確認)',
+      checkGap: 'Zoho との差異: Zoho {{zoho}}、Fenrir {{cache}}',
+      reloadMonth: '再読み込み',
+      reloadMonthHint: '{{month}} を消去して Zoho から再読み込み',
+      monthReloading: '{{month}} を消去しました。Zoho から再読み込み中です。',
     },
     hero: {
       partial: '{{period}} · 進行中、{{total}}日中{{day}}日目',

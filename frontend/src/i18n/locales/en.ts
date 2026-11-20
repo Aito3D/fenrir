@@ -12973,6 +12973,12 @@ export default {
       cancel: 'Cancel',
       rebuildStarted: 'Rebuild started — the history reloads from Zoho in the background.',
       rebuildRefused: 'Rebuild not started: Zoho is not configured or today\'s API quota is nearly used up. Nothing was deleted.',
+      mismatch: 'Months off from Zoho: {{n}}',
+      checkOk: 'Matches Zoho (checked {{date}})',
+      checkGap: 'Differs from Zoho: Zoho {{zoho}}, Fenrir {{cache}}',
+      reloadMonth: 'Reload',
+      reloadMonthHint: 'Clear {{month}} and reload it from Zoho',
+      monthReloading: '{{month}} cleared, reloading from Zoho.',
     },
     hero: {
       partial: '{{period}} · in progress, day {{day}} of {{total}}',

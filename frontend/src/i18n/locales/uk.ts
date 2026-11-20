@@ -12564,6 +12564,12 @@ export default {
       cancel: 'Скасувати',
       rebuildStarted: 'Перебудову запущено — історія заново завантажується із Zoho у фоні.',
       rebuildRefused: 'Перебудову не запущено: Zoho не налаштовано або сьогоднішню квоту API майже вичерпано. Нічого не видалено.',
+      mismatch: 'Місяців із розбіжністю з Zoho: {{n}}',
+      checkOk: 'Збігається з Zoho (перевірено {{date}})',
+      checkGap: 'Розбіжність із Zoho: Zoho {{zoho}}, Fenrir {{cache}}',
+      reloadMonth: 'Перезавантажити',
+      reloadMonthHint: 'Очистити {{month}} і заново завантажити з Zoho',
+      monthReloading: '{{month}} очищено, триває повторне завантаження з Zoho.',
     },
     hero: {
       partial: '{{period}} · триває, день {{day}} з {{total}}',

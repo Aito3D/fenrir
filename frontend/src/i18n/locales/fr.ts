@@ -12902,6 +12902,12 @@ export default {
       cancel: 'Annuler',
       rebuildStarted: 'Reconstruction lancée — l\'historique se recharge depuis Zoho en arrière-plan.',
       rebuildRefused: 'Reconstruction non lancée : Zoho n\'est pas configuré ou le quota d\'API du jour est presque épuisé. Rien n\'a été effacé.',
+      mismatch: 'Mois en écart avec Zoho : {{n}}',
+      checkOk: 'Conforme à Zoho (vérifié le {{date}})',
+      checkGap: 'Écart avec Zoho : Zoho {{zoho}}, Fenrir {{cache}}',
+      reloadMonth: 'Recharger',
+      reloadMonthHint: 'Effacer {{month}} et le recharger depuis Zoho',
+      monthReloading: '{{month}} effacé, rechargement depuis Zoho en cours.',
     },
     hero: {
       partial: '{{period}} · en cours, jour {{day}} sur {{total}}',

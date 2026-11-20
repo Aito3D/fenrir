@@ -12941,6 +12941,12 @@ export default {
       cancel: 'Annuleren',
       rebuildStarted: 'Opnieuw opbouwen gestart — de geschiedenis wordt op de achtergrond opnieuw uit Zoho geladen.',
       rebuildRefused: 'Opnieuw opbouwen niet gestart: Zoho is niet ingesteld of het API-quotum van vandaag is bijna op. Er is niets verwijderd.',
+      mismatch: 'Maanden die afwijken van Zoho: {{n}}',
+      checkOk: 'Komt overeen met Zoho (gecontroleerd op {{date}})',
+      checkGap: 'Afwijking van Zoho: Zoho {{zoho}}, Fenrir {{cache}}',
+      reloadMonth: 'Opnieuw laden',
+      reloadMonthHint: '{{month}} wissen en opnieuw uit Zoho laden',
+      monthReloading: '{{month}} gewist, wordt opnieuw uit Zoho geladen.',
     },
     hero: {
       partial: '{{period}} · lopend, dag {{day}} van {{total}}',

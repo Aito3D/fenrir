@@ -12902,6 +12902,12 @@ export default {
       cancel: 'Annulla',
       rebuildStarted: 'Ricostruzione avviata: lo storico si ricarica da Zoho in background.',
       rebuildRefused: 'Ricostruzione non avviata: Zoho non è configurato o la quota API di oggi è quasi esaurita. Non è stato cancellato nulla.',
+      mismatch: 'Mesi non allineati con Zoho: {{n}}',
+      checkOk: 'Allineato con Zoho (verificato il {{date}})',
+      checkGap: 'Differenza con Zoho: Zoho {{zoho}}, Fenrir {{cache}}',
+      reloadMonth: 'Ricarica',
+      reloadMonthHint: 'Cancella {{month}} e ricaricalo da Zoho',
+      monthReloading: '{{month}} cancellato, ricaricamento da Zoho in corso.',
     },
     hero: {
       partial: '{{period}} · in corso, giorno {{day}} di {{total}}',

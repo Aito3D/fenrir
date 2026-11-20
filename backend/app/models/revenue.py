@@ -86,3 +86,14 @@ class RevenueItem(Base):
     dealer_price: Mapped[float | None] = mapped_column(Float, nullable=True)  # cf_prix_dealer_usd_unformatted
     status: Mapped[str | None] = mapped_column(String(32), nullable=True)
     fetched_at: Mapped[str] = mapped_column(String(40))
+
+
+class RevenueMonthCheck(Base):
+    """A closed month's cached total against Zoho's own salesbyitem total for the same window."""
+
+    __tablename__ = "revenue_month_checks"
+
+    month: Mapped[str] = mapped_column(String(7), primary_key=True)
+    zoho_amount: Mapped[float] = mapped_column(Float)
+    cache_amount: Mapped[float] = mapped_column(Float)
+    checked_at: Mapped[str] = mapped_column(String(40))

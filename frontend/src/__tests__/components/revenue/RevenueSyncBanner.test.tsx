@@ -25,6 +25,16 @@ function renderBanner(s: RevenueSyncStatus, o: { canSync?: boolean } = {}) {
 }
 
 describe('RevenueSyncBanner', () => {
+  it('idle: counts the months whose total differs from Zoho in amber', () => {
+    render(<RevenueSyncBanner sync={sync()} canSync onRetry={vi.fn()} mismatches={2} />);
+    expect(screen.getByText(/Months off from Zoho: 2/)).toHaveClass('text-amber-700', 'dark:text-amber-400');
+  });
+
+  it('idle: says nothing about Zoho when every checked month matches', () => {
+    renderBanner(sync());
+    expect(screen.queryByText(/Months off from Zoho/)).toBeNull();
+  });
+
   const failedDay = (day: string, nextRetryAt: string) => ({ day, attempts: 2, nextRetryAt, error: 'Zoho 400' });
 
   it('idle: names one failed day and its retry time in amber', () => {

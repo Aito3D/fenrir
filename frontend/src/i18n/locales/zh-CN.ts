@@ -12900,6 +12900,12 @@ export default {
       cancel: '取消',
       rebuildStarted: '已开始重建——历史将在后台从 Zoho 重新加载。',
       rebuildRefused: '未开始重建：Zoho 尚未配置，或今日的 API 配额即将用完。未删除任何内容。',
+      mismatch: '与 Zoho 不符的月份：{{n}}',
+      checkOk: '与 Zoho 一致（{{date}} 核对）',
+      checkGap: '与 Zoho 有差异：Zoho {{zoho}}，Fenrir {{cache}}',
+      reloadMonth: '重新加载',
+      reloadMonthHint: '清除 {{month}} 并从 Zoho 重新加载',
+      monthReloading: '已清除 {{month}}，正在从 Zoho 重新加载。',
     },
     hero: {
       partial: '{{period}} · 进行中，第 {{day}} 天，共 {{total}} 天',

@@ -97,6 +97,7 @@ async def tokens(db_session):
         "/daily",
         "/targets",
         "/annotations",
+        "/checks",
         "/movers",
         "/analysis?from=2025-03-01&to=2025-03-31",
     ],
@@ -549,3 +550,50 @@ async def test_labor_list_needs_margin_to_read_and_targets_too_to_write(async_cl
     assert (
         await async_client.put(url, json={"providers": [{**LABOR, "daysPerWeek": 8}]}, headers=tokens["labor"])
     ).status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_checks_list_newest_first_with_rounded_amounts_and_a_one_franc_tolerance(
+    async_client, revenue_db, tokens
+):
+    async with async_sessionmaker(revenue_db, expire_on_commit=False)() as db:
+        await store.save_month_check(db, "2025-02", 1000.4, 999.6, NOW)
+        await store.save_month_check(db, "2025-03", 1500, 1000, NOW)
+    r = await async_client.get(f"{URL}/checks", headers=tokens["read"])
+    assert r.json() == {
+        "checks": [
+            {
+                "month": "2025-03",
+                "zohoHt": 1500,
+                "cacheHt": 1000,
+                "gap": 500,
+                "ok": False,
+                "checkedAt": NOW.isoformat(),
+            },
+            {"month": "2025-02", "zohoHt": 1000, "cacheHt": 1000, "gap": 1, "ok": True, "checkedAt": NOW.isoformat()},
+        ]
+    }
+
+
+@pytest.mark.asyncio
+async def test_refetch_needs_revenue_sync_and_a_closed_yyyy_mm_month(async_client, revenue_db, tokens):
+    url = f"{URL}/checks/2025-03/refetch"
+    assert (await async_client.post(url, headers=tokens["read"])).status_code == 403
+    for bad in ("2025-3", "2025-13", "march"):
+        r = await async_client.post(f"{URL}/checks/{bad}/refetch", headers=tokens["sync"])
+        assert r.status_code == 422
+    this_month = datetime.now(timezone.utc).strftime("%Y-%m")
+    r = await async_client.post(f"{URL}/checks/{this_month}/refetch", headers=tokens["sync"])
+    assert (r.status_code, r.json()["detail"]) == (422, "month is not closed yet")
+
+
+@pytest.mark.asyncio
+async def test_refetch_drops_the_months_days_and_check(async_client, revenue_db, tokens):
+    async with async_sessionmaker(revenue_db, expire_on_commit=False)() as db:
+        await store.save_month_check(db, "2025-03", 1500, 1000, NOW)
+    r = await async_client.post(f"{URL}/checks/2025-03/refetch", headers=tokens["sync"])
+    assert r.json() == {"days": 1}
+    async with store.snapshot(revenue_db) as conn:
+        assert await store.read_day_index(conn) == []
+        assert await store.read_lines(conn, "2025-03-01", "2025-03-31") == []
+        assert await store.read_month_checks(conn) == []

@@ -21,7 +21,8 @@ from backend.app.services.revenue.config import REVENUE_GRANULARITIES, REVENUE_H
 from backend.app.services.revenue.dates import add_days, is_valid_day, org_today
 from backend.app.services.revenue.insights import attach_targets, calendar_days, yoy_pivot
 from backend.app.services.revenue.scope import ITEM_ID_RE, build_review_list
-from backend.app.services.revenue.series import LineFilters
+from backend.app.services.revenue.series import LineFilters, js_round
+from backend.app.services.revenue.sync_plan import month_window
 
 router = APIRouter(prefix="/revenue", tags=["revenue"])
 
@@ -305,6 +306,30 @@ async def get_annotations(
 ):
     async def build(conn, _now, _status):
         return {"annotations": await store.read_annotations(conn)}
+
+    return await _respond(request, user, build, now=datetime.now(timezone.utc))
+
+
+CHECK_TOLERANCE = 1  # XPF has no decimals; Zoho and the cache may round a line apart
+
+
+@router.get("/checks")
+async def get_checks(request: Request, user: User | None = RequirePermissionIfAuthEnabled(Permission.REVENUE_READ)):
+    async def build(conn, _now, _status):
+        rows = []
+        for c in await store.read_month_checks(conn):
+            gap = js_round(c["zohoAmount"] - c["cacheAmount"])
+            rows.append(
+                {
+                    "month": c["month"],
+                    "zohoHt": js_round(c["zohoAmount"]),
+                    "cacheHt": js_round(c["cacheAmount"]),
+                    "gap": gap,
+                    "ok": abs(gap) <= CHECK_TOLERANCE,
+                    "checkedAt": c["checkedAt"],
+                }
+            )
+        return {"checks": rows}
 
     return await _respond(request, user, build, now=datetime.now(timezone.utc))
 
@@ -593,6 +618,16 @@ async def delete_annotation(
         raise _unprocessable("id must be a positive integer")
     async with _writer()() as db:
         return {"deleted": await store.delete_annotation(db, int(annotation_id))}
+
+
+@router.post("/checks/{month}/refetch")
+async def refetch_month(month: str, user: User | None = RequirePermissionIfAuthEnabled(Permission.REVENUE_SYNC)):
+    """Drops a closed month from the cache; the sync fetches it again (missing days first) and re-checks it."""
+    _check_month(month)
+    if month_window(month, REVENUE_HISTORY_START)[1] >= org_today():
+        raise _unprocessable("month is not closed yet")
+    async with _writer()() as db:
+        return {"days": await store.clear_month(db, month)}
 
 
 @router.post("/sync")

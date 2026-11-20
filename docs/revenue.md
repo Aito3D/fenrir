@@ -50,6 +50,28 @@ The first back-fill reads about 1 050 days at no more than 20 calls a minute: ex
 credentials the page waits for the item catalogue and the banner shows « Zoho credentials are not configured »; the
 server logs that warning once, not on every retry.
 
+## Check against Zoho
+
+A wrong total looks like a right one, so each closed month is checked against Zoho's own total. The check compares
+the cache's sum of every line of the month (all items, no scope, no filter) with the sum of `amount` over
+`GET /reports/salesbyitem` for the whole month, ungrouped, 200 rows a page. A gap of 1 F or less (rounding) counts
+as a match. Same report, different window: it catches a missing or failed day, a lost page or a day filed under the
+wrong date. It does not catch an error on an invoice in Zoho itself.
+
+- When: after a batch's day work, only when no day is left to fetch (none missing, stale or waiting out a back-off),
+  at most one month per batch, through the same pacing, ceiling and budget rules. First every month never checked,
+  newest first; then a month with a day re-fetched since its check; then last month again once its check is a day
+  old (late edits to last month's invoices are common). Older months are never re-checked on their own.
+- Cost: one or two calls per month once (about 35 for the history), then one or two a day for last month.
+- A Zoho error during a check fails that batch like any other error; it never marks a day failed.
+- In **Évolution**, by month and unfiltered, the detail list shows ✓ (matches, with the check date) or ⚠ (with
+  both totals) beside each checked month; the banner counts the months in gap. **Recharger** beside a ⚠ (needs
+  `revenue:sync`), or `POST /api/v1/revenue/checks/{yyyy-MM}/refetch`, deletes that month's days, lines and check:
+  the next batches fetch it again (missing days go first) and check it again. A month not closed yet answers 422.
+- Reads: `GET /api/v1/revenue/checks` (`revenue:read`), newest month first.
+
+A full rebuild drops every check with the days.
+
 ## Tables
 
 New tables come from `create_all` (no migration); they work on SQLite and PostgreSQL.
@@ -63,6 +85,7 @@ New tables come from `create_all` (no migration); they work on SQLite and Postgr
 | `revenue_scope_decisions` | items included or excluded by hand |
 | `revenue_targets` | monthly HT targets |
 | `revenue_annotations` | chart notes (day + label) |
+| `revenue_month_checks` | per closed month: Zoho's total, the cache's total, when checked |
 
 The time of the last complete item listing is the `revenue_items_synced_at` row of `settings`.
 
@@ -77,7 +100,7 @@ Administrators get all eight at startup; no other default group has any. All eig
 | `revenue:manage_scope` | include / exclude items under « À classer » |
 | `revenue:manage_targets` | edit monthly targets |
 | `revenue:manage_notes` | add and delete chart notes |
-| `revenue:sync` | « Réessayer » after a failed sync and the full rebuild |
+| `revenue:sync` | « Réessayer » after a failed sync, the full rebuild and « Recharger » on a month in gap |
 | `revenue:view_customers` | the Clients view, the segment filter and stacking, `/revenue/customers` |
 | `revenue:view_margin` | costs and margins in every payload and view |
 

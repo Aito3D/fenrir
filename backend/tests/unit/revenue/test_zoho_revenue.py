@@ -70,6 +70,25 @@ async def test_sales_by_item_by_customer_without_page_context_has_no_more(async_
 
 
 @pytest.mark.asyncio
+async def test_sales_by_item_range_sends_the_range_and_page_without_group_by(async_client, db_session):
+    await _configure(async_client)
+    seen: list[httpx.Request] = []
+    rows = [{"item_id": "i1", "amount": 10}]
+
+    def handler(request):
+        seen.append(request)
+        return httpx.Response(200, json={"sales_by_item": rows, "page_context": {"has_more_page": False}})
+
+    zoho_service.transport = _books(handler)
+
+    assert await zoho_service.sales_by_item_range(db_session, "2026-09-01", "2026-09-30", 3) == (rows, False)
+    assert seen[0].url.path == "/books/v3/reports/salesbyitem"
+    q = seen[0].url.params
+    assert (q["from_date"], q["to_date"], q["page"], q["per_page"]) == ("2026-09-01", "2026-09-30", "3", "200")
+    assert "group_by" not in q
+
+
+@pytest.mark.asyncio
 async def test_list_items_page_all_sends_no_filter(async_client, db_session):
     await _configure(async_client)
     seen: list[httpx.Request] = []

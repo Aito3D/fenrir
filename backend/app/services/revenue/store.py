@@ -20,6 +20,7 @@ from backend.app.models.revenue import (
     RevenueDay,
     RevenueDayLine,
     RevenueItem,
+    RevenueMonthCheck,
     RevenueScopeDecision,
     RevenueTarget,
 )
@@ -160,10 +161,52 @@ async def item_totals(conn: AsyncConnection) -> list[dict]:
 
 
 async def clear_revenue_cache(db: AsyncSession) -> None:
-    """Days and lines only: decisions, targets, notes and customers are the operator's and survive a rebuild."""
+    """Days, lines and their month checks only: decisions, targets, notes and customers are the operator's and survive a rebuild."""
     await db.execute(delete(RevenueDayLine))
     await db.execute(delete(RevenueDay))
+    await db.execute(delete(RevenueMonthCheck))
     await db.commit()
+
+
+async def read_month_checks(conn: AsyncConnection) -> list[dict]:
+    """Newest month first."""
+    t = RevenueMonthCheck
+    rows = await conn.execute(select(t).order_by(t.month.desc()))
+    return [
+        {"month": r.month, "zohoAmount": r.zoho_amount, "cacheAmount": r.cache_amount, "checkedAt": r.checked_at}
+        for r in rows
+    ]
+
+
+async def save_month_check(
+    db: AsyncSession, month: str, zoho_amount: float, cache_amount: float, now: datetime
+) -> None:
+    fields = {"zoho_amount": zoho_amount, "cache_amount": cache_amount, "checked_at": now.isoformat()}
+    row = await db.get(RevenueMonthCheck, month)
+    if row is None:
+        db.add(RevenueMonthCheck(month=month, **fields))
+    else:
+        for k, v in fields.items():
+            setattr(row, k, v)
+    await db.commit()
+
+
+async def month_line_sum(db: AsyncSession, month: str) -> float:
+    """Every cached line of the month, all items, no scope."""
+    t = RevenueDayLine
+    total = await db.execute(select(func.sum(t.amount)).where(t.day >= f"{month}-01", t.day <= f"{month}-31"))
+    return total.scalar() or 0.0
+
+
+async def clear_month(db: AsyncSession, month: str) -> int:
+    """Drops a month's days, lines and check so the sync fetches and checks it again; returns the day count.
+    Lines go explicitly: SQLite runs with foreign_keys off, so the cascade never fires."""
+    first, last = f"{month}-01", f"{month}-31"
+    await db.execute(delete(RevenueDayLine).where(RevenueDayLine.day >= first, RevenueDayLine.day <= last))
+    result = await db.execute(delete(RevenueDay).where(RevenueDay.day >= first, RevenueDay.day <= last))
+    await db.execute(delete(RevenueMonthCheck).where(RevenueMonthCheck.month == month))
+    await db.commit()
+    return cast(CursorResult, result).rowcount
 
 
 async def read_decisions(conn: AsyncConnection) -> list[RevenueDecision]:
@@ -324,6 +367,7 @@ async def revenue_data_stamp(conn: AsyncConnection) -> str:
         (RevenueCustomer, RevenueCustomer.fetched_at),
         (RevenueAnnotation, RevenueAnnotation.created_at),
         (RevenueItem, RevenueItem.fetched_at),
+        (RevenueMonthCheck, RevenueMonthCheck.checked_at),
         # The services' margin reads the print log and the calculator's machine rates.
         (PrintLogEntry, PrintLogEntry.completed_at),
         (CalculatorPrinter, CalculatorPrinter.updated_at),

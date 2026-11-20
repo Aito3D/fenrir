@@ -77,6 +77,7 @@ from backend.app.models.revenue import (
     RevenueDay,
     RevenueDayLine,
     RevenueItem,
+    RevenueMonthCheck,
     RevenueScopeDecision,
     RevenueTarget,
 )
@@ -158,6 +159,7 @@ __all__ = [
     "RevenueDay",
     "RevenueDayLine",
     "RevenueItem",
+    "RevenueMonthCheck",
     "RevenueScopeDecision",
     "RevenueTarget",
     "AmsLabel",

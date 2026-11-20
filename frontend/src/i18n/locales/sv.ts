@@ -12974,6 +12974,12 @@ errors: {
       cancel: 'Avbryt',
       rebuildStarted: 'Ombyggnad startad — historiken laddas om från Zoho i bakgrunden.',
       rebuildRefused: 'Ombyggnad inte startad: Zoho är inte konfigurerat eller dagens API-kvot är nästan slut. Inget har raderats.',
+      mismatch: 'Månader som avviker från Zoho: {{n}}',
+      checkOk: 'Stämmer med Zoho (kontrollerat {{date}})',
+      checkGap: 'Avvikelse från Zoho: Zoho {{zoho}}, Fenrir {{cache}}',
+      reloadMonth: 'Ladda om',
+      reloadMonthHint: 'Rensa {{month}} och ladda om från Zoho',
+      monthReloading: '{{month}} rensad, laddas om från Zoho.',
     },
     hero: {
       partial: '{{period}} · pågår, dag {{day}} av {{total}}',

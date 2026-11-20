@@ -56,7 +56,7 @@ import {
   type RangeChoice,
   type RevenueView,
 } from '../components/revenue/lib/dashboard';
-import type { CustomerSegment, ProductsResponse, RevenueGranularity, RevenueKind, RevenueProduct, RevenueResponse, TaxMode } from '../components/revenue/lib/types';
+import type { ChecksResponse, CustomerSegment, ProductsResponse, RevenueGranularity, RevenueKind, RevenueProduct, RevenueResponse, TaxMode } from '../components/revenue/lib/types';
 
 export interface RevenueControls {
   granularity: RevenueGranularity;
@@ -329,6 +329,19 @@ export function RevenuePage() {
     refresh();
   };
 
+  const checks = useRevenueResource<ChecksResponse>('/api/v1/revenue/checks', data);
+  const mismatches = checks.data?.checks.filter((c) => !c.ok).length ?? 0;
+  const refetchMonth = async (month: string, label: string) => {
+    try {
+      const res = await fetch(`/api/v1/revenue/checks/${month}/refetch`, { method: 'POST', headers: bearerAuthHeaders() });
+      if (!res.ok) throw new Error(failureMessage(res.status, await readJsonBody(res)));
+      showToast(t('revenue.sync.monthReloading', { month: label }), 'success');
+      refresh();
+    } catch (e) {
+      showToast(e instanceof Error ? e.message : String(e), 'error');
+    }
+  };
+
   const { itemsPending, ready } = dashboardReady(data);
 
   const exportCsv = () => {
@@ -388,7 +401,7 @@ export function RevenuePage() {
             <TrendingUp className="h-7 w-7 text-bambu-green" />
             {t('revenue.title')}
           </h1>
-          {data && <RevenueSyncBanner sync={data.sync} canSync={can.sync} onRetry={retry} />}
+          {data && <RevenueSyncBanner sync={data.sync} canSync={can.sync} onRetry={retry} mismatches={mismatches} />}
         </div>
         <div className="flex flex-wrap items-center gap-3">
           {(reviewCount ?? 0) > 0 && (
@@ -506,7 +519,8 @@ export function RevenuePage() {
               <RevenueChart payload={data} controls={active} can={can} onStack={(stack) => setControls({ stack })}
                 onDrill={data.granularity !== 'day' ? drill : undefined} drillDepth={drillStack.length} onBack={drillBack} today={today} />
               <Split>
-                <RevenueTable buckets={data.buckets} granularity={data.granularity} taxMode={active.taxMode} canMargin={can.margin} filterParams={filterParams} version={data} />
+                <RevenueTable buckets={data.buckets} granularity={data.granularity} taxMode={active.taxMode} canMargin={can.margin} filterParams={filterParams} version={data}
+                  checks={actualByMonth ? checks.data?.checks : undefined} onRefetch={can.sync ? (m, l) => void refetchMonth(m, l) : undefined} />
                 <RevenueMovers granularity={data.granularity} bucketKey={lastBucket?.key ?? null} bucketLabel={lastBucket?.label ?? ''} filterParams={filterParams} version={data} today={today} />
               </Split>
             </>

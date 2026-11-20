@@ -1,9 +1,9 @@
 import math
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any
 
-from backend.app.services.revenue.dates import add_days, all_days
+from backend.app.services.revenue.dates import add_days, all_days, days_in_month
 
 
 @dataclass(frozen=True)
@@ -45,6 +45,49 @@ def plan_revenue_sync(
         elif row.format < format:
             upgrade.append(day)
     return [*missing, *stale, *upgrade]
+
+
+MONTH_RECHECK_AFTER = timedelta(hours=24)
+
+
+def _next_month(month: str) -> str:
+    y, m = int(month[:4]), int(month[5:7])
+    return f"{y + 1:04d}-01" if m == 12 else f"{y:04d}-{m + 1:02d}"
+
+
+def month_window(month: str, history_start: str) -> tuple[str, str]:
+    """The days of a month the cache holds: from the month start, or the history start inside it, to the month end."""
+    end = f"{month}-{days_in_month(int(month[:4]), int(month[5:7])):02d}"
+    return max(f"{month}-01", history_start), end
+
+
+def plan_month_check(
+    *, days: list[DayRow], checks: dict[str, str], today: str, now: datetime, history_start: str
+) -> str | None:
+    """The closed, fully cached month to check against Zoho next: never checked (newest first), then one with a day
+    re-fetched since its check, then last month again once its check is a day old. `checks` maps month to checked_at."""
+    by_day = {d.day: d for d in days}
+    complete: dict[str, list[DayRow]] = {}
+    month = history_start[:7]
+    while month < today[:7]:
+        window = all_days(*month_window(month, history_start))
+        rows = [by_day[d] for d in window if d in by_day and by_day[d].closed]
+        if len(rows) == len(window):
+            complete[month] = rows
+        month = _next_month(month)
+    newest = sorted(complete, reverse=True)
+    for m in newest:
+        if m not in checks:
+            return m
+    for m in newest:
+        at = datetime.fromisoformat(checks[m])
+        if any(datetime.fromisoformat(r.fetched_at) > at for r in complete[m]):
+            return m
+    y, mo = int(today[:4]), int(today[5:7])
+    previous = f"{y - 1:04d}-12" if mo == 1 else f"{y:04d}-{mo - 1:02d}"
+    if previous in complete and now - datetime.fromisoformat(checks[previous]) > MONTH_RECHECK_AFTER:
+        return previous
+    return None
 
 
 def count_legacy_days(days: list[DayRow], format: int) -> int:

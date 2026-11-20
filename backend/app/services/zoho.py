@@ -1019,6 +1019,18 @@ class ZohoService:
         )
         return body.get("sales_by_item") or [], bool((body.get("page_context") or {}).get("has_more_page"))
 
+    async def sales_by_item_range(
+        self, db: AsyncSession, from_date: str, to_date: str, page: int
+    ) -> tuple[list[dict], bool]:
+        """One page of the salesbyitem report over a date range, ungrouped: one row per item, each with ``amount``."""
+        body = await self._request(
+            db,
+            "GET",
+            "/reports/salesbyitem",
+            params={"from_date": from_date, "to_date": to_date, "page": page, "per_page": 200},
+        )
+        return body.get("sales_by_item") or [], bool((body.get("page_context") or {}).get("has_more_page"))
+
     # --- Order Board: read-only listings of sales orders, purchase orders and stock ---
 
     async def _list_all(self, db: AsyncSession, path: str, key: str) -> list[dict]:

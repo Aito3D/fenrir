@@ -13122,6 +13122,12 @@ export default {
       cancel: 'Anuluj',
       rebuildStarted: 'Odbudowa rozpoczęta — historia wczytuje się ponownie z Zoho w tle.',
       rebuildRefused: 'Odbudowa nie rozpoczęta: Zoho nie jest skonfigurowane albo dzisiejszy limit API jest prawie wyczerpany. Nic nie zostało usunięte.',
+      mismatch: 'Miesiące niezgodne z Zoho: {{n}}',
+      checkOk: 'Zgodne z Zoho (sprawdzono {{date}})',
+      checkGap: 'Różnica względem Zoho: Zoho {{zoho}}, Fenrir {{cache}}',
+      reloadMonth: 'Wczytaj ponownie',
+      reloadMonthHint: 'Wyczyść {{month}} i wczytaj ponownie z Zoho',
+      monthReloading: 'Wyczyszczono {{month}}, trwa ponowne wczytywanie z Zoho.',
     },
     hero: {
       partial: '{{period}} · w toku, dzień {{day}} z {{total}}',

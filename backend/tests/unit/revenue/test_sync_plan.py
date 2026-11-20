@@ -1,7 +1,13 @@
 import math
 from datetime import datetime, timedelta, timezone
 
-from backend.app.services.revenue.sync_plan import DayRow, count_legacy_days, merge_day_rows, plan_revenue_sync
+from backend.app.services.revenue.sync_plan import (
+    DayRow,
+    count_legacy_days,
+    merge_day_rows,
+    plan_month_check,
+    plan_revenue_sync,
+)
 
 T0 = datetime(2026, 10, 15, 20, 0, tzinfo=timezone.utc)  # 10:00 in Tahiti, org day 2026-10-15
 H = 3600
@@ -191,3 +197,53 @@ def test_reads_a_numeric_string_quantity_as_its_number():
     out, bad = merge_day_rows([group("", row(quantity_sold="2.00", amount="100"))])
     assert out[0]["quantity"] == 2 and out[0]["amount"] == 100
     assert bad == 0
+
+
+# ── month check against Zoho ─────────────────────────────────────────────────
+
+
+def month_days(first, last, age_s=30 * D, closed=True):
+    return [fetched(d, age_s, closed) for d in reversed(days_desc(last, first))]
+
+
+def check_plan(days, checks=None, start="2026-08-01"):
+    return plan_month_check(days=days, checks=checks or {}, today="2026-10-15", now=T0, history_start=start)
+
+
+def at(age_s):
+    return (T0 - timedelta(seconds=age_s)).isoformat()
+
+
+AUG_SEP = month_days("2026-08-01", "2026-09-30")
+
+
+def test_checks_the_newest_never_checked_closed_month_first():
+    assert check_plan(AUG_SEP) == "2026-09"
+    assert check_plan(AUG_SEP, {"2026-09": at(H)}) == "2026-08"
+
+
+def test_never_checks_the_current_month():
+    assert check_plan(month_days("2026-10-01", "2026-10-14"), start="2026-10-01") is None
+
+
+def test_skips_a_month_with_a_missing_or_open_day():
+    missing = [r for r in AUG_SEP if r.day != "2026-09-12"]
+    assert check_plan(missing) == "2026-08"
+    opened = [r if r.day != "2026-08-31" else fetched(r.day, 30 * D, closed=False) for r in missing]
+    assert check_plan(opened) is None
+
+
+def test_a_month_starting_before_the_history_needs_only_its_days_from_the_history_start():
+    assert check_plan(month_days("2026-09-20", "2026-09-30"), start="2026-09-20") == "2026-09"
+    assert check_plan(month_days("2026-09-21", "2026-09-30"), start="2026-09-20") is None
+
+
+def test_re_checks_a_month_with_a_day_re_fetched_after_its_check():
+    days = [r if r.day != "2026-08-10" else fetched(r.day, H) for r in AUG_SEP]
+    assert check_plan(days, {"2026-08": at(2 * H), "2026-09": at(10 * H)}) == "2026-08"
+    assert check_plan(days, {"2026-08": at(30 * 60), "2026-09": at(10 * H)}) is None
+
+
+def test_re_checks_last_month_once_its_check_is_a_day_old_never_an_older_month():
+    assert check_plan(AUG_SEP, {"2026-08": at(29 * D), "2026-09": at(25 * H)}) == "2026-09"
+    assert check_plan(AUG_SEP, {"2026-08": at(29 * D), "2026-09": at(23 * H)}) is None

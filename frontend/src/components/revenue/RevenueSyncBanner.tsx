@@ -11,10 +11,13 @@ export function RevenueSyncBanner({
   sync,
   canSync,
   onRetry,
+  mismatches = 0,
 }: {
   sync: RevenueSyncStatus;
   canSync: boolean;
   onRetry: () => void;
+  /** Closed months whose cached total differs from Zoho's. */
+  mismatches?: number;
 }) {
   const { t, i18n } = useTranslation();
   const { kind, pctDone } = bannerState(sync);
@@ -49,6 +52,7 @@ export function RevenueSyncBanner({
             </span>
           )}
           {failedNote && <> · {failedNote}</>}
+          {mismatches > 0 && <span className="text-amber-700 dark:text-amber-400"> · {t('revenue.sync.mismatch', { n: mismatches })}</span>}
         </span>
       ) : kind === 'error' ? (
         <span className="text-amber-400">{t('revenue.sync.failed', { error: sync.lastError })}</span>

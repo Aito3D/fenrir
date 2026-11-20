@@ -246,6 +246,19 @@ export interface RevenueResponse {
   fetchedAt: string;
 }
 
+export interface RevenueMonthCheck {
+  month: string;
+  zohoHt: number;
+  cacheHt: number;
+  gap: number;
+  ok: boolean;
+  checkedAt: string;
+}
+
+export interface ChecksResponse {
+  checks: RevenueMonthCheck[];
+}
+
 export interface ItemsResponse {
   items: RevenueItemRow[];
   from: string;

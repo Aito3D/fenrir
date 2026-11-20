@@ -12521,6 +12521,12 @@ export default {
       cancel: 'Отмена',
       rebuildStarted: 'Перестройка запущена — история заново загружается из Zoho в фоне.',
       rebuildRefused: 'Перестройка не запущена: Zoho не настроен или сегодняшняя квота API почти исчерпана. Ничего не удалено.',
+      mismatch: 'Месяцев с расхождением с Zoho: {{n}}',
+      checkOk: 'Совпадает с Zoho (проверено {{date}})',
+      checkGap: 'Расхождение с Zoho: Zoho {{zoho}}, Fenrir {{cache}}',
+      reloadMonth: 'Перезагрузить',
+      reloadMonthHint: 'Очистить {{month}} и заново загрузить из Zoho',
+      monthReloading: '{{month}} очищен, идёт повторная загрузка из Zoho.',
     },
     hero: {
       partial: '{{period}} · идёт, день {{day}} из {{total}}',

@@ -357,3 +357,50 @@ async def test_write_day_keeps_each_lines_frozen_cost_and_tax_rate_null_when_unk
     [a, b] = await read_lines(engine, "2026-10-01", "2026-10-01")
     assert (a.unit_cost, a.tax_percentage) == (300, 16)
     assert (b.unit_cost, b.tax_percentage) == (None, None)
+
+
+async def test_month_checks_upsert_list_newest_first_and_move_the_stamp(engine, db):
+    async def stamp():
+        async with store.snapshot(engine) as conn:
+            return await store.revenue_data_stamp(conn)
+
+    before = await stamp()
+    await store.save_month_check(db, "2026-08", 100, 100, NOW)
+    await store.save_month_check(db, "2026-09", 200, 150, NOW)
+    await store.save_month_check(db, "2026-09", 210, 210, LATER)
+    async with store.snapshot(engine) as conn:
+        checks = await store.read_month_checks(conn)
+    assert checks == [
+        {"month": "2026-09", "zohoAmount": 210, "cacheAmount": 210, "checkedAt": LATER.isoformat()},
+        {"month": "2026-08", "zohoAmount": 100, "cacheAmount": 100, "checkedAt": NOW.isoformat()},
+    ]
+    assert await stamp() != before
+
+
+async def test_month_line_sum_covers_every_line_of_the_month_only(engine, db):
+    await write(db, "2026-08-31", [L2])
+    await write(db, "2026-09-01", [L1, L2])
+    await write(db, "2026-09-30", [L2])
+    await write(db, "2026-10-01", [L2])
+    assert await store.month_line_sum(db, "2026-09") == -11681 + 10785 * 2
+    assert await store.month_line_sum(db, "2026-07") == 0
+
+
+async def test_clear_month_drops_its_days_lines_and_check_and_nothing_else(engine, db):
+    await write(db, "2026-08-31", [L2])
+    await write(db, "2026-09-01", [L1, L2])
+    await write(db, "2026-09-30", [])
+    await store.save_month_check(db, "2026-09", 1, 2, NOW)
+    await store.save_month_check(db, "2026-08", 1, 1, NOW)
+    assert await store.clear_month(db, "2026-09") == 2
+    assert [d.day for d in await read_index(engine)] == ["2026-08-31"]
+    assert [ln.day for ln in await read_lines(engine, "2026-08-01", "2026-09-30")] == ["2026-08-31"]
+    async with store.snapshot(engine) as conn:
+        assert [c["month"] for c in await store.read_month_checks(conn)] == ["2026-08"]
+
+
+async def test_a_full_cache_clear_drops_the_month_checks(engine, db):
+    await store.save_month_check(db, "2026-09", 1, 1, NOW)
+    await store.clear_revenue_cache(db)
+    async with store.snapshot(engine) as conn:
+        assert await store.read_month_checks(conn) == []

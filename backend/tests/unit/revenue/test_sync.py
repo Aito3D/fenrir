@@ -28,6 +28,8 @@ class FakeZoho:
         self.sales_calls: list[tuple[str, int]] = []
         self.contact_calls: list[str] = []
         self.item_pages: list[int] = []
+        self.range_calls: list[tuple[str, str, int]] = []
+        self.range_rows = self.default_range
         self.sales = self.default_sales
         self.contact = self.default_contact
         self.items = self.default_items
@@ -41,6 +43,13 @@ class FakeZoho:
 
     async def default_items(self, page):
         return [], False
+
+    async def default_range(self, from_date, to_date, page):
+        return [], False
+
+    async def sales_by_item_range(self, db, from_date, to_date, page):
+        self.range_calls.append((from_date, to_date, page))
+        return await self.range_rows(from_date, to_date, page)
 
     async def is_configured(self, db):
         return self.configured
@@ -86,7 +95,7 @@ def sleeps(monkeypatch):
 @pytest.fixture
 def zoho(engine, sleeps, monkeypatch):
     fake = FakeZoho()
-    for name in ("sales_by_item_by_customer", "get_contact", "list_items_page_all"):
+    for name in ("sales_by_item_by_customer", "get_contact", "list_items_page_all", "sales_by_item_range"):
         monkeypatch.setattr(zoho_service, name, getattr(fake, name))
     monkeypatch.setattr(zoho_service, "calls_in_last_minute", lambda: 0)
     monkeypatch.setattr(zoho_service, "daily_remaining", None)
@@ -638,3 +647,83 @@ async def test_status_lists_failed_days_newest_first_and_stops_backfilling_when_
     assert (first["attempts"], first["error"]) == (1, "bad 2026-10-06")
     assert datetime.fromisoformat(first["nextRetryAt"]) > datetime.now(timezone.utc)
     assert (s["missingDays"], s["backfilling"]) == (6, False)
+
+
+# ── month check against Zoho ─────────────────────────────────────────────────
+
+
+@pytest.fixture
+def with_september(zoho, monkeypatch):
+    """History from 2026-09-28: September (3 days) is a closed month, 18 days in all, two batches to fill."""
+    monkeypatch.setattr(sync, "REVENUE_HISTORY_START", "2026-09-28")
+
+    async def sales(day, page):
+        return ([group("c1", {**ROW_A, "amount": 500})] if day.startswith("2026-09") else []), False
+
+    zoho.sales = sales
+    return zoho
+
+
+async def checks(engine):
+    async with store.snapshot(engine) as conn:
+        return await store.read_month_checks(conn)
+
+
+async def test_a_complete_cache_checks_one_month_against_zohos_total_for_its_window(with_september, engine):
+    async def range_rows(from_date, to_date, page):
+        return ([{"item_id": "i1", "amount": 1000}] if page == 1 else [{"item_id": "i2", "amount": "501"}]), page == 1
+
+    with_september.range_rows = range_rows
+    first = await sync.run_revenue_sync_batch()
+    assert first["checked"] is None and with_september.range_calls == []
+    second = await sync.run_revenue_sync_batch()
+    assert second["checked"] == "2026-09"
+    assert with_september.range_calls == [("2026-09-28", "2026-09-30", 1), ("2026-09-28", "2026-09-30", 2)]
+    [c] = await checks(engine)
+    assert (c["month"], c["zohoAmount"], c["cacheAmount"]) == ("2026-09", 1501, 1500)
+    with_september.range_calls.clear()
+    third = await sync.run_revenue_sync_batch()
+    assert third["checked"] is None and with_september.range_calls == []
+
+
+async def test_an_incomplete_cache_checks_no_month(with_september, engine):
+    async def sales(day, page):
+        if day == "2026-10-02":
+            raise ZohoUpstreamError("bad day")
+        return [], False
+
+    with_september.sales = sales
+    for _ in range(3):
+        try:
+            await sync.run_revenue_sync_batch()
+        except ZohoUpstreamError:
+            pass
+    assert with_september.range_calls == []
+    assert await checks(engine) == []
+
+
+async def test_a_low_budget_stops_the_month_check_and_saves_nothing(with_september, engine, monkeypatch):
+    await sync.run_revenue_sync_batch()
+
+    async def sales(day, page):
+        if day == "2026-09-28":  # the batch's last day: the budget drops before the check
+            monkeypatch.setattr(zoho_service, "daily_remaining", SYNC.daily_budget_floor - 1)
+        return [], False
+
+    with_september.sales = sales
+    r = await sync.run_revenue_sync_batch()
+    assert r["checked"] is None and with_september.range_calls == []
+    assert await checks(engine) == []
+
+
+async def test_a_zoho_error_while_checking_fails_the_batch_but_marks_no_day(with_september, engine):
+    async def range_rows(from_date, to_date, page):
+        raise ZohoUpstreamError("Zoho Books error (HTTP 500)")
+
+    with_september.range_rows = range_rows
+    await sync.run_revenue_sync_batch()
+    with pytest.raises(ZohoUpstreamError):
+        await sync.run_revenue_sync_batch()
+    assert sync._day_failures == {}
+    assert (await status(engine))["missingDays"] == 0
+    assert await checks(engine) == []
