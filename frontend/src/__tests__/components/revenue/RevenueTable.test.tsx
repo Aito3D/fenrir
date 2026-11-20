@@ -130,7 +130,7 @@ describe('RevenueTable', () => {
     render(renderTable());
     const cells = within(bodyRows()[0]).getAllByRole('cell');
     expect(cells[5]).toHaveTextContent('186.000 FCP 30 %');
-    expect(screen.getByRole('columnheader', { name: 'Margin' })).toHaveAccessibleDescription('Gross margin HT, at current cost (dealer price, else purchase price)');
+    expect(screen.getByRole('columnheader', { name: 'Margin' })).toHaveAccessibleDescription('Gross margin HT, at current cost (dealer price, else purchase price); services at their print costs (filament, energy, printer wear) and labour since July 2026');
   });
 
   it('shows the margin only with view_margin and cost fields', async () => {

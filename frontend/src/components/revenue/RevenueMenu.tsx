@@ -19,6 +19,9 @@ export function RevenueMenu(p: {
   reviewCount: number;
   targetsOpen: boolean;
   onTargets: () => void;
+  /** Absent without the margin permission: wages are margin data. */
+  laborOpen?: boolean;
+  onLabor?: () => void;
   onReview: () => void;
   onCopy: () => void;
   onExport: () => void;
@@ -103,6 +106,11 @@ export function RevenueMenu(p: {
                 <button type="button" role="menuitem" className={ITEM} onClick={pick(p.onTargets)}>
                   {p.targetsOpen ? t('revenue.menu.hideTargets') : t('revenue.menu.targets')}
                 </button>
+                {p.onLabor && (
+                  <button type="button" role="menuitem" className={ITEM} onClick={pick(p.onLabor)}>
+                    {p.laborOpen ? t('revenue.menu.hideLabor') : t('revenue.menu.labor')}
+                  </button>
+                )}
                 <button type="button" role="menuitem" className={ITEM} onClick={pick(p.onReview)}>
                   {t('revenue.menu.review')}{p.reviewCount > 0 ? ` (${p.reviewCount})` : ''}
                 </button>

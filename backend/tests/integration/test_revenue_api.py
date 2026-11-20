@@ -71,6 +71,7 @@ async def tokens(db_session):
         "targets": [Permission.REVENUE_MANAGE_TARGETS.value],
         "notes": [Permission.REVENUE_MANAGE_NOTES.value],
         "sync": [Permission.REVENUE_SYNC.value],
+        "labor": [read, margin, Permission.REVENUE_MANAGE_TARGETS.value],
     }
     for name, perms in principals.items():
         group = Group(name=f"revenue-{name}", permissions=perms, is_system=False)
@@ -121,9 +122,9 @@ async def test_series_payload_keys(async_client, revenue_db, tokens):
 @pytest.mark.asyncio
 async def test_read_user_buckets_lack_cost_and_segments_all_user_has_them(async_client, revenue_db, tokens):
     plain = (await async_client.get(URL, params=MONTH, headers=tokens["read"])).json()["buckets"][0]
-    assert not {"cost", "costedHt", "bySegment", "bySegmentTtc"} & set(plain)
+    assert not {"cost", "costedHt", "marginSplit", "bySegment", "bySegmentTtc"} & set(plain)
     full = (await async_client.get(URL, params=MONTH, headers=tokens["all"])).json()["buckets"][0]
-    assert {"cost", "costedHt", "bySegment", "bySegmentTtc"} <= set(full)
+    assert {"cost", "costedHt", "marginSplit", "bySegment", "bySegmentTtc"} <= set(full)
     assert full["cost"] == 8
 
 
@@ -525,3 +526,26 @@ async def test_target_put_and_annotation_post_invalidate_the_etag(async_client, 
         assert (await write()).status_code in (200, 201)
         again = await async_client.get(URL + path, headers={**tokens["read"], "If-None-Match": etag})
         assert again.status_code == 200
+
+
+LABOR = {"name": " Alice ", "hourlyRate": 1500, "hoursPerDay": 8, "daysPerWeek": 5, "since": None}
+
+
+@pytest.mark.asyncio
+async def test_labor_list_needs_margin_to_read_and_targets_too_to_write(async_client, revenue_db, tokens):
+    url = f"{URL}/labor"
+    assert (await async_client.get(url, headers=tokens["read"])).status_code == 403
+    assert (await async_client.get(url, headers=tokens["read_margin"])).json() == {"providers": []}
+    body = {"providers": [LABOR]}
+    for who in ("read_margin", "targets"):
+        assert (await async_client.put(url, json=body, headers=tokens[who])).status_code == 403
+    assert (await async_client.put(url, json={"providers": [{}]}, headers=tokens["read"])).status_code == 403
+    r = await async_client.put(url, json=body, headers=tokens["labor"])
+    assert r.status_code == 200
+    assert r.json()["providers"][0]["name"] == "Alice"
+    assert (await async_client.get(url, headers=tokens["labor"])).json()["providers"][0]["hourlyRate"] == 1500
+    bad = {**LABOR, "since": "2026-13-01"}
+    assert (await async_client.put(url, json={"providers": [bad]}, headers=tokens["labor"])).status_code == 422
+    assert (
+        await async_client.put(url, json={"providers": [{**LABOR, "daysPerWeek": 8}]}, headers=tokens["labor"])
+    ).status_code == 422

@@ -8,14 +8,14 @@ from datetime import datetime, timezone
 from typing import Any, TypeVar, cast
 
 from fastapi import APIRouter, HTTPException, Query, Request, Response
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from backend.app.core import database
 from backend.app.core.auth import RequirePermissionIfAuthEnabled
 from backend.app.core.permissions import Permission
 from backend.app.models.user import User
-from backend.app.services.revenue import analysis, insights, memo, products, series, store, sync
+from backend.app.services.revenue import analysis, insights, memo, production, products, series, store, sync
 from backend.app.services.revenue.config import REVENUE_GRANULARITIES, REVENUE_HISTORY_START
 from backend.app.services.revenue.dates import add_days, is_valid_day, org_today
 from backend.app.services.revenue.insights import attach_targets, calendar_days, yoy_pivot
@@ -128,6 +128,7 @@ async def get_revenue(
             today=today,
             history_start=REVENUE_HISTORY_START,
             filters=filters,
+            production=await production.read_production_costs(conn, today) if flags.margin else None,
         )
         if not series.is_filtered(filters):
             buckets = attach_targets(buckets, granularity, await store.read_targets(conn))
@@ -438,6 +439,18 @@ class TargetBody(BaseModel):
     amountHt: Any = None  # noqa: N815 - loki's field name
 
 
+class LaborProvider(BaseModel):
+    name: str = Field(min_length=1, max_length=100)
+    hourlyRate: float = Field(ge=0, le=1e7)  # noqa: N815 - the page's camelCase
+    hoursPerDay: float = Field(ge=0, le=24)  # noqa: N815
+    daysPerWeek: int = Field(ge=1, le=7)  # noqa: N815
+    since: str | None = None
+
+
+class LaborBody(BaseModel):
+    providers: list[LaborProvider] = Field(max_length=100)
+
+
 class AnnotationBody(BaseModel):
     day: Any = None
     label: Any = None
@@ -514,6 +527,31 @@ async def delete_target(
     _check_month(month)
     async with _writer()() as db:
         return {"cleared": await store.clear_target(db, month)}
+
+
+@router.get("/labor")
+async def get_labor(
+    user: User | None = RequirePermissionIfAuthEnabled(Permission.REVENUE_READ, Permission.REVENUE_VIEW_MARGIN),
+):
+    async with store.snapshot() as conn:
+        return {"providers": await production.read_labor(conn)}
+
+
+@router.put("/labor")
+async def put_labor(
+    body: LaborBody,
+    # Wages are margin data: editing them takes the margin view and the targets right.
+    user: User | None = RequirePermissionIfAuthEnabled(
+        Permission.REVENUE_VIEW_MARGIN, Permission.REVENUE_MANAGE_TARGETS
+    ),
+):
+    providers = [p.model_dump() for p in body.providers]
+    for p in providers:
+        if p["since"] is not None and not is_valid_day(p["since"]):
+            raise _unprocessable("since must be yyyy-MM-dd")
+        p["name"] = p["name"].strip()
+    async with _writer()() as db:
+        return {"providers": await production.save_labor(db, providers)}
 
 
 @router.post("/annotations", status_code=201)

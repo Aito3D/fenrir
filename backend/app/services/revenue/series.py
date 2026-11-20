@@ -17,6 +17,7 @@ from backend.app.services.revenue.dates import (
     iso_week1_monday,
     utc_to_day,
 )
+from backend.app.services.revenue.production import ProductionCosts
 from backend.app.services.revenue.scope import (
     RevenueDecision,
     ScopeItem,
@@ -150,6 +151,9 @@ def series_line_range(g: Granularity, from_: str, to: str, history_start: str) -
 
 NO_NATURE = "Sans nature"
 NO_BRAND = "Sans marque"
+MARGIN_DIMS = ("nature", "brand", "segment", "kind")
+KIND_KEY = {True: "Services", False: "Biens"}
+UNALLOCATED = {"nature": NO_NATURE, "brand": NO_BRAND, "segment": "inconnu", "kind": "Services"}
 # Below this share of last year's bucket reached at the same point, the seasonal ratio is noise.
 SEASONAL_MIN_SHARE = 0.1
 
@@ -235,20 +239,37 @@ class _Acc:
     def __init__(self) -> None:
         self.ht = self.ttc = self.goods = self.services = self.goods_ttc = self.services_ttc = 0.0
         self.cost = self.costed_ht = self.quantity = 0.0
+        # Margin per split key: lines with a Zoho cost carry their own; service lines costed by the
+        # print log share the bucket's production cost pro rata of their HT (`pool`).
+        self.prod_cost = 0.0
+        self.margin: dict[str, dict[str, float]] = {d: {} for d in MARGIN_DIMS}
+        self.pool: dict[str, dict[str, float]] = {d: {} for d in MARGIN_DIMS}
         self.ttc_approx = False
         self.splits: dict[str, dict[str, float]] = {
             k: {} for k in ("nature", "brand", "item", "nature_ttc", "brand_ttc", "item_ttc", "segment", "segment_ttc")
         }
 
-    def add(self, line: RevenueLine, item: ScopeItem | None, segment: str) -> None:
+    def margin_split(self) -> dict[str, dict[str, int]]:
+        return _margin_split(self)
+
+    def add(self, line: RevenueLine, item: ScopeItem | None, segment: str, production_from: str | None = None) -> None:
         amount = line.amount
         ttc, approx = ttc_of(amount, item)
         nature = item.nature if item and item.nature is not None else NO_NATURE
         brand = item.brand if item and item.brand is not None else NO_BRAND
         name = item_display_name(item, line.name)
+        keys = {"nature": nature, "brand": brand, "segment": segment, "kind": KIND_KEY[is_service_item(item)]}
         if item is not None and item.unit_cost is not None:
-            self.cost += line.quantity * item.unit_cost
+            line_cost = line.quantity * item.unit_cost
+            self.cost += line_cost
             self.costed_ht += amount
+            for dim, key in keys.items():
+                self.margin[dim][key] = self.margin[dim].get(key, 0) + amount - line_cost
+        elif production_from is not None and line.day >= production_from and is_service_item(item):
+            # Its cost is the print log's, added per bucket in build_revenue_series.
+            self.costed_ht += amount
+            for dim, key in keys.items():
+                self.pool[dim][key] = self.pool[dim].get(key, 0) + amount
         self.ht += amount
         self.ttc += ttc
         self.ttc_approx = self.ttc_approx or approx
@@ -271,6 +292,23 @@ class _Acc:
         ):
             d = self.splits[split]
             d[key] = d.get(key, 0) + value
+
+
+def _margin_split(acc: "_Acc") -> dict[str, dict[str, int]]:
+    out = {}
+    for dim in MARGIN_DIMS:
+        merged = dict(acc.margin[dim])
+        pool = acc.pool[dim]
+        total = sum(pool.values())
+        for key, ht in pool.items():
+            share = acc.prod_cost * ht / total if total else 0.0
+            merged[key] = merged.get(key, 0) + ht - share
+        if acc.prod_cost and not pool:
+            # Printing with no service sold in the bucket: nobody to charge it to.
+            key = UNALLOCATED[dim]
+            merged[key] = merged.get(key, 0) - acc.prod_cost
+        out[dim] = _round_record(merged)
+    return out
 
 
 def _round_record(r: dict[str, float]) -> dict[str, int]:
@@ -316,16 +354,24 @@ def build_revenue_series(
     history_start: str,
     filters: LineFilters | None = None,
     customers: dict[str, RevenueCustomerFacts] | None = None,
+    production: ProductionCosts | None = None,
 ) -> list[dict]:
     g = granularity
     filters = filters or LineFilters()
+    # Printing costs belong to the services as a whole: no item, brand or customer slice can claim them.
+    if filters.item_ids is not None or filters.brands is not None or filters.segment or filters.kind == "goods":
+        production = None
+    production_from = production.first_day if production else None
     totals: dict[str, _Acc] = {}
     per_day: dict[str, list[float]] = {}
     for m in matching_lines(lines, items, decisions, customers, filters):
         d = per_day.setdefault(m.line.day, [0.0, 0.0])
         d[0] += m.line.amount
         d[1] += ttc_of(m.line.amount, m.item)[0]
-        totals.setdefault(bucket_key_for(m.line.day, g), _Acc()).add(m.line, m.item, m.segment)
+        totals.setdefault(bucket_key_for(m.line.day, g), _Acc()).add(m.line, m.item, m.segment, production_from)
+    if production:
+        for day, cost in production.by_day.items():
+            totals.setdefault(bucket_key_for(day, g), _Acc()).prod_cost += cost
 
     keys: list[str] = []
     for day in all_days(from_, to):
@@ -400,7 +446,8 @@ def build_revenue_series(
                 **({"byItemTtc": _round_record(sp["item_ttc"])} if show_items else {}),
                 "bySegment": _round_record(sp["segment"]),
                 "bySegmentTtc": _round_record(sp["segment_ttc"]),
-                "cost": js_round(acc.cost),
+                "cost": js_round(acc.cost + acc.prod_cost),
+                "marginSplit": acc.margin_split(),
                 "costedHt": js_round(acc.costed_ht),
                 "projection": projection,
                 "projectionMethod": projection_method,

@@ -57,8 +57,8 @@ export function Finding({ lead, rest, testId }: { lead: string; rest?: string | 
 }
 
 /** Chart left, facts right; stacked on a narrow screen. */
-export function Split({ children }: { children: ReactNode }) {
-  return <div className="grid items-start gap-3 lg:grid-cols-[minmax(0,2fr)_minmax(300px,1fr)]">{children}</div>;
+export function Split({ children, stretch = false }: { children: ReactNode; /** Both panels as tall as the taller one. */ stretch?: boolean }) {
+  return <div className={`grid ${stretch ? 'items-stretch' : 'items-start'} gap-3 lg:grid-cols-[minmax(0,2fr)_minmax(300px,1fr)]`}>{children}</div>;
 }
 
 /** One figure as a card on the panel's darker ground. */

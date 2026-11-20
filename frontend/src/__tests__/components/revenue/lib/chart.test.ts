@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { bucketSplit, chartSeries, cumulativeScale, niceTicks, OTHER_SERIES, STACK_DIMENSIONS, stackColumns, yFor } from "@/components/revenue/lib/chart";
+import { bucketSplit, chartSeries, cumulativeScale, marginBuckets, niceTicks, OTHER_SERIES, STACK_DIMENSIONS, stackColumns, yFor } from "@/components/revenue/lib/chart";
 import { bucket } from "./fixtures";
 
 const b1 = bucket({ key: "2026-09", label: "sept. 2026", ht: 1000, ttc: 1160, goods: 600, services: 400, byNature: { Filaments: 600, "Sans nature": 400 }, byBrand: { SUNLU: 600, Aito3D: 400 }, cumulative: { ht: 1000, ttc: 1160 }, goodsTtc: 696, servicesTtc: 464, byNatureTtc: { Filaments: 696, "Sans nature": 464 }, byBrandTtc: { SUNLU: 696, Aito3D: 464 } });
@@ -169,5 +169,23 @@ describe("buckets without the permission-gated fields", () => {
     expect(bucketSplit(b, "segment")).toEqual({});
     expect(bucketSplit(b, "segment", "ttc")).toEqual({});
     expect(chartSeries([b], "segment")).toEqual([]);
+  });
+});
+
+describe("marginBuckets", () => {
+  it("plots costed HT minus cost as one series with its own running total", () => {
+    const out = marginBuckets([{ ...b1, costedHt: 800, cost: 300, target: 5000 }, { ...b2, costedHt: 0, cost: 0 }, b2], "Margin");
+    expect(out.map((b) => [b.ht, b.ttc, b.cumulative.ht])).toEqual([[500, 500, 500], [0, 0, 500], [0, 0, 500]]);
+    expect(bucketSplit(out[0], "brand")).toEqual({ Margin: 500 });
+    expect(out[0].target).toBeUndefined();
+    expect(out[0].projection).toBeNull();
+  });
+
+  it("stacks by the server's margin split when there is one", () => {
+    const marginSplit = { nature: { Filaments: 400 }, brand: { SUNLU: 400 }, kind: { Biens: 250, Services: 150 }, segment: { pro: 400 } };
+    const [b] = marginBuckets([{ ...b1, costedHt: 900, cost: 500, marginSplit }], "Margin");
+    expect(bucketSplit(b, "nature")).toEqual({ Filaments: 400 });
+    expect(bucketSplit(b, "kind", "ttc")).toEqual({ Biens: 250, Services: 150 });
+    expect(b.bySegment).toEqual({ pro: 400 });
   });
 });

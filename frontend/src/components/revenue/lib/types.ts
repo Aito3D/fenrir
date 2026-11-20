@@ -33,6 +33,8 @@ export interface RevenueBucket {
   /** Stripped by the server for users without the margin permission. */
   cost?: number;
   costedHt?: number;
+  /** Gross margin HT per key, services' print + labour costs shared pro rata of their HT; same stripping as cost. */
+  marginSplit?: { nature: Record<string, number>; brand: Record<string, number>; segment?: Record<string, number>; kind: Record<string, number> };
   projection: Money | null;
   projectionMethod: "seasonal" | "linear" | null;
   target?: number | null;

@@ -70,6 +70,7 @@ NOT_A_ROW_UPDATE = {
     "NodeUpdate": "Fenrir: a filament-tree node edit, null coordinates pick the node level",
     "TreeUpdate": "Fenrir: null skip_02 means auto; a null source field keeps the current one",
     "ColorUpdate": "Fenrir: name required; a null hex keeps the current colour",
+    "LaborBody": "Fenrir: the revenue labour list, stored as a setting and replaced as a whole",
 }
 
 

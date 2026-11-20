@@ -1,6 +1,6 @@
 import type { ComponentProps } from 'react';
 import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { ToastProvider } from '../../../contexts/ToastContext';
 import { RevenueChart } from '../../../components/revenue/RevenueChart';
 import type { RevenueCan, RevenueControls } from '../../../pages/RevenuePage';
@@ -68,6 +68,25 @@ const legendColor = (name: string) => {
 };
 
 describe('RevenueChart', () => {
+  it('switches to the gross margin, stacked like revenue, only with the margin right', () => {
+    const split = (nature: Record<string, number>) => ({ nature, brand: {}, kind: {}, segment: {} });
+    const costed = payload([
+      { ...jan, costedHt: 600, cost: 150, marginSplit: split({ Filaments: 300, 'Sans nature': 150 }) },
+      { ...feb, costedHt: 900, cost: 600, marginSplit: split({ Filaments: 300 }) },
+      mar,
+    ]);
+    renderChart({ payload: costed });
+    expect(screen.queryByRole('group', { name: 'Chart figure' })).toBeNull();
+    cleanup();
+    renderChart({ payload: costed, can: can({ margin: true }) });
+    fireEvent.click(within(screen.getByRole('group', { name: 'Chart figure' })).getByRole('button', { name: 'Gross margin' }));
+    expect(screen.getByText('Gross margin by month')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'janv. 2026 – 450 FCP' })).toBeInTheDocument();
+    const legend = screen.getByRole('list', { name: 'Legend' });
+    expect(within(legend).getByText('Filaments')).toBeInTheDocument();
+    expect(within(legend).getByText('No category')).toBeInTheDocument();
+  });
+
   it('is a labelled chart group whose columns stay reachable', () => {
     renderChart();
     expect(screen.getByText('Revenue by month')).toBeInTheDocument();

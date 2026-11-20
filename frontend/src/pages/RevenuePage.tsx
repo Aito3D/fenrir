@@ -18,6 +18,7 @@ import { RevenueYoy } from '../components/revenue/RevenueYoy';
 import { RevenueCalendar } from '../components/revenue/RevenueCalendar';
 import { RevenueMenu } from '../components/revenue/RevenueMenu';
 import { RevenueReview } from '../components/revenue/RevenueReview';
+import { RevenueLabor } from '../components/revenue/RevenueLabor';
 import { RevenueTargets } from '../components/revenue/RevenueTargets';
 import { RevenueControls as ControlsRow } from '../components/revenue/RevenueControls';
 import { RevenueChip, RevenueProductSearch } from '../components/revenue/RevenueProductSearch';
@@ -175,9 +176,11 @@ export function RevenuePage() {
   const [rebuildBusy, setRebuildBusy] = useState(false);
   const [reviewOpen, setReviewOpen] = useState(false);
   const [targetsOpen, setTargetsOpen] = useState(false);
+  const [laborOpen, setLaborOpen] = useState(false);
   // Where focus goes back when a panel closes: the pill or ⋯ that opened it.
   const reviewOpener = useRef<HTMLElement | null>(null);
   const targetsOpener = useRef<HTMLElement | null>(null);
+  const laborOpener = useRef<HTMLElement | null>(null);
   const menuTrigger = useRef<HTMLButtonElement>(null);
   // The opener may be gone (classifying the last item removes the pill): ⋯ is always there.
   const focusOpener = (opener: HTMLElement | null) => (opener?.isConnected ? opener : menuTrigger.current)?.focus();
@@ -369,13 +372,17 @@ export function RevenuePage() {
     if (!targetsOpen) targetsOpener.current = document.activeElement as HTMLElement | null;
     setTargetsOpen(!targetsOpen);
   };
+  const toggleLabor = () => {
+    if (!laborOpen) laborOpener.current = document.activeElement as HTMLElement | null;
+    setLaborOpen(!laborOpen);
+  };
   const lastBucket = data?.buckets[data.buckets.length - 1];
   const filterParams = filterQuery(basketIds, active.brands, active.kind, active.segment);
   const views = REVENUE_VIEWS.filter((v) => v.id !== 'clients' || can.customers).map((v) => ({ id: v.id, label: t(`revenue.views.${VIEW_KEYS[v.id]}`) }));
 
   return (
     <div className="space-y-4 p-4 pb-24 md:p-8">
-      <div className="mb-6 flex flex-wrap items-center justify-between gap-x-6 gap-y-3 animate-rise-lg vt-page-title">
+      <div className="relative z-30 mb-6 flex flex-wrap items-center justify-between gap-x-6 gap-y-3 animate-rise-lg vt-page-title">
         <div className="min-w-0">
           <h1 className="flex items-center gap-3 text-2xl font-bold text-white max-md:hidden">
             <TrendingUp className="h-7 w-7 text-bambu-green" />
@@ -401,7 +408,7 @@ export function RevenuePage() {
           />
           <div data-slot="revenue-menu">
             <RevenueMenu canExport={can.export} canSync={can.sync} ready={ready} rebuildBusy={rebuildBusy} reviewCount={reviewCount ?? 0}
-              targetsOpen={targetsOpen} onTargets={toggleTargets} onReview={() => toggleReview()} onCopy={() => void copySummary()} onExport={exportCsv}
+              targetsOpen={targetsOpen} onTargets={toggleTargets} laborOpen={laborOpen} onLabor={can.margin ? toggleLabor : undefined} onReview={() => toggleReview()} onCopy={() => void copySummary()} onExport={exportCsv}
               onRebuild={() => void rebuild()} triggerRef={menuTrigger} />
           </div>
         </div>
@@ -471,6 +478,10 @@ export function RevenuePage() {
         <RevenueTargets canManage={can.targets} onChanged={refresh} today={today} actualByMonth={actualByMonth}
           onClose={() => setTargetsOpen(false)} returnFocus={() => focusOpener(targetsOpener.current)} />
       )}
+      {laborOpen && can.margin && (
+        <RevenueLabor canManage={can.targets} onChanged={refresh}
+          onClose={() => setLaborOpen(false)} returnFocus={() => focusOpener(laborOpener.current)} />
+      )}
 
       {!ready ? (
         <Empty>
@@ -486,7 +497,7 @@ export function RevenuePage() {
           {view === 'evolution' && data && (
             <>
               <RevenueFinding payload={data} taxMode={active.taxMode} />
-              <Split>
+              <Split stretch>
                 <RevenueHero payload={data} taxMode={active.taxMode} canMargin={can.margin} />
                 {lastBucket && (
                   <RevenuePace monthKey={(lastBucket.end > today ? today : lastBucket.end).slice(0, 7)} filterParams={filterParams} taxMode={active.taxMode} version={data} />

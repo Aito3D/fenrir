@@ -74,6 +74,29 @@ export function bucketSplit(b: RevenueBucket, dim: StackDimension, mode: TaxMode
   }
 }
 
+/**
+ * The buckets re-cut to plot the gross margin HT (costed HT − cost) instead of revenue, split by the
+ * server's `marginSplit` (one series under `fallback` without it). Projections and targets are revenue figures.
+ */
+export function marginBuckets(buckets: RevenueBucket[], fallback: string): RevenueBucket[] {
+  let cum = 0;
+  return buckets.map((b) => {
+    const m = b.costedHt ? b.costedHt - (b.cost ?? 0) : 0;
+    cum += m;
+    const one = { [fallback]: m };
+    const sp = b.marginSplit;
+    const nature = sp?.nature ?? one;
+    const brand = sp?.brand ?? one;
+    const goods = sp ? (sp.kind.Biens ?? 0) : 0;
+    const services = sp ? (sp.kind.Services ?? 0) : 0;
+    return {
+      ...b, ht: m, ttc: m, byNature: nature, byNatureTtc: nature, byBrand: brand, byBrandTtc: brand, byItem: one, byItemTtc: one,
+      goods, services, goodsTtc: goods, servicesTtc: services, bySegment: sp?.segment, bySegmentTtc: sp?.segment,
+      projection: null, target: undefined, cumulative: { ht: cum, ttc: cum },
+    };
+  });
+}
+
 export function chartSeries(buckets: RevenueBucket[], dim: StackDimension): StackSeries[] {
   const weight = new Map<string, number>();
   for (const b of buckets) {

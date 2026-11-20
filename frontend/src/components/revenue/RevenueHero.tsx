@@ -118,6 +118,7 @@ export function RevenueHero({ payload, taxMode, canMargin }: { payload: RevenueR
   if (!last) return null;
   const [, previous, , , cumul] = kpiTiles(buckets, taxMode, g, 0, FR_UNIT[g]);
   const insights = insightTiles(buckets, taxMode, FR_UNIT[g]).filter((x) => x.kind !== 'share' && (canMargin || x.label !== MARGIN_LABEL));
+  const tiles = [previous, cumul, ...insights];
   const target = targetOf(last);
   const share = target ? last.ht / target : null;
   const projectedShare = target && last.projection ? last.projection.ht / target : null;
@@ -167,13 +168,15 @@ export function RevenueHero({ payload, taxMode, canMargin }: { payload: RevenueR
         {share == null && <Sparkline buckets={buckets} mode={taxMode} />}
       </div>
       <div className="mt-2 grid grid-cols-1 gap-2 min-[480px]:grid-cols-2">
-        {[previous, cumul, ...insights].map((tile) => (
-          <Tile
-            key={tile.label}
-            {...tileText(t, tile, g, last)}
-            value={tile.value == null ? '—' : formatFcp(tile.value)}
-            tone={tile.tone === 'down' ? 'alert' : undefined}
-          />
+        {tiles.map((tile, i) => (
+          // An odd last tile spans the row instead of leaving a hole beside it.
+          <div key={tile.label} className={`grid ${i === tiles.length - 1 && tiles.length % 2 === 1 ? 'min-[480px]:col-span-2' : ''}`}>
+            <Tile
+              {...tileText(t, tile, g, last)}
+              value={tile.value == null ? '—' : formatFcp(tile.value)}
+              tone={tile.tone === 'down' ? 'alert' : undefined}
+            />
+          </div>
         ))}
       </div>
     </Panel>

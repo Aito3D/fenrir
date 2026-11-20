@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Bar, CartesianGrid, Cell, ComposedChart, Line, ResponsiveContainer, Tooltip, usePlotArea, XAxis, YAxis } from 'recharts';
 import type { RevenueCan, RevenueControls } from '../../pages/RevenuePage';
@@ -10,7 +10,7 @@ import { RevenueNotes } from './RevenueNotes';
 import { RevenueSegmented } from './RevenueSegmented';
 import { drillDown } from './lib/analysis';
 import { effectiveStack } from './lib/basket';
-import { chartSeries, cumulativeScale, niceTicks, OTHER_SERIES, STACK_DIMENSIONS, stackColumns, yFor, type StackDimension, type StackedColumn, type StackSeries } from './lib/chart';
+import { chartSeries, cumulativeScale, marginBuckets, niceTicks, OTHER_SERIES, STACK_DIMENSIONS, stackColumns, yFor, type StackDimension, type StackedColumn, type StackSeries } from './lib/chart';
 import { compactAxis, formatFcp, serverLabel } from './lib/format';
 import type { AnnotationsResponse, RevenueAnnotation, RevenueResponse } from './lib/types';
 import { useRevenueResource } from './useRevenueResource';
@@ -139,14 +139,23 @@ export function RevenueChart({ payload, controls, can, onStack, onDrill, drillDe
   today: string;
 }) {
   const { t } = useTranslation();
-  const { buckets, granularity } = payload;
-  const { taxMode } = controls;
+  const { granularity } = payload;
+  // Cost fields are stripped by the server without the margin permission.
+  const canMargin = can.margin && payload.buckets.some((b) => b.costedHt !== undefined);
+  const [metric, setMetric] = useState<'revenue' | 'margin'>('revenue');
+  const margin = canMargin && metric === 'margin';
+  const marginLabel = t('revenue.chart.marginSeries');
+  const buckets = useMemo(() => (margin ? marginBuckets(payload.buckets, marginLabel) : payload.buckets), [margin, payload.buckets, marginLabel]);
+  // The margin is an HT figure.
+  const taxMode = margin ? 'ht' : controls.taxMode;
   const narrowed = controls.basket.length + controls.brands.size > 0;
   const kindFiltered = controls.kind !== null;
   const segmentFiltered = controls.segment !== null;
-  const stack: StackDimension = !can.customers && controls.stack === 'segment' ? 'nature' : effectiveStack(narrowed ? 1 : 0, controls.stack, kindFiltered, segmentFiltered);
+  const baseStack: StackDimension = !can.customers && controls.stack === 'segment' ? 'nature' : effectiveStack(narrowed ? 1 : 0, controls.stack, kindFiltered, segmentFiltered);
+  const stack: StackDimension = margin && baseStack === 'item' ? 'nature' : baseStack;
   const stackOptions = STACK_DIMENSIONS.filter(
-    (d) => (d.id !== 'item' || narrowed) && (d.id !== 'kind' || !kindFiltered) && (d.id !== 'segment' || (!segmentFiltered && can.customers)),
+    // Item margins are not split: a basket view's costs do not reach its products.
+    (d) => (d.id !== 'item' || (narrowed && !margin)) && (d.id !== 'kind' || !kindFiltered) && (d.id !== 'segment' || (!segmentFiltered && can.customers)),
   ).map((d) => ({ id: d.id, label: t(`revenue.chart.stack.${d.id}`) }));
 
   const notes = useRevenueResource<AnnotationsResponse>('/api/v1/revenue/annotations', 0);
@@ -260,7 +269,11 @@ export function RevenueChart({ payload, controls, can, onStack, onDrill, drillDe
       testId="revenue-chart"
       title={
         <div className="flex flex-wrap items-center gap-3">
-          <p className="text-xs uppercase tracking-wide text-bambu-gray">{t(`revenue.chart.title.${granularity}`)}</p>
+          <p className="text-xs uppercase tracking-wide text-bambu-gray">{t(`revenue.chart.${margin ? 'marginTitle' : 'title'}.${granularity}`)}</p>
+          {canMargin && (
+            <RevenueSegmented inPanel label={t('revenue.chart.metric')} value={metric} onChange={setMetric}
+              options={[{ id: 'revenue', label: t('revenue.chart.metricRevenue') }, { id: 'margin', label: t('revenue.chart.marginSeries') }]} />
+          )}
           {drillDepth > 0 && (
             <button ref={backRef} type="button" onClick={back} className={`rounded text-sm text-bambu-green hover:text-white ${focusRingCls}`}>
               {drillDepth > 1 ? t('revenue.chart.backLevels', { n: drillDepth }) : t('revenue.chart.back')}
