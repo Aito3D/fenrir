@@ -743,8 +743,15 @@ def _build_task(group: list[ParsedLine]) -> dict:
         descriptions[ordered[0].service].append(raw_title)
     for line in ordered:
         rows = descriptions[line.service]
+        free_placed = False
         for label in LABEL_ORDER:
             value = line.labels.get(label, "").strip()
+            if label == "info" and "info" in line.labels and not value:
+                # The export writes Info's text on the lines BELOW a bare
+                # `Info:`; keep it in Info's slot so a pull/push keeps its order.
+                rows.extend(line.free_text)
+                free_placed = True
+                continue
             if not value:
                 continue
             if line is title_line and label == title_key:
@@ -777,7 +784,8 @@ def _build_task(group: list[ParsedLine]) -> dict:
                     continue
             prefix = SERVICE_LABEL[line.service] if label in TITLE_LABELS else LABEL_DISPLAY[label]
             rows.append(f"{prefix}: {value}")
-        rows.extend(line.free_text)
+        if not free_placed:
+            rows.extend(line.free_text)
 
     task: dict = {
         "title": title,

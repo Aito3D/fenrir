@@ -96,7 +96,7 @@ def test_a_description_edit_lands_on_that_service_without_the_material_row():
     estimate = books(CARD)
     printing = line(estimate, "P3DIMP")
     assert "Matériau: PETG" in printing["description"]
-    printing["description"] = printing["description"].replace("Info: Sans supports", "Info: Avec supports")
+    printing["description"] = printing["description"].replace("Info:\nSans supports", "Info:\nAvec supports")
     assert plan_pull(CARD, estimate, CATALOGUE, None).task_patches == {0: {"impression_description": "Avec supports"}}
 
 
