@@ -263,4 +263,125 @@ describe('NewOrderDraftRow', () => {
     fireEvent.keyDown(window, { key: 'Escape' });
     await waitFor(() => expect(onClose).toHaveBeenCalledTimes(1));
   });
+
+  describe('client picker', () => {
+    const contact = (id: string, name: string) => ({
+      id, name, company_name: '', customer_sub_type: 'individual', phone: '', mobile: '87 12 34 56', email: '', first_name: 'Tehei', last_name: 'TAIRUA',
+    });
+    const stubContacts = (found: ReturnType<typeof contact>[]) => {
+      for (const c of found) {
+        server.use(http.get(`/api/v1/zoho/contacts/${c.id}`, () => HttpResponse.json(c)));
+      }
+      server.use(http.get('/api/v1/zoho/contacts', () => HttpResponse.json(found)));
+    };
+    const captureCreate = () => {
+      const box: { body: unknown } = { body: null };
+      server.use(http.post('/api/v1/order-board/orders', async ({ request }) => {
+        box.body = await request.json();
+        return HttpResponse.json(boardResult);
+      }));
+      return box;
+    };
+    const search = async (user: ReturnType<typeof userEvent.setup>, text: string) => {
+      await user.click(screen.getByLabelText('Client'));
+      await user.clear(screen.getByLabelText('Client'));
+      await user.type(screen.getByLabelText('Client'), text);
+    };
+
+    it('picking a search hit sets the client and the order is created for them', async () => {
+      const user = userEvent.setup();
+      const box = captureCreate();
+      stubContacts([contact('c2', 'Tehei TAIRUA')]);
+      seed([{ item: item(), quantity: 1, discount: '' }]);
+      const { onCreated } = renderRow();
+      await screen.findByDisplayValue('Client de passage');
+      await search(user, 'teh');
+      await user.click(await screen.findByRole('option', { name: /Tehei TAIRUA/ }, { timeout: 3000 }));
+      expect(await screen.findByDisplayValue('Tehei TAIRUA')).toBeInTheDocument();
+      await waitFor(() => expect(JSON.parse(localStorage.getItem(DRAFT_KEY)!).client).toEqual({ id: 'c2', name: 'Tehei TAIRUA', isDefault: false }));
+      await user.click(createBtn());
+      await waitFor(() => expect(onCreated).toHaveBeenCalled());
+      expect((box.body as { customer_id: string }).customer_id).toBe('c2');
+    });
+
+    it('picking the default contact marks the draft client as the default', async () => {
+      const user = userEvent.setup();
+      stubContacts([contact(DEFAULT_ID, 'Client de passage')]);
+      renderRow();
+      await screen.findByDisplayValue('Client de passage');
+      await search(user, 'cli');
+      await user.click(await screen.findByRole('option', { name: /Client de passage/ }, { timeout: 3000 }));
+      await waitFor(() => expect(JSON.parse(localStorage.getItem(DRAFT_KEY)!).client).toEqual({ id: DEFAULT_ID, name: 'Client de passage', isDefault: true }));
+      expect(screen.queryByTestId('order-client-history')).not.toBeInTheDocument();
+    });
+
+    it('New client opens the form; Back closes it and keeps the client', async () => {
+      const user = userEvent.setup();
+      renderRow();
+      await screen.findByDisplayValue('Client de passage');
+      await search(user, 'zz');
+      await user.click(await screen.findByRole('button', { name: 'Create new client' }, { timeout: 3000 }));
+      expect(screen.getByLabelText(/company name/i)).toBeInTheDocument();
+      expect(screen.queryByLabelText('Client')).not.toBeInTheDocument();
+      await user.click(screen.getByRole('button', { name: 'Back' }));
+      expect(screen.queryByLabelText(/company name/i)).not.toBeInTheDocument();
+      expect(screen.getByDisplayValue('Client de passage')).toBeInTheDocument();
+      expect(localStorage.getItem(DRAFT_KEY)).toBeNull();
+    });
+
+    it('a client created inline becomes the draft client and receives the order', async () => {
+      const user = userEvent.setup();
+      const box = captureCreate();
+      const created = contact('n1', 'Teva TEMARII');
+      server.use(
+        http.post('/api/v1/zoho/contacts', () => HttpResponse.json(created, { status: 201 })),
+        http.get('/api/v1/zoho/contacts/n1', () => HttpResponse.json(created)),
+      );
+      seed([{ item: item(), quantity: 1, discount: '' }]);
+      const { onCreated } = renderRow();
+      await screen.findByDisplayValue('Client de passage');
+      await search(user, 'zz');
+      await user.click(await screen.findByRole('button', { name: 'Create new client' }, { timeout: 3000 }));
+      await user.type(screen.getByLabelText(/first name/i), 'teva');
+      await user.type(screen.getByLabelText(/last name/i), 'temarii');
+      await user.type(screen.getByLabelText(/^phone/i), '87123456');
+      await user.click(screen.getByRole('button', { name: 'Create client' }));
+      expect(await screen.findByDisplayValue('Teva TEMARII')).toBeInTheDocument();
+      expect(screen.queryByLabelText(/company name/i)).not.toBeInTheDocument();
+      await waitFor(() => expect(JSON.parse(localStorage.getItem(DRAFT_KEY)!).client).toEqual({ id: 'n1', name: 'Teva TEMARII', isDefault: false }));
+      await user.click(createBtn());
+      await waitFor(() => expect(onCreated).toHaveBeenCalled());
+      expect((box.body as { customer_id: string }).customer_id).toBe('n1');
+    });
+
+    it('Escape in the form closes the form, not the modal', async () => {
+      const user = userEvent.setup();
+      const { onClose } = renderRow();
+      await screen.findByDisplayValue('Client de passage');
+      await search(user, 'zz');
+      await user.click(await screen.findByRole('button', { name: 'Create new client' }, { timeout: 3000 }));
+      fireEvent.keyDown(window, { key: 'Escape' });
+      await waitFor(() => expect(screen.queryByLabelText(/company name/i)).not.toBeInTheDocument());
+      expect(onClose).not.toHaveBeenCalled();
+    });
+
+    it('the reset control returns to the client de passage and the order goes to them', async () => {
+      const user = userEvent.setup();
+      const box = captureCreate();
+      stubContacts([contact('c1', 'Heimana PUTOA')]);
+      localStorage.setItem(DRAFT_KEY, JSON.stringify({
+        lines: [{ item: item(), quantity: 1, discount: '' }],
+        client: { id: 'c1', name: 'Heimana PUTOA', isDefault: false },
+        clientRef: '11111111-1111-4111-8111-111111111111',
+      }));
+      const { onCreated } = renderRow();
+      expect(await screen.findByDisplayValue('Heimana PUTOA')).toBeInTheDocument();
+      await user.click(screen.getByRole('button', { name: 'Reset to the default client' }));
+      expect(await screen.findByDisplayValue('Client de passage')).toBeInTheDocument();
+      await waitFor(() => expect(JSON.parse(localStorage.getItem(DRAFT_KEY)!).client).toBeNull());
+      await user.click(createBtn());
+      await waitFor(() => expect(onCreated).toHaveBeenCalled());
+      expect((box.body as { customer_id: string }).customer_id).toBe(DEFAULT_ID);
+    });
+  });
 });

@@ -1,6 +1,6 @@
 /** The payment buttons of an opened order: shown only when the server names a document, prefilled with what is left. */
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { screen } from '@testing-library/react';
+import { fireEvent, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { ApiError, api } from '../../../api/client';
 import type { AitoTerminalPayment, OrderPayment, OrderPaymentLink, OrderPaymentTarget } from '../../../api/client';
@@ -202,5 +202,57 @@ describe('OrderPaymentBlock payment buttons', () => {
     expect(await screen.findByText('Waiting for the card on the terminal…')).toBeInTheDocument();
     expect(start).toHaveBeenNthCalledWith(1, 'so1', 12000);
     expect(start).toHaveBeenNthCalledWith(2, 'so1', 12000, true);
+  });
+
+  it('a clipboard that refuses shows the error toast and no copied flash', async () => {
+    const realClipboard = Object.getOwnPropertyDescriptor(navigator, 'clipboard');
+    const realSecure = Object.getOwnPropertyDescriptor(window, 'isSecureContext');
+    const realExec = document.execCommand;
+    Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText: vi.fn().mockRejectedValue(new Error('denied')) } });
+    Object.defineProperty(window, 'isSecureContext', { configurable: true, value: true });
+    document.execCommand = vi.fn(() => false);
+    try {
+      vi.spyOn(api, 'getOrderPaymentTarget').mockResolvedValue(target({ link: link() }));
+      vi.spyOn(api, 'getOrderTerminalPayment').mockResolvedValue(null);
+      render(<OrderPaymentBlock payment={pay()} currency="XPF" orderId="so1" />);
+      fireEvent.click(await screen.findByRole('button', { name: 'Copy payment link' }));
+      expect(await screen.findByText('Error loading data')).toBeInTheDocument();
+      expect(navigator.clipboard.writeText).toHaveBeenCalledWith('https://pay.example/x');
+      expect(screen.queryByTestId('payment-link-copied')).not.toBeInTheDocument();
+    } finally {
+      if (realClipboard) Object.defineProperty(navigator, 'clipboard', realClipboard);
+      else delete (navigator as { clipboard?: unknown }).clipboard;
+      if (realSecure) Object.defineProperty(window, 'isSecureContext', realSecure);
+      else delete (window as { isSecureContext?: unknown }).isSecureContext;
+      document.execCommand = realExec;
+    }
+  });
+
+  it('the in-progress line reopens the terminal after re-reading the order charge', async () => {
+    vi.spyOn(api, 'getOrderPaymentTarget').mockResolvedValue(target());
+    const get = vi.spyOn(api, 'getOrderTerminalPayment').mockResolvedValue(tpe());
+    render(<OrderPaymentBlock payment={pay()} currency="XPF" orderId="so1" />);
+    const line = await screen.findByRole('button', { name: /Terminal · waiting for the card/ });
+    const before = get.mock.calls.length;
+    await userEvent.click(line);
+    expect(await screen.findByRole('dialog', { name: 'Pay by card' })).toBeInTheDocument();
+    expect(get.mock.calls.length).toBeGreaterThan(before); // the dialog also polls, so not an exact count
+    expect(get).toHaveBeenLastCalledWith('so1');
+    expect(screen.getByText('Waiting for the card on the terminal…')).toBeInTheDocument();
+  });
+
+  it.each([
+    ['manual', 'Manual — record a payment', 'Record a payment'],
+    ['link', 'Payment link', 'Payment link'],
+    ['terminal', 'Pay by card on the terminal', 'Pay by card'],
+  ])('closing the %s dialog removes it', async (_name, cell, dialogName) => {
+    vi.spyOn(api, 'getOrderPaymentTarget').mockResolvedValue(target());
+    vi.spyOn(api, 'getOrderTerminalPayment').mockResolvedValue(null);
+    render(<OrderPaymentBlock payment={pay()} currency="XPF" orderId="so1" />);
+    await userEvent.click(await screen.findByRole('button', { name: cell }));
+    expect(await screen.findByRole('dialog', { name: dialogName })).toBeInTheDocument();
+    fireEvent.keyDown(window, { key: 'Escape' });
+    await vi.waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+    expect(screen.getByTestId('payment-block')).toBeInTheDocument();
   });
 });
