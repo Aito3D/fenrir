@@ -50,3 +50,11 @@ def test_splits_the_year_into_the_lookback_and_the_last_90_days():
         "before": {"from": "2025-11-17", "to": "2026-08-18"},
         "recent": {"from": "2026-08-19", "to": "2026-11-17"},
     }
+
+
+def test_an_item_costed_on_part_of_its_lines_counts_only_that_part_as_costed():
+    rows = margin_by([row("a", 100, brand="SUNLU", cost=30, costedHt=40)], "brand")
+
+    assert rows == [
+        {"key": "SUNLU", "ht": 100, "costedHt": 40, "cost": 30, "margin": 10, "rate": 0.25, "coverage": 0.4}
+    ]

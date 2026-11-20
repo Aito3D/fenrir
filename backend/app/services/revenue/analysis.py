@@ -35,7 +35,8 @@ def margin_by(rows: list[dict], dim: str) -> list[dict]:
         g = groups.setdefault(r[dim] if r[dim] is not None else fallback, {"ht": 0, "costedHt": 0, "cost": 0})
         g["ht"] += r["ht"]
         if r["cost"] is not None:
-            g["costedHt"] += r["ht"]
+            # Lines frozen without a cost (item lost its cost later) stay out of the costed share.
+            g["costedHt"] += r.get("costedHt", r["ht"])
             g["cost"] += r["cost"]
     out = [
         {

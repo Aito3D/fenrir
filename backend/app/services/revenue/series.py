@@ -501,6 +501,7 @@ def item_breakdown(
                 "ht": 0,
                 "ttc": 0.0,
                 "cost": None,
+                "costedHt": 0.0,
                 "nature": item.nature if item else None,
                 "brand": item.brand if item else None,
                 "kind": "service" if is_service_item(item) else "goods",
@@ -512,12 +513,14 @@ def item_breakdown(
         unit_cost = unit_cost_for(line, item)
         if unit_cost is not None:
             row["cost"] = (row["cost"] or 0.0) + line.quantity * unit_cost
+            row["costedHt"] += line.amount
     result = [
         {
             **r,
             "ht": js_round(r["ht"]),
             "ttc": js_round(r["ttc"]),
             "cost": None if r["cost"] is None else js_round(r["cost"]),
+            "costedHt": js_round(r["costedHt"]),
         }
         for r in rows.values()
     ]
