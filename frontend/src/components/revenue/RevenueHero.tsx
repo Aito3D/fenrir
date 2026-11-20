@@ -167,10 +167,9 @@ export function RevenueHero({ payload, taxMode, canMargin }: { payload: RevenueR
         </div>
         {share == null && <Sparkline buckets={buckets} mode={taxMode} />}
       </div>
-      <div className="mt-2 grid grid-cols-1 gap-2 min-[480px]:grid-cols-2">
-        {tiles.map((tile, i) => (
-          // An odd last tile spans the row instead of leaving a hole beside it.
-          <div key={tile.label} className={`grid ${i === tiles.length - 1 && tiles.length % 2 === 1 ? 'min-[480px]:col-span-2' : ''}`}>
+      <div className="mt-2 grid grid-cols-[repeat(auto-fit,minmax(11rem,1fr))] gap-2">
+        {tiles.map((tile) => (
+          <div key={tile.label} className="grid">
             <Tile
               {...tileText(t, tile, g, last)}
               value={tile.value == null ? '—' : formatFcp(tile.value)}

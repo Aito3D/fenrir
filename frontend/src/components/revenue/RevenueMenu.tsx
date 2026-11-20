@@ -97,8 +97,8 @@ export function RevenueMenu(p: {
             className={`absolute ${alignLeft ? 'left-0' : 'right-0'} top-full z-20 mt-1 w-60 rounded-lg border border-bambu-dark-tertiary bg-bambu-dark-secondary p-1.5 shadow-xl`}>
             {confirm ? (
               <>
-                <p id={questionId} className="px-2.5 py-1.5 text-sm text-amber-400">{t('revenue.sync.rebuildConfirm')}</p>
-                <button type="button" role="menuitem" aria-describedby={questionId} className={`${ITEM} text-amber-400`} onClick={confirmRebuild}>{t('revenue.sync.rebuildYes')}</button>
+                <p id={questionId} className="px-2.5 py-1.5 text-sm text-amber-700 dark:text-amber-400">{t('revenue.sync.rebuildConfirm')}</p>
+                <button type="button" role="menuitem" aria-describedby={questionId} className={`${ITEM} text-amber-700 dark:text-amber-400`} onClick={confirmRebuild}>{t('revenue.sync.rebuildYes')}</button>
                 <button ref={cancel} type="button" role="menuitem" className={ITEM} onClick={() => setConfirm(false)}>{t('revenue.sync.cancel')}</button>
               </>
             ) : (

@@ -141,7 +141,7 @@ describe('RevenueAnalysis', () => {
     expect(rows[0]).toHaveTextContent('25 % · 200.000 FCP');
     expect(rows[0]).not.toHaveTextContent('cost known');
     expect(rows[1]).toHaveTextContent('−13 % · −10.000 FCP');
-    expect(within(rows[1]).getByText('cost known on 80 % of 100.000 FCP')).toHaveClass('text-amber-400');
+    expect(within(rows[1]).getByText('cost known on 80 % of 100.000 FCP')).toHaveClass('text-amber-700');
     expect(screen.getByText("At today's cost (Dealer price, otherwise purchase price), on items that have a cost.")).toBeInTheDocument();
 
     const brand = screen.getByRole('button', { name: 'Brand' });
