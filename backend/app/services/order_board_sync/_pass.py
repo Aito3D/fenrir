@@ -13,6 +13,7 @@ from backend.app.services.aito_poll_watermark import format_books_time
 from backend.app.services.inbox import broadcast_pending
 from backend.app.services.order_board_payment import quote_number_missing
 from backend.app.services.order_board_sync import _common
+from backend.app.services.order_board_sync._catalog import refresh_catalog_if_stale
 from backend.app.services.order_board_sync._common import (
     CALL_CEILING,
     ITEM_BATCH,
@@ -251,6 +252,7 @@ async def _sync(db: AsyncSession) -> None:
     await _mark_payment_changes(db, stored, settings, started)
     await _fetch_pending_details(db, stored)
     await _reload_stock(db, stored, settings)
+    await refresh_catalog_if_stale(db)
 
 
 async def _record_void_failed(db: AsyncSession, salesorder_id: str, number: str) -> None:

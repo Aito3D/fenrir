@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import type { FormEvent } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Check, CheckCircle2, Copy, Mail, MailX, MessageSquareText, Pencil, Phone, PhoneOff, Smartphone, UserRound } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { api } from '../../api/client';
@@ -16,7 +16,8 @@ import { useOrderActions } from './useOrderActions';
 /** The contact person on the order: phone and email as links, each with a copy button.
  *  With `sms` (admins, live orders with something ready) the header carries the pickup-SMS pill,
  *  which turns into "Contacted" once an SMS went out. With `orderId` it also shows the customer's
- *  payment rating (as on the Aito card); `canEdit` adds the email/phone editor. */
+ *  payment rating (as on the Aito card); `canEdit` adds the email/phone editor. With `customerId` instead of `orderId`
+ *  (a counter order not created yet) the rating and the editor go to the Books customer itself. */
 export function OrderContactBlock({
   contact,
   orderNumber,
@@ -24,9 +25,11 @@ export function OrderContactBlock({
   onGoto,
   sms,
   orderId,
+  customerId,
   canEdit = false,
 }: {
   orderId?: string;
+  customerId?: string;
   canEdit?: boolean;
   contact: OrderContact | null;
   orderNumber: string;
@@ -37,9 +40,9 @@ export function OrderContactBlock({
   const { t } = useTranslation();
   const [copied, setCopied] = useState<string | null>(null);
   const rating = useQuery({
-    queryKey: ['order-customer', orderId, 'rating'],
-    queryFn: () => api.getOrderClientRating(orderId!),
-    enabled: !!orderId,
+    queryKey: orderId ? ['order-customer', orderId, 'rating'] : ['aito-client-rating', customerId],
+    queryFn: () => (orderId ? api.getOrderClientRating(orderId) : api.getAitoClientRating(customerId!)),
+    enabled: !!(orderId || customerId),
     staleTime: 5 * 60_000,
     retry: false,
   });
@@ -97,7 +100,7 @@ export function OrderContactBlock({
         <UserRound aria-hidden="true" className="h-3.5 w-3.5 text-bambu-gray" />
         <span className="font-semibold uppercase tracking-wide text-white">{t('orders.contact.title')}</span>
         <ClientRatingPill rating={rating.data} align="start" />
-        {canEdit && orderId && contact && !editing && (
+        {canEdit && (orderId || customerId) && contact && !editing && (
           <button
             type="button"
             onClick={() => setEditing(true)}
@@ -141,8 +144,8 @@ export function OrderContactBlock({
           </button>
         )}
       </div>
-      {contact && editing && orderId ? (
-        <ContactEditor orderId={orderId} contact={contact} onDone={() => setEditing(false)} />
+      {contact && editing && (orderId || customerId) ? (
+        <ContactEditor orderId={orderId} customerId={customerId} contact={contact} onDone={() => setEditing(false)} />
       ) : contact ? (
         <>
           <div className="mt-2 text-sm text-white">{contact.name}</div>
@@ -151,7 +154,7 @@ export function OrderContactBlock({
             {phone && row(Phone, phone, tel(phone))}
             {!mobile && !phone && missing(PhoneOff, t('orders.contact.noPhone'))}
             {email
-              ? row(Mail, email, `mailto:${email}?subject=${encodeURIComponent(t('orders.contact.mailSubject', { number: orderNumber }))}`)
+              ? row(Mail, email, orderNumber ? `mailto:${email}?subject=${encodeURIComponent(t('orders.contact.mailSubject', { number: orderNumber }))}` : `mailto:${email}`)
               : missing(MailX, t('orders.contact.noEmail'))}
           </div>
         </>
@@ -177,18 +180,25 @@ export function OrderContactBlock({
 
 const INPUT = 'w-full rounded-md border border-bambu-dark-tertiary bg-bambu-dark px-2 py-1 text-sm text-white focus:border-bambu-green focus:outline-none';
 
-/** Email and phone of the order's contact person, written to Zoho Books. The number goes back to the field it came from. */
-function ContactEditor({ orderId, contact, onDone }: { orderId: string; contact: OrderContact; onDone: () => void }) {
+/** Email and phone of the order's contact person (or of the customer, before there is an order), written to Zoho
+ *  Books. The number goes back to the field it came from. */
+function ContactEditor({ orderId, customerId, contact, onDone }: { orderId?: string; customerId?: string; contact: OrderContact; onDone: () => void }) {
   const { t } = useTranslation();
   const { showToast } = useToast();
-  const { editContact } = useOrderActions();
+  const queryClient = useQueryClient();
+  const { editContact: editOrderContact } = useOrderActions();
+  const editCustomer = useMutation({
+    mutationFn: ({ id, ...body }: { id: string; email: string; phone: string; phone_field: 'phone' | 'mobile' }) => api.updateZohoContact(id, body),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['zoho-contact', customerId] }),
+  });
+  const editContact = orderId ? editOrderContact : editCustomer;
   const phoneField = contact.mobile.trim() || !contact.phone.trim() ? 'mobile' : 'phone';
   const [email, setEmail] = useState(contact.email);
   const [phone, setPhone] = useState(phoneField === 'mobile' ? contact.mobile : contact.phone);
   const save = (e: FormEvent) => {
     e.preventDefault();
     editContact.mutate(
-      { id: orderId, email: email.trim(), phone: phone.trim(), phone_field: phoneField },
+      { id: orderId ?? customerId ?? '', email: email.trim(), phone: phone.trim(), phone_field: phoneField },
       { onSuccess: onDone, onError: e => showToast(errorReason(t, e) || t('aito.clientEditFailed'), 'error') },
     );
   };

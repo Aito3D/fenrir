@@ -7,6 +7,7 @@ import type { OrderCheck, OrderEdit } from './orderBoard';
 import { TRASH, dash } from './orderLinesShared';
 import { OrderEditBar } from './OrderEditBar';
 import { OrderItemSearch } from './OrderItemSearch';
+import { available } from './itemSearchText';
 import { OrderPackBar } from './OrderPackBar';
 import { OrderQtyStepper } from './OrderQtyStepper';
 
@@ -54,7 +55,7 @@ export function OrderTodoEditRows({
               onChange={v => setEdit({ ...edit, added: edit.added.map(a => (a.item.id === item.id ? { ...a, quantity: v } : a)) })}
             />
           </td>
-          <td className="animate-rise-sm text-right tabular-nums text-white">{item.stock_on_hand !== null ? formatQty(item.stock_on_hand) : dash}</td>
+          <td className="animate-rise-sm text-right tabular-nums text-white">{available(item) === null ? dash : formatQty(available(item) ?? 0)}</td>
           <td className="animate-rise-sm text-right">{dash}</td>
           <td className="max-md:col-span-3 animate-rise-sm pl-4">
             <button

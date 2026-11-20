@@ -10,6 +10,11 @@ import { finishedPayState, formatQty, parseDay } from './orderBoard';
 import { PaymentPill } from './PaymentPill';
 
 const LIMIT = 5;
+// The year only when it is not this one: the rail is narrow.
+const dayLabel = (iso: string) => {
+  const d = parseDay(iso);
+  return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', ...(d.getFullYear() !== new Date().getFullYear() ? { year: 'numeric' } : {}) });
+};
 
 interface Entry {
   id: string;
@@ -75,8 +80,8 @@ export function OrderClientHistory({ customerId, open, finished, currency }: { c
                   className={`flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-left ${focusRingCls}`}
                 >
                   <span data-testid="history-order-number" className="whitespace-nowrap font-mono font-semibold text-white">{e.number}</span>
-                  <span className="text-bambu-gray">
-                    {parseDay(e.date).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' })}
+                  <span className="min-w-0 truncate whitespace-nowrap text-bambu-gray">
+                    {dayLabel(e.date)}
                   </span>
                   <span className="ml-auto text-white tabular-nums">{e.total === null ? '–' : formatMoney(e.total, e.currency || currency)}</span>
                   {e.state && <PaymentPill state={e.state} />}

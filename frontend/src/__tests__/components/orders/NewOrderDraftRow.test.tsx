@@ -48,11 +48,11 @@ describe('NewOrderDraftRow', () => {
   it('adding the same item twice bumps quantity', async () => {
     const user = userEvent.setup();
     renderRow();
-    const search = screen.getByLabelText('Scan or search a product (name, SKU)…');
+    const search = screen.getByLabelText('Scan or search: name, SKU, EAN, reference…');
     await user.type(search, 'pla');
-    await user.click(await screen.findByRole('button', { name: /^Bambu Lab PLA Basic Noir/ }));
+    await user.click(await screen.findByRole('button', { name: /^Bambu Lab PLA Basic Noir/ }, { timeout: 3000 }));
     await user.type(search, 'pla');
-    await user.click(await screen.findByRole('button', { name: /^Bambu Lab PLA Basic Noir/ }));
+    await user.click(await screen.findByRole('button', { name: /^Bambu Lab PLA Basic Noir/ }, { timeout: 3000 }));
     expect(screen.getByLabelText('Qty · Bambu Lab PLA Basic Noir')).toHaveValue(2);
     expect(screen.getAllByTestId('draft-line-total')).toHaveLength(1);
   });
@@ -65,7 +65,7 @@ describe('NewOrderDraftRow', () => {
         : [],
     })));
     renderRow();
-    const search = screen.getByLabelText('Scan or search a product (name, SKU)…');
+    const search = screen.getByLabelText('Scan or search: name, SKU, EAN, reference…');
     await user.type(search, '3760123456789{Enter}'); // Enter lands before the search has answered
     await waitFor(() => expect(screen.getByLabelText('Qty · Bambu Lab PLA Basic Noir')).toHaveValue(1));
     expect(search).toHaveValue('');
@@ -73,6 +73,71 @@ describe('NewOrderDraftRow', () => {
     await user.type(search, '3760123456789{Enter}');
     await waitFor(() => expect(screen.getByLabelText('Qty · Bambu Lab PLA Basic Noir')).toHaveValue(2));
     expect(search).toHaveValue('');
+  });
+
+  it('starts ready to scan, and the results take the place of the lines while typing', async () => {
+    const user = userEvent.setup();
+    renderRow();
+    expect(screen.getByText('Ready to scan')).toBeInTheDocument();
+    const search = screen.getByLabelText('Scan or search: name, SKU, EAN, reference…');
+    await user.type(search, 'pla');
+    expect(screen.queryByText('Ready to scan')).not.toBeInTheDocument();
+    await user.click(await screen.findByRole('button', { name: /^Bambu Lab PLA Basic Noir/ }, { timeout: 3000 }));
+    expect(screen.getByLabelText('Qty · Bambu Lab PLA Basic Noir')).toHaveValue(1);
+    await user.type(search, 'pl');
+    expect(screen.queryByLabelText('Qty · Bambu Lab PLA Basic Noir')).not.toBeInTheDocument(); // hidden under the results
+    await user.clear(search);
+    expect(screen.getByLabelText('Qty · Bambu Lab PLA Basic Noir')).toHaveValue(1);
+  });
+
+  it('a picked client shows their Books contact, and phone and email can be edited', async () => {
+    const user = userEvent.setup();
+    let patched: unknown = null;
+    let contact = { id: 'c1', name: 'Heimana PUTOA', company_name: '', customer_sub_type: 'individual', phone: '', mobile: '87 12 34 56', email: '', first_name: 'Heimana', last_name: 'PUTOA' };
+    server.use(
+      http.get('/api/v1/zoho/contacts/c1', () => HttpResponse.json(contact)),
+      http.patch('/api/v1/zoho/contacts/c1', async ({ request }) => {
+        patched = await request.json();
+        contact = { ...contact, email: 'heimana@example.pf' };
+        return new HttpResponse(null, { status: 204 });
+      }),
+    );
+    localStorage.setItem(DRAFT_KEY, JSON.stringify({ lines: [], client: { id: 'c1', name: 'Heimana PUTOA', isDefault: false }, clientRef: '11111111-1111-4111-8111-111111111111' }));
+    renderRow();
+    expect(await screen.findByRole('link', { name: '87 12 34 56' })).toHaveAttribute('href', 'tel:87123456');
+    expect(screen.getByText('No email in Zoho')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Edit the client' }));
+    await user.type(screen.getByLabelText('Email'), 'heimana@example.pf');
+    await user.click(screen.getByRole('button', { name: 'Save' }));
+    expect(await screen.findByRole('link', { name: 'heimana@example.pf' })).toHaveAttribute('href', 'mailto:heimana@example.pf');
+    expect(patched).toEqual({ email: 'heimana@example.pf', phone: '87 12 34 56', phone_field: 'mobile' });
+  });
+
+  it('a filament gets a square swatch, anything else a dot', () => {
+    seed([
+      { item: item({ filament: true }), quantity: 1, discount: '' },
+      { item: item({ id: 'N', name: 'Buse 0.4', filament: false }), quantity: 1, discount: '' },
+    ]);
+    renderRow();
+    expect(screen.getAllByTestId('swatch-filament')).toHaveLength(1);
+    expect(screen.getAllByTestId('swatch-dot')).toHaveLength(1);
+  });
+
+  it('shows a spinner while it waits, then ↓ and Enter add the second hit', async () => {
+    const user = userEvent.setup();
+    server.use(http.get('/api/v1/order-board/items', () =>
+      HttpResponse.json({ items: [item(), item({ id: 'B', name: 'PLA Silk Or', sku: 'PLA-SILK' })] })));
+    renderRow();
+    const search = screen.getByLabelText('Scan or search: name, SKU, EAN, reference…');
+    await user.type(search, 'pla');
+    expect(screen.getByTestId('item-search-waiting')).toBeInTheDocument();
+    await screen.findByRole('button', { name: /^PLA Silk Or/ }, { timeout: 3000 });
+    expect(screen.queryByTestId('item-search-waiting')).not.toBeInTheDocument();
+    await user.keyboard('{ArrowDown}');
+    expect(screen.getByRole('button', { name: /^PLA Silk Or/ })).toHaveAttribute('data-active', 'true');
+    await user.keyboard('{Enter}');
+    expect(screen.getByLabelText('Qty · PLA Silk Or')).toHaveValue(1);
+    expect(screen.queryByLabelText('Qty · Bambu Lab PLA Basic Noir')).not.toBeInTheDocument();
   });
 
   it('a scanned code nothing matches adds nothing', async () => {
@@ -83,7 +148,7 @@ describe('NewOrderDraftRow', () => {
       return HttpResponse.json({ items: [item(), item({ id: 'B', name: 'PLA Silk Or', sku: 'PLA-SILK' })] });
     }));
     renderRow();
-    const search = screen.getByLabelText('Scan or search a product (name, SKU)…');
+    const search = screen.getByLabelText('Scan or search: name, SKU, EAN, reference…');
     await user.type(search, '99999999{Enter}');
     await waitFor(() => expect(answered).toBe(1));
     await screen.findByRole('button', { name: /^PLA Silk Or/ }); // the hits show, none was picked
@@ -169,6 +234,16 @@ describe('NewOrderDraftRow', () => {
     fireEvent.pointerDown(reset);
     await waitFor(() => expect(screen.queryByTestId('draft-line-total')).not.toBeInTheDocument(), { timeout: 2000 });
     expect(localStorage.getItem(DRAFT_KEY)).toBeNull();
+  });
+
+  it('removing a line needs a hold', async () => {
+    seed([{ item: item(), quantity: 2, discount: '' }]);
+    renderRow();
+    const remove = screen.getByRole('button', { name: /^Remove.*Bambu Lab PLA Basic Noir/ });
+    fireEvent.click(remove);
+    expect(lineTotal()).toBeInTheDocument();
+    fireEvent.pointerDown(remove);
+    await waitFor(() => expect(screen.queryByTestId('draft-line-total')).not.toBeInTheDocument(), { timeout: 2500 });
   });
 
   it('abandon closes and keeps the draft', async () => {

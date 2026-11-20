@@ -1145,6 +1145,64 @@ body {
   animation: rise 0.25s var(--ease-signature) backwards;
 }
 
+/* New-order cart (NewOrderLines / NewOrderDraftRow). A scanned line drops in
+   with an accent wash, a rescan of the same item washes it again, a removed
+   line folds shut before it leaves (LEAVE_MS = 200), and the total rolls in
+   the direction it moved. The height fold needs interpolate-size (Chromium);
+   elsewhere the row fades, then the list closes up. */
+@keyframes order-line-in {
+  from { opacity: 0; transform: translateY(-6px) scale(0.99); }
+  to { opacity: 1; transform: none; }
+}
+.animate-order-line-in {
+  animation: order-line-in 0.28s var(--ease-signature) backwards;
+}
+@keyframes order-line-wash {
+  from { opacity: 1; }
+  to { opacity: 0; }
+}
+.order-line-wash {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  background: color-mix(in srgb, var(--color-bambu-green) 14%, transparent);
+  animation: order-line-wash 0.9s ease-out forwards;
+}
+@keyframes order-line-out {
+  to { opacity: 0; height: 0; padding-block: 0; transform: translateX(12px); }
+}
+.order-line-out {
+  interpolate-size: allow-keywords;
+  overflow: clip;
+  pointer-events: none;
+  animation: order-line-out 0.2s var(--ease-exit) forwards;
+}
+@keyframes order-total-up {
+  from { opacity: 0.2; transform: translateY(40%); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes order-total-down {
+  from { opacity: 0.2; transform: translateY(-40%); }
+  to { opacity: 1; transform: none; }
+}
+.animate-order-total-up {
+  animation: order-total-up 0.22s var(--ease-signature);
+}
+.animate-order-total-down {
+  animation: order-total-down 0.22s var(--ease-signature);
+}
+@media (prefers-reduced-motion: reduce) {
+  .animate-order-line-in,
+  .animate-order-total-up,
+  .animate-order-total-down {
+    animation: fade-in 0.15s ease;
+  }
+  .order-line-out {
+    animation: fadeOut 0.15s ease forwards;
+  }
+}
+
 /* Horizontal unfold for a trailing sibling that arrives late — the client
    rating pill, which lands beside the client name seconds after the client
    was picked. The grid track opens 0fr→1fr from @starting-style, so the input

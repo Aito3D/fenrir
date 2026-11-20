@@ -105,6 +105,7 @@ class FakeZoho:
         self.stock: dict[str, float] = {"A": 100}
         self.calls: Counter = Counter()
         self.item_batches: list[list[str]] = []
+        self.catalog: list[dict] = []  # /items pages of two, for the catalogue sweep
         self.meter = 0
         self.configured = True
         self.fail: Exception | None = None
@@ -185,6 +186,10 @@ class FakeZoho:
             for i in item_ids
         ]
 
+    async def list_items_page_all(self, db, page):
+        self.calls["catalog"] += 1
+        return self.catalog[(page - 1) * 2 : page * 2], len(self.catalog) > page * 2
+
     async def books_salesorder_url_base(self, db):
         return "https://books.example/app/1#/salesorders/"
 
@@ -223,6 +228,7 @@ def zoho(monkeypatch):
         "get_estimate",
         "get_purchaseorder",
         "list_items_by_ids",
+        "list_items_page_all",
         "list_customer_payments_modified_since",
         "list_customer_payments",
         "list_customer_retainers",

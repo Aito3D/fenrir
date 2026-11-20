@@ -2535,7 +2535,7 @@ async def test_a_picklist_books_opened_since_the_stored_copy_locks_the_edit(db_s
 
 
 @pytest.mark.asyncio
-async def test_search_items_drops_services_and_caps_at_five(db_session, lines_edit):
+async def test_search_items_drops_services_and_caps_at_eight(db_session, lines_edit):
     lines_edit.item_search = [
         {"item_id": "svc", "name": "Labour", "product_type": "service"},
         *(
@@ -2547,21 +2547,45 @@ async def test_search_items_drops_services_and_caps_at_five(db_session, lines_ed
                 "stock_on_hand": 3,
                 "product_type": "goods",
             }
-            for n in range(7)
+            for n in range(10)
         ),
     ]
     found = await actions.search_items(db_session, "item")
-    assert [i["id"] for i in found] == ["i0", "i1", "i2", "i3", "i4"]
+    assert [i["id"] for i in found] == [f"i{n}" for n in range(8)]
     assert found[0] == {
         "id": "i0",
         "name": "Item 0",
         "sku": "S0",
         "upc": "",
         "ean": "",
+        "part_number": "",
+        "reference": "",
         "rate": 10.0,
         "stock_on_hand": 3.0,
+        "available": None,
         "product_type": "goods",
+        "filament": False,
     }
+
+
+@pytest.mark.asyncio
+async def test_a_several_word_search_asks_by_the_longest_word_and_keeps_items_holding_every_word(
+    db_session, lines_edit, monkeypatch
+):
+    asked = []
+
+    async def list_items(db, search_text):
+        asked.append(search_text)
+        return [
+            {"item_id": "y", "name": "PETG HF Jaune", "sku": "PF1", "product_type": "goods"},
+            {"item_id": "b", "name": "PETG HF Bleu", "sku": "PF2", "product_type": "goods"},
+            {"item_id": "a", "name": "Bambu Lab A1", "sku": "A1", "product_type": "goods"},
+        ]
+
+    monkeypatch.setattr(zoho_service, "list_items", list_items)
+    found = await actions.search_items(db_session, "PETG jaun")
+    assert asked == ["petg"]
+    assert [i["id"] for i in found] == ["y"]
 
 
 @pytest.mark.asyncio

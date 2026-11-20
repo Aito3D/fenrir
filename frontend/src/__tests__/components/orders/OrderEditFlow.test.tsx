@@ -58,7 +58,7 @@ const hits = http.get('/api/v1/order-board/items', ({ request }) =>
     items: new URL(request.url).searchParams.get('q') === 'pla'
       ? [
           { id: 'A', name: 'Bambu Lab PLA Basic Noir', sku: 'BL-PLA-BK', rate: 3400, stock_on_hand: 9, product_type: 'goods' },
-          { id: 'B', name: 'PLA Silk Or', sku: 'PLA-SILK-GD', rate: 1500, stock_on_hand: 4, product_type: 'goods' },
+          { id: 'B', name: 'PLA Silk Or', sku: 'PLA-SILK-GD', rate: 1500, stock_on_hand: 4, available: 3, product_type: 'goods' },
         ]
       : [],
   }),
@@ -69,7 +69,7 @@ const openEdit = async (user: ReturnType<typeof userEvent.setup>) => {
 };
 const addSilk = async (user: ReturnType<typeof userEvent.setup>) => {
   await user.type(screen.getByRole('searchbox', { name: 'Add an item · name or SKU in Zoho Books' }), 'pla');
-  await user.click(await screen.findByRole('button', { name: /PLA Silk Or/ }));
+  await user.click(await screen.findByRole('button', { name: /PLA Silk Or/ }, { timeout: 3000 }));
 };
 
 describe('editing the order', () => {
@@ -127,16 +127,16 @@ describe('editing the order', () => {
     render(<OrderLinesPanel row={panelRow()} />);
     await openEdit(user);
     await user.type(screen.getByRole('searchbox', { name: 'Add an item · name or SKU in Zoho Books' }), 'pla');
-    const list = await screen.findByRole('list');
+    const list = await screen.findByRole('list', {}, { timeout: 3000 });
     expect(within(list).getAllByRole('button')).toHaveLength(1);
-    expect(within(list).getByText('4 in stock')).toBeInTheDocument();
+    expect(within(list).getByText('3 available')).toBeInTheDocument();
     await user.click(within(list).getByRole('button', { name: /PLA Silk Or/ }));
     expect(qty('add-B')).toHaveValue(1);
     expect(screen.getByText(`New line · ${money(1500)}`)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'One less · PLA Silk Or' })).toBeDisabled(); // a new line is at least 1
     expect(screen.getByRole('searchbox', { name: 'Add an item · name or SKU in Zoho Books' })).toHaveValue('');
     await user.type(screen.getByRole('searchbox', { name: 'Add an item · name or SKU in Zoho Books' }), 'zz');
-    expect(await screen.findByText('No item')).toBeInTheDocument();
+    expect(await screen.findByText('No item', {}, { timeout: 3000 })).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'Remove the line · PLA Silk Or' }));
     expect(screen.queryByTestId('pack-qty-add-B')).not.toBeInTheDocument();
   });

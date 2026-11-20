@@ -3,7 +3,8 @@
 Read-only towards Books: GETs only. One bounded pass lists every sales order
 and purchase order (three calls today), fetches the detail of at most
 ``MAX_DETAILS_PER_PASS`` documents whose list row changed, re-reads stock for
-the items on open order lines, then recomputes and stores the board. Opening
+the items on open order lines, then recomputes and stores the board; a
+stale local copy of the goods catalogue (``_catalog``) is swept after. Opening
 the page therefore costs one local read (``read_board``), never a Zoho call.
 
 Two rules shape everything here:
@@ -21,6 +22,7 @@ One module per area; the names callers use are re-exported here. Module state
 
 from backend.app.core.websocket import ws_manager
 from backend.app.services.order_board_sync._board import find_board_row, read_board
+from backend.app.services.order_board_sync._catalog import search_catalog
 from backend.app.services.order_board_sync._common import (
     CALL_CEILING,
     DAILY_BUDGET_FLOOR,
@@ -86,6 +88,7 @@ __all__ = [
     "note_write",
     "open_rate_limit_window",
     "read_board",
+    "search_catalog",
     "read_finished",
     "read_finished_order",
     "refresh_order",

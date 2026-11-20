@@ -21,39 +21,64 @@ from backend.app.services.order_board_actions._common import (
     writing,
 )
 from backend.app.services.zoho import ZohoRateLimited, ZohoUpstreamError, zoho_service
+from backend.app.services.zoho_filaments import FILAMENT_CATEGORY
+from backend.app.utils.text import fold_text
 
 _BARCODE = re.compile(r"\d{8,14}")
+_FILAMENT_DIAMETER = re.compile(r"\b(1[.,]75|2[.,]85)\s?mm\b", re.IGNORECASE)
+SEARCH_LIMIT = 8
 _SO_LINE_FIELDS = ("line_item_id", "item_id", "name", "description", "rate", "quantity", "unit", "tax_id", "discount")
 
 
 async def search_items(db: AsyncSession, query: str) -> list[dict]:
-    """Books items matching ``query`` that are goods, not services; the first five. A barcode-shaped query (8 to 14
-    digits) also asks Books by UPC and EAN, and those items come first."""
+    """Goods (not services) matching ``query``, best first, at most ``SEARCH_LIMIT``: from the local catalogue copy
+    when there is one. Without it, or for a barcode-shaped query (8 to 14 digits) the copy does not know, Books is
+    asked; a barcode also by UPC and EAN, and those items come first."""
+    local = await sync.search_catalog(db, query, SEARCH_LIMIT)
+    if local is not None and (local or not _BARCODE.fullmatch(query)):
+        return [_hit(item) for item in local]
     if sync.zoho_busy():
         raise sync.ZohoBusy(query)
+    # Books matches search_text as one phrase ("petg jaune" misses "PETG Basic Jaune"): ask by the longest word,
+    # then keep the items whose name or SKU holds every word, in any order, accents and case aside.
+    words = fold_text(query).split()
     try:
         coded = await zoho_service.list_items_by_code(db, query) if _BARCODE.fullmatch(query) else []
-        found = await zoho_service.list_items(db, query)
+        found = await zoho_service.list_items(db, max(words, key=len) if len(words) > 1 else query)
     except ZohoRateLimited as e:
         sync.open_rate_limit_window(e)
         raise sync.ZohoBusy(query) from e
+    if len(words) > 1:
+        found = [i for i in found if all(w in fold_text(f"{i.get('name') or ''} {i.get('sku') or ''}") for w in words)]
     merged: dict[str, dict] = {}
     for item in [*coded, *found]:
         merged.setdefault(item.get("item_id") or "", item)
-    return [
-        {
-            "id": item.get("item_id") or "",
-            "name": item.get("name") or "",
-            "sku": item.get("sku") or "",
-            "upc": item.get("upc") or "",
-            "ean": item.get("ean") or "",
-            "rate": float(_num(item.get("rate"))),
-            "stock_on_hand": None if item.get("stock_on_hand") is None else float(_num(item.get("stock_on_hand"))),
-            "product_type": item.get("product_type") or "",
-        }
-        for item in merged.values()
-        if not (item.get("product_type") or "").endswith("service")
-    ][:5]
+    return [_hit(item) for item in merged.values() if not (item.get("product_type") or "").endswith("service")][
+        :SEARCH_LIMIT
+    ]
+
+
+def _hit(item: dict) -> dict:
+    return {
+        "id": item.get("item_id") or "",
+        "name": item.get("name") or "",
+        "sku": item.get("sku") or "",
+        "upc": item.get("upc") or "",
+        "ean": item.get("ean") or "",
+        "part_number": item.get("part_number") or "",
+        "reference": item.get("cf_r_f_rence") or "",
+        "rate": float(_num(item.get("rate"))),
+        "stock_on_hand": None if item.get("stock_on_hand") is None else float(_num(item.get("stock_on_hand"))),
+        # What can be sold: on hand minus what other confirmed orders committed (Books' available_for_sale, not
+        # actual_available_stock, which ignores commitments), negative when over-committed, shown as 0.
+        "available": None
+        if item.get("available_for_sale") is None
+        else max(0.0, float(_num(item.get("available_for_sale")))),
+        "product_type": item.get("product_type") or "",
+        # Not every filament is filed under the category in Books (the Bambu Lab ones are not): its diameter says it too.
+        "filament": item.get("cf_nature_du_produit") == FILAMENT_CATEGORY
+        or bool(_FILAMENT_DIAMETER.search(item.get("name") or "")),
+    }
 
 
 async def edit_lines(
