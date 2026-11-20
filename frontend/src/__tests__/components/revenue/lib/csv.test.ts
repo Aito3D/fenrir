@@ -42,3 +42,12 @@ describe("toCsv", () => {
     expect(row[15]).toBe("");
   });
 });
+
+describe("toCsv without the margin or customer permission", () => {
+  it("drops the margin and segment columns the payload does not carry instead of printing 0", () => {
+    const { cost: _c, costedHt: _h, bySegment: _s, bySegmentTtc: _t, ...stripped } = oct;
+    const lines = toCsv([stripped]).slice(1).split("\n");
+    expect(lines[0]).toBe("Période;CA HT;CA TTC;Biens HT;Services HT;Evol HT %;Cumul HT;Cumul TTC;Jours manquants;En cours;TTC approx");
+    expect(lines[1]).toBe("oct. 2026;1500;1740;1500;0;50,0;2500;2900;0;15;");
+  });
+});
