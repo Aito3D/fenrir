@@ -3,6 +3,7 @@
 Books is the dedupe: a sales order POSTed with ``estimate_id`` is linked to the quote, so every entry re-reads the quote
 first. A linked open order refuses (``quote_converted``); a linked draft (a half-made earlier attempt) is reused."""
 
+import contextlib
 import logging
 from datetime import date
 
@@ -70,9 +71,16 @@ async def _order_step(db: AsyncSession, estimate_id: str, detail: dict, by: str 
             "estimate_id": estimate_id,
             "date": date.today().isoformat(),
             "reference_number": detail.get("estimate_number"),
-            **{k: prefill.get(k, detail.get(k)) for k in _FLAGS},
             "line_items": lines,
         }
+        # The flags are mirrored, not forced: the order must price exactly as the quote the customer accepted, which
+        # may predate the board's tax-inclusive rule. A flag neither side states is left to Books, never sent as null.
+        for k in _FLAGS:
+            value = prefill.get(k)
+            if value is None:
+                value = detail.get(k)
+            if value is not None:
+                payload[k] = value
         # A timeout here may still have made the order: the retry's fresh read finds it as the linked draft.
         with sync._busy_on_rate_limit(estimate_id):
             created = await zoho_service.create_salesorder(db, payload)
@@ -121,21 +129,31 @@ async def undo_accept(db: AsyncSession, estimate_id: str, salesorder_id: str, *,
         row = await sync.find_board_row(db, salesorder_id)
         if row is None or _started(row):
             raise OrderActionRefused("undo_too_late")
-        sync.note_write(salesorder_id)
-        with sync._busy_on_rate_limit(salesorder_id):
-            await zoho_service.delete_salesorder(db, salesorder_id)
-        logger.info("Order board write: quote=%s order=%s step=delete", estimate_id, salesorder_id)
-        if (doc := await sync.find_stored(db, salesorder_id)) is not None:
-            await db.delete(doc)
-        await recompute(db)
+        # Whatever happens from here (timeout, crash), the next pass re-reads the quote: a DELETE that went through
+        # leaves it accepted with no order, and a stored copy still naming the order would hide it.
+        (await sync.find_quote(db, estimate_id)).pending = True
         await db.commit()
+        deleted = False
         try:
+            sync.note_write(salesorder_id)
+            with sync._busy_on_rate_limit(salesorder_id):
+                await zoho_service.delete_salesorder(db, salesorder_id)
+            deleted = True
+            logger.info("Order board write: quote=%s order=%s step=delete", estimate_id, salesorder_id)
+            if (doc := await sync.find_stored(db, salesorder_id)) is not None:
+                await db.delete(doc)
+            await recompute(db)
+            await db.commit()
             sync.note_write(estimate_id)
             with sync._busy_on_rate_limit(estimate_id):
                 await zoho_service.set_estimate_status(db, estimate_id, "sent")
             logger.info("Order board write: quote=%s step=unaccept", estimate_id)
-        finally:  # the order is gone either way: store the quote as Books has it now
-            await _settle(db, estimate_id, "quote.accept_undone", by)
+        finally:  # after any DELETE attempt: store the quote as Books has it now
+            await _settle(db, estimate_id, "quote.accept_undone" if deleted else None, by)
+            if not deleted:  # an unconfirmed DELETE may still land: the next pass re-reads the quote once more
+                with contextlib.suppress(Exception):
+                    (await sync.find_quote(db, estimate_id)).pending = True
+                    await db.commit()
 
 
 def _started(row: dict) -> bool:

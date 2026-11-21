@@ -179,6 +179,14 @@ async def _fresh(db: AsyncSession, estimate_id: str) -> dict:
     with sync._busy_on_rate_limit(estimate_id):
         detail = await zoho_service.get_estimate(db, estimate_id)
     if is_converted(detail):
+        try:  # store what Books says, so a stale row (an accepted quote whose order exists) leaves the list now
+            await sync.store_quote(db, detail)
+            await db.commit()
+            await sync.announce_board_change(quotes=True)
+        except Exception as e:
+            logger.warning("Order board: storing converted quote %s failed (%s)", estimate_id, type(e).__name__)
+            with contextlib.suppress(Exception):
+                await db.rollback()
         raise OrderActionRefused("quote_converted")
     return detail
 

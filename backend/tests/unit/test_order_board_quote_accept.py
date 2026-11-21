@@ -45,6 +45,8 @@ def so_books(books, monkeypatch):  # noqa: F811
     books.create_error = None
     books.open_error = None
     books.prefill_lines = [PREFILL_LINE]
+    books.prefill_flags = {"is_inclusive_tax": True, "discount_type": "item_level", "is_discount_before_tax": True}
+    books.delete_error = None  # (error, applied first)
 
     def link(estimate_id, salesorder_id, status):
         estimate = books.estimates[estimate_id]
@@ -53,13 +55,7 @@ def so_books(books, monkeypatch):  # noqa: F811
         books.estimates[estimate_id] = {**estimate, "salesorders": others + linked}
 
     async def salesorder_prefill_from_estimate(db, estimate_id):
-        return {
-            "customer_id": "c1",
-            "is_inclusive_tax": True,
-            "discount_type": "item_level",
-            "is_discount_before_tax": True,
-            "line_items": books.prefill_lines,
-        }
+        return {"customer_id": "c1", **books.prefill_flags, "line_items": books.prefill_lines}
 
     async def create_salesorder(db, payload):
         if books.create_error:
@@ -78,9 +74,13 @@ def so_books(books, monkeypatch):  # noqa: F811
         link(books.orders[salesorder_id]["estimate_id"], salesorder_id, "open")
 
     async def delete_salesorder(db, salesorder_id):
+        if books.delete_error and not books.delete_error[1]:
+            raise books.delete_error[0]
         books.deleted.append(salesorder_id)
         gone = books.orders.pop(salesorder_id)
         link(gone["estimate_id"], salesorder_id, None)
+        if books.delete_error:
+            raise books.delete_error[0]
 
     for fn in (salesorder_prefill_from_estimate, create_salesorder, mark_salesorder_open, delete_salesorder):
         monkeypatch.setattr(zoho_service, fn.__name__, fn)
@@ -316,3 +316,70 @@ async def test_a_pass_after_accept_keeps_one_doc_and_its_row(db_session, so_book
     assert (row["number"], row["status"]) == ("SO-00009", before["status"])
     assert [(line["id"], line["remaining"]) for line in row["lines"]] == [("l9", 1.0)]
     assert (await sync.find_stored(db_session, "so9")).header["status"] == "open"
+
+
+def _quote_rows(quotes: dict) -> list:
+    return [(r["id"], r["state"]) for r in quotes["rows"]]
+
+
+@pytest.mark.asyncio
+async def test_undo_whose_delete_landed_but_failed_shows_the_quote_accepted_again(db_session, so_books):
+    await _accepted_on_board(db_session, so_books)
+    so_books.delete_error = (ZohoUpstreamError("timeout"), True)
+    with pytest.raises(ZohoUpstreamError):
+        await actions.undo_accept(db_session, "e1", "so9", by=None)
+    assert so_books.deleted == ["so9"]
+    assert _quote_rows(await sync.read_quotes(db_session)) == [("e1", "accepted")]
+    assert [e.kind for e in await events_of(db_session, "e1")] == ["quote.accepted"]  # not known to be undone
+
+
+@pytest.mark.asyncio
+async def test_undo_whose_delete_failed_keeps_the_order_and_the_quote_pending(db_session, so_books):
+    await _accepted_on_board(db_session, so_books)
+    so_books.delete_error = (ZohoUpstreamError("refused"), False)
+    with pytest.raises(ZohoUpstreamError):
+        await actions.undo_accept(db_session, "e1", "so9", by=None)
+    assert await sync.find_board_row(db_session, "so9") is not None
+    assert _quote_rows(await sync.read_quotes(db_session)) == []  # still converted
+    assert (await sync.find_quote(db_session, "e1")).pending is True
+
+
+@pytest.mark.asyncio
+async def test_undo_with_no_board_row_is_too_late(db_session, so_books):
+    await _stored(db_session, so_books, quote(1, status="sent"))
+    await actions.accept_quote(db_session, "e1", by=None)  # the board was never computed: no row
+    assert await sync.find_board_row(db_session, "so9") is None
+    with pytest.raises(actions.OrderActionRefused, match="undo_too_late"):
+        await actions.undo_accept(db_session, "e1", "so9", by=None)
+    assert so_books.deleted == []
+
+
+@pytest.mark.asyncio
+async def test_accept_of_a_books_expired_quote_is_not_redated(db_session, so_books):
+    await _stored(db_session, so_books, quote(1, status="expired"))
+    await actions.accept_quote(db_session, "e1", by=None)
+    assert so_books.sent == [("status", "e1", "accepted")]
+
+
+@pytest.mark.asyncio
+async def test_a_tax_exclusive_quote_converts_with_its_own_flags(db_session, so_books):
+    await _stored(db_session, so_books, {**quote(1, status="accepted"), "is_inclusive_tax": False})
+    so_books.prefill_flags = {"is_inclusive_tax": False, "discount_type": "item_level"}
+    await actions.create_order_from_quote(db_session, "e1", by=None)
+    [payload] = so_books.so_payloads
+    assert payload["is_inclusive_tax"] is False
+    assert "is_discount_before_tax" not in payload  # neither side states it: not sent as null
+
+
+@pytest.mark.asyncio
+async def test_a_converted_refusal_stores_the_fresh_copy(db_session, so_books):
+    await _stored(db_session, so_books, quote(1, status="accepted"))
+    await sync.run_pass(db_session)
+    assert _quote_rows(await sync.read_quotes(db_session)) == [("e1", "accepted")]
+    so_books.estimates["e1"] = {
+        **so_books.estimates["e1"],
+        "salesorders": [{"salesorder_id": "so5", "salesorder_order_status": "open"}],
+    }
+    with pytest.raises(actions.OrderActionRefused, match="quote_converted"):
+        await actions.create_order_from_quote(db_session, "e1", by=None)
+    assert _quote_rows(await sync.read_quotes(db_session)) == []
