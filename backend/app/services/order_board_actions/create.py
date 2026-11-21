@@ -143,6 +143,7 @@ async def _create(
                 number,
                 type(void_error).__name__,
             )
+            sync_common._pending_voids[salesorder_id] = number  # the pass retries it (and records order.void_failed)
         raise OrderActionRefused("create_failed") from e
     finally:
         sync.note_write(salesorder_id)

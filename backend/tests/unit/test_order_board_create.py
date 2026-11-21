@@ -311,6 +311,25 @@ async def test_a_failed_void_still_refuses_create_failed(db_session, books, monk
 
 
 @pytest.mark.asyncio
+async def test_a_failed_cleanup_void_goes_to_the_pending_void_retry(db_session, books, monkeypatch):
+    books.open_error = ZohoUpstreamError("open boom")
+    real_void = zoho_service.void_salesorder
+
+    async def void_boom(db, salesorder_id):
+        raise ZohoUpstreamError("void boom")
+
+    monkeypatch.setattr(zoho_service, "void_salesorder", void_boom)
+    with pytest.raises(actions.OrderActionRefused, match="create_failed"):
+        await actions.create_counter_order(db_session, "c1", [{"item_id": "A", "quantity": 1}], "ref-7", by=None)
+    assert sync_common._pending_voids == {"9": "SO-00009"}
+
+    monkeypatch.setattr(zoho_service, "void_salesorder", real_void)
+    await sync.run_pass(db_session)  # the pass voids the leftover order
+    assert books.voided == ["9"]
+    assert sync_common._pending_voids == {}
+
+
+@pytest.mark.asyncio
 async def test_rate_limited_create_is_busy(db_session, books):
     books.create_error = ZohoRateLimited("429", retry_after=30)
     with pytest.raises(sync.ZohoBusy):
