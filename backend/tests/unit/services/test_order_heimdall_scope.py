@@ -7,6 +7,7 @@ from datetime import datetime, timedelta
 import httpx
 import pytest
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from backend.app.api.routes.settings import set_setting
@@ -710,3 +711,84 @@ async def test_a_failed_terminal_charge_leaves_the_link_open(db_session, monkeyp
     monkeypatch.setattr(heimdall_service, "cancel_link", fake_cancel)
     await tpe.poll_open_terminal_payments(db_session, now=NOW)
     assert (await db_session.execute(select(AitoPaymentLink))).scalar_one().status == "pending"
+
+
+def _t129_link(**over) -> AitoPaymentLink:
+    base = {
+        "project_id": 0,
+        "salesorder_id": SO,
+        "idempotency_key": f"order:{SO}:1",
+        "heimdall_id": "h-1",
+        "reference": "FA-26-0900",
+        "document_kind": "invoice",
+        "amount": 23000,
+        "expires_on": "2026-12-11",
+        "status": "pending",
+        "created_at": NOW - timedelta(hours=1),
+    }
+    base.update(over)
+    return AitoPaymentLink(**base)
+
+
+@pytest.mark.asyncio
+async def test_order_link_paid_record_failure_rolls_back_and_the_next_poll_credits_once(
+    db_session, monkeypatch, refreshed, no_aito
+):
+    db_session.add(_t129_link())
+    await db_session.commit()
+
+    async def fake_get(db, payment_id):
+        return _view()
+
+    monkeypatch.setattr(heimdall_service, "get_payment", fake_get)
+    real_record = links.record_order_payment
+
+    async def broken(*args, **kwargs):
+        raise RuntimeError("event write failed")
+
+    monkeypatch.setattr(links, "record_order_payment", broken)
+    row = (await db_session.execute(select(AitoPaymentLink))).scalar_one()
+    with pytest.raises(RuntimeError, match="event write failed"):
+        await links.poll_link(db_session, row, now=NOW)
+    row = (await db_session.execute(select(AitoPaymentLink))).scalar_one()
+    assert row.status == "pending" and row.paid_at is None
+    assert await _order_events(db_session) == [] and refreshed == []
+
+    monkeypatch.setattr(links, "record_order_payment", real_record)
+    await links.reconcile_payment_links(db_session, now=NOW)
+    row = (await db_session.execute(select(AitoPaymentLink))).scalar_one()
+    assert row.status == "paid" and row.paid_at == NOW
+    assert len(await _order_events(db_session)) == 1 and refreshed == [SO]
+
+
+async def _race_lost_on_first_read(db_session, monkeypatch, winner_status):
+    """A concurrent create already holds the key `_next_key` will pick, while this session's first read saw no open
+    link: the INSERT collides, then the re-read finds the winner."""
+    db_session.add(_t129_link(idempotency_key=f"order:{SO}:2", status=winner_status))
+    await db_session.commit()
+    real_current = links.current_link
+    seen = []
+
+    async def blind_once(db, scope, *, kind="quote"):
+        seen.append(scope)
+        return None if len(seen) == 1 else await real_current(db, scope, kind=kind)
+
+    async def no_heimdall(*args, **kwargs):
+        raise AssertionError("a losing create must not reach Heimdall")
+
+    monkeypatch.setattr(links, "current_link", blind_once)
+    monkeypatch.setattr(heimdall_service, "create_link", no_heimdall)
+
+
+@pytest.mark.asyncio
+async def test_concurrent_order_link_create_losing_to_a_pending_winner_is_link_exists(db_session, monkeypatch):
+    await _race_lost_on_first_read(db_session, monkeypatch, "pending")
+    with pytest.raises(links.InvoiceLinkExists):
+        await links.create_order_invoice_link(db_session, SO, document=INVOICE, amount=23000, actor_name=None, now=NOW)
+
+
+@pytest.mark.asyncio
+async def test_concurrent_order_link_create_collision_without_a_pending_winner_reraises(db_session, monkeypatch):
+    await _race_lost_on_first_read(db_session, monkeypatch, "paid")
+    with pytest.raises(IntegrityError):
+        await links.create_order_invoice_link(db_session, SO, document=INVOICE, amount=23000, actor_name=None, now=NOW)
