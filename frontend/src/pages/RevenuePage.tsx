@@ -408,7 +408,7 @@ export function RevenuePage() {
         <div className="flex flex-wrap items-center gap-3">
           {(reviewCount ?? 0) > 0 && (
             <button type="button" aria-pressed={reviewOpen} onClick={(e) => toggleReview(e.currentTarget)}
-              className={`hidden items-center rounded-full border border-amber-500/40 bg-amber-500/10 px-3 py-1 text-xs font-medium text-amber-700 dark:text-amber-400 hover:bg-amber-500/20 sm:inline-flex ${focusRingCls}`}>
+              className={`btn-press animate-pop-in hidden items-center rounded-full border border-amber-500/40 bg-amber-500/10 px-3 py-1 text-xs font-medium text-amber-700 dark:text-amber-400 hover:bg-amber-500/20 sm:inline-flex ${focusRingCls}`}>
               {t('revenue.review.pill', { n: reviewCount })}
             </button>
           )}

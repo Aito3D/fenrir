@@ -196,7 +196,7 @@ export function RevenueTargets({ canManage, onChanged, onClose, returnFocus, tod
                 {t('revenue.targets.copyAcross')}
               </button>
               <button type="button" disabled={pending.length === 0 || anyInvalid || busy !== null} onClick={() => void saveAll(pending)}
-                className={`rounded-md bg-bambu-green px-3 py-1 text-sm text-white disabled:opacity-40 ${focusRingCls}`}>
+                className={`btn-press rounded-md bg-bambu-green px-3 py-1 text-sm text-white disabled:opacity-40 ${focusRingCls}`}>
                 {t('revenue.targets.saveAll')}{pending.length > 0 ? ` (${pending.length})` : ''}
               </button>
             </>

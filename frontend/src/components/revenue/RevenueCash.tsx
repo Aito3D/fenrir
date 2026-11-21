@@ -25,7 +25,9 @@ function Cash({ data }: { data: CashResponse }) {
           </div>
           {ratio !== null && (
             <div className="h-1 overflow-hidden rounded-full bg-bambu-dark" aria-hidden="true" data-testid="revenue-cash-bar">
-              <div className="h-full rounded-full bg-bambu-green" style={{ width: `${ratio * 100}%` }} />
+              {/* scaleX, not width: the fill eases to a new period's ratio on the compositor. */}
+              <div className="h-full origin-left rounded-full bg-bambu-green transition-transform duration-300 ease-[var(--ease-signature)] motion-reduce:transition-none"
+                style={{ transform: `scaleX(${ratio})` }} />
             </div>
           )}
         </>

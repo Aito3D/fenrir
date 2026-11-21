@@ -4,11 +4,11 @@ import { bearerAuthHeaders } from '../../api/client';
 import { useToast } from '../../contexts/ToastContext';
 import { focusRingCls } from '../formStyles';
 import { RevenueClosablePanel } from './RevenueClosablePanel';
-import { failureMessage, readJsonBody, withId, withoutId } from './lib/dashboard';
+import { failureMessage, readJsonBody, ROW_LEAVE_MS, withId, withoutId } from './lib/dashboard';
 import { formatFcp } from './lib/format';
 import type { ReviewResponse } from './lib/types';
 
-const BTN = `rounded-md border border-bambu-dark-tertiary px-2 py-0.5 text-xs hover:bg-bambu-dark-tertiary disabled:opacity-40 ${focusRingCls}`;
+const BTN = `btn-press rounded-md border border-bambu-dark-tertiary px-2 py-0.5 text-xs hover:bg-bambu-dark-tertiary disabled:opacity-40 ${focusRingCls}`;
 
 /** Items sold that match neither a 3D nature nor a 3D brand: include or exclude them from the revenue, or undo a decision. */
 export function RevenueReview({ canManage, onChanged, onClose, returnFocus }: { canManage: boolean; onChanged: () => void; onClose: () => void; returnFocus: () => void }) {
@@ -17,6 +17,7 @@ export function RevenueReview({ canManage, onChanged, onClose, returnFocus }: { 
   const [data, setData] = useState<ReviewResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState<ReadonlySet<string>>(new Set());
+  const [leaving, setLeaving] = useState<ReadonlySet<string>>(new Set());
   const [showDecided, setShowDecided] = useState(false);
   // State lags a render behind: a double click would see the item idle twice.
   const inFlight = useRef(new Set<string>());
@@ -59,6 +60,9 @@ export function RevenueReview({ canManage, onChanged, onClose, returnFocus }: { 
         void load();
         throw new Error(message);
       }
+      // Let the row fold away before the reload drops it.
+      setLeaving(withId(itemId));
+      await new Promise((resolve) => setTimeout(resolve, ROW_LEAVE_MS));
       await load();
       onChanged();
     } catch (e) {
@@ -66,6 +70,7 @@ export function RevenueReview({ canManage, onChanged, onClose, returnFocus }: { 
     } finally {
       inFlight.current.delete(itemId);
       setBusy(withoutId(itemId));
+      setLeaving(withoutId(itemId));
     }
   };
 
@@ -89,22 +94,24 @@ export function RevenueReview({ canManage, onChanged, onClose, returnFocus }: { 
       ) : (
         <ul className="space-y-1">
           {data.unclassified.map((r) => (
-            <li key={r.itemId} className="flex items-center gap-3 rounded-lg bg-bambu-dark px-3 py-2 text-sm">
-              <span className="min-w-0 flex-1 truncate text-white" title={r.name}>{r.name}</span>
-              <span className="hidden text-xs text-bambu-gray md:inline">
-                {r.brand ?? '—'} · {r.nature ?? '—'} · {t('revenue.review.last', { day: r.lastDay || '—' })}
-              </span>
-              <span className="w-32 text-right tabular-nums text-bambu-gray-light">{formatFcp(r.totalHt)}</span>
-              {canManage && (
-                <>
-                  <button type="button" className={`${BTN} text-bambu-green`} disabled={busy.has(r.itemId)} onClick={() => void decide(r.itemId, true)}>
-                    {t('revenue.review.include')}
-                  </button>
-                  <button type="button" className={`${BTN} text-bambu-gray-light`} disabled={busy.has(r.itemId)} onClick={() => void decide(r.itemId, false)}>
-                    {t('revenue.review.exclude')}
-                  </button>
-                </>
-              )}
+            <li key={r.itemId} className="row-collapse" data-leaving={leaving.has(r.itemId) || undefined}>
+              <div className="flex items-center gap-3 rounded-lg bg-bambu-dark px-3 py-2 text-sm">
+                <span className="min-w-0 flex-1 truncate text-white" title={r.name}>{r.name}</span>
+                <span className="hidden text-xs text-bambu-gray md:inline">
+                  {r.brand ?? '—'} · {r.nature ?? '—'} · {t('revenue.review.last', { day: r.lastDay || '—' })}
+                </span>
+                <span className="w-32 text-right tabular-nums text-bambu-gray-light">{formatFcp(r.totalHt)}</span>
+                {canManage && (
+                  <>
+                    <button type="button" className={`${BTN} text-bambu-green`} disabled={busy.has(r.itemId)} onClick={() => void decide(r.itemId, true)}>
+                      {t('revenue.review.include')}
+                    </button>
+                    <button type="button" className={`${BTN} text-bambu-gray-light`} disabled={busy.has(r.itemId)} onClick={() => void decide(r.itemId, false)}>
+                      {t('revenue.review.exclude')}
+                    </button>
+                  </>
+                )}
+              </div>
             </li>
           ))}
         </ul>
@@ -112,17 +119,19 @@ export function RevenueReview({ canManage, onChanged, onClose, returnFocus }: { 
       {showDecided && data && data.decided.length > 0 && (
         <ul className="mt-3 space-y-1 border-t border-bambu-dark-tertiary pt-3">
           {data.decided.map((r) => (
-            <li key={r.itemId} className="flex items-center gap-3 rounded-lg bg-bambu-dark px-3 py-1.5 text-xs">
-              <span className={`w-16 ${r.included ? 'text-bambu-green' : 'text-bambu-gray'}`}>
-                {r.included ? t('revenue.review.included') : t('revenue.review.excluded')}
-              </span>
-              <span className="min-w-0 flex-1 truncate text-bambu-gray-light" title={r.name}>{r.name}</span>
-              <span className="w-32 text-right tabular-nums text-bambu-gray">{formatFcp(r.totalHt)}</span>
-              {canManage && (
-                <button type="button" className={BTN} disabled={busy.has(r.itemId)} onClick={() => void decide(r.itemId, null)}>
-                  {t('revenue.review.undo')}
-                </button>
-              )}
+            <li key={r.itemId} className="row-collapse" data-leaving={leaving.has(r.itemId) || undefined}>
+              <div className="flex items-center gap-3 rounded-lg bg-bambu-dark px-3 py-1.5 text-xs">
+                <span className={`w-16 ${r.included ? 'text-bambu-green' : 'text-bambu-gray'}`}>
+                  {r.included ? t('revenue.review.included') : t('revenue.review.excluded')}
+                </span>
+                <span className="min-w-0 flex-1 truncate text-bambu-gray-light" title={r.name}>{r.name}</span>
+                <span className="w-32 text-right tabular-nums text-bambu-gray">{formatFcp(r.totalHt)}</span>
+                {canManage && (
+                  <button type="button" className={BTN} disabled={busy.has(r.itemId)} onClick={() => void decide(r.itemId, null)}>
+                    {t('revenue.review.undo')}
+                  </button>
+                )}
+              </div>
             </li>
           ))}
         </ul>

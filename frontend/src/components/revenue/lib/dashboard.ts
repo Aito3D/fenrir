@@ -203,6 +203,9 @@ export function withId(id: string): (set: ReadonlySet<string>) => Set<string> {
   };
 }
 
+/** How long a `.row-collapse` row takes to leave (index.css); wait this long before removing it. */
+export const ROW_LEAVE_MS = 160;
+
 /** State updater: copy of the set with `id` removed. */
 export function withoutId(id: string): (set: ReadonlySet<string>) => Set<string> {
   return (set) => {

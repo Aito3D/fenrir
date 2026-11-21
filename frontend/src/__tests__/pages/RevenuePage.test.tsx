@@ -1,5 +1,6 @@
 import type { ComponentProps } from 'react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { ROW_LEAVE_MS } from '../../components/revenue/lib/dashboard';
 import { act, render as rtlRender, screen, waitFor, within, fireEvent } from '@testing-library/react';
 import { http, HttpResponse } from 'msw';
 import { server } from '../mocks/server';
@@ -578,6 +579,9 @@ describe('RevenuePage — items to classify', () => {
     fireEvent.click(screen.getByRole('button', { name: 'To classify 1' }));
     await flush();
     fireEvent.click(screen.getByRole('button', { name: 'Include' }));
+    await flush();
+    // The row folds away (ROW_LEAVE_MS) before the panel reloads.
+    await act(() => vi.advanceTimersByTimeAsync(ROW_LEAVE_MS));
     await flush();
     await flush();
     expect(screen.queryByRole('button', { name: /To classify/ })).toBeNull();

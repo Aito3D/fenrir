@@ -70,7 +70,11 @@ describe('RevenueReview', () => {
   it('includes an item with its id escaped, then reloads the list and the page', async () => {
     setAuthToken('tok');
     const { writes, reads, onChanged } = setup();
-    fireEvent.click(await screen.findByRole('button', { name: 'Include' }));
+    const include = await screen.findByRole('button', { name: 'Include' });
+    fireEvent.click(include);
+    // The row folds away before the reload drops it.
+    await waitFor(() => expect(include.closest('li')).toHaveAttribute('data-leaving'));
+    expect(reads()).toHaveLength(1);
     await waitFor(() => expect(onChanged).toHaveBeenCalledTimes(1));
     const [url, init] = writes()[0];
     expect(url).toBe('/api/v1/revenue/scope/a%2F1');

@@ -40,7 +40,7 @@ describe('RevenueCash', () => {
     expect(await screen.findByText('1.000.000 FCP')).toBeInTheDocument();
     expect(screen.getByText('600.000 FCP')).toBeInTheDocument();
     expect(screen.getByText('incl. 25.000 FCP to allocate')).toBeInTheDocument();
-    expect(screen.getByTestId('revenue-cash-bar').firstElementChild).toHaveStyle({ width: '60%' });
+    expect(screen.getByTestId('revenue-cash-bar').firstElementChild).toHaveStyle({ transform: 'scaleX(0.6)' });
     expect(screen.getByText('450.000 FCP')).toBeInTheDocument();
     expect(screen.getByText('7 open invoices')).toBeInTheDocument();
     expect(screen.getByText('120.000 FCP')).toHaveClass('text-amber-700');

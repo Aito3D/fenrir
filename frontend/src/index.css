@@ -2225,6 +2225,26 @@ html[data-vt='aito-card-exit']::view-transition-group(aito-card) {
 .animate-rise-sm {
   animation: rise-sm 0.28s var(--ease-signature) backwards;
 }
+/* A list row leaving after its server call succeeded (revenue review, chart
+   notes): it fades and folds its height so the rows below slide up instead of
+   jumping. The component waits ROW_LEAVE_MS (lib/dashboard.ts) before dropping
+   it. Reduced motion keeps the fade only. */
+.row-collapse {
+  display: grid;
+  grid-template-rows: 1fr;
+  transition: opacity 0.16s var(--ease-exit);
+}
+.row-collapse[data-leaving] { opacity: 0; }
+@media (prefers-reduced-motion: no-preference) {
+  .row-collapse {
+    transition:
+      grid-template-rows 0.16s var(--ease-exit),
+      margin 0.16s var(--ease-exit),
+      opacity 0.16s var(--ease-exit);
+  }
+  .row-collapse[data-leaving] { grid-template-rows: 0fr; margin-block: 0; }
+  .row-collapse[data-leaving] > * { min-height: 0; overflow: hidden; }
+}
 .stagger-nested > * {
   animation: rise-sm 0.28s var(--ease-signature) backwards;
   animation-delay: calc(var(--enter-delay, 0ms) + 200ms + var(--nested-slot, 0) * 50ms);
