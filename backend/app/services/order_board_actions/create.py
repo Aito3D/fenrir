@@ -4,6 +4,7 @@ import asyncio
 import logging
 import math
 import re
+from collections.abc import Awaitable, Callable
 from datetime import date
 
 from sqlalchemy.exc import IntegrityError
@@ -43,6 +44,13 @@ def _remembered(client_ref: str, fingerprint: str) -> str | None:
     return salesorder_id
 
 
+def checked_quantity(q):
+    """A line quantity: positive, finite, at most three decimals."""
+    if not isinstance(q, int | float) or not math.isfinite(q) or q <= 0 or round(q, 3) != q:
+        raise OrderActionRefused("bad_quantity")
+    return q
+
+
 def _discount(raw: str | None) -> tuple[float, bool] | None:
     """(value, is_percent) of a line discount, or None when there is none."""
     if raw is None or raw == "":
@@ -63,6 +71,14 @@ async def create_counter_order(
     returns the first order instead of creating another. Prices are the Books items' own (tax inclusive); a line
     discount is "N%" (0 to 100) or an amount up to the line total."""
     fingerprint = _fingerprint(customer_id, lines)
+    return await once_per_ref(
+        client_ref, fingerprint, lambda: _create(db, customer_id, lines, client_ref, by, fingerprint)
+    )
+
+
+async def once_per_ref(client_ref: str, fingerprint: str, make: Callable[[], Awaitable[str]]) -> str:
+    """Run ``make`` once per ``client_ref`` and return the id it made: a retry with the same fingerprint gets the first
+    id back without a Books call, one with another fingerprint is refused ``ref_reused``."""
     if (known := _remembered(client_ref, fingerprint)) is not None:  # before the busy check: no Books call
         return known
     if sync.zoho_busy():
@@ -73,21 +89,28 @@ async def create_counter_order(
         async with entry[0]:
             if (known := _remembered(client_ref, fingerprint)) is not None:  # a concurrent duplicate finished
                 return known
-            return await _create(db, customer_id, lines, client_ref, by, fingerprint)
+            made = await make()
+            remember(client_ref, fingerprint, made)
+            return made
     finally:
         entry[1] -= 1
         if entry[1] == 0:
             _ref_locks.pop(client_ref, None)
 
 
-async def _create(
-    db: AsyncSession, customer_id: str, lines: list[dict], client_ref: str, by: str | None, fingerprint: str
-) -> str:
+def remember(client_ref: str, fingerprint: str, made_id: str) -> None:
+    """Record what ``client_ref`` made; ``make`` calls this itself as soon as Books holds it, before local writes."""
+    _created[client_ref] = (fingerprint, made_id)
+    while len(_created) > _KEEP_REFS:
+        del _created[next(iter(_created))]
+
+
+async def priced_lines(db: AsyncSession, key: str, lines: list[dict]) -> list[dict]:
+    """The Books ``line_items`` for ``lines`` ({item_id, quantity, discount?}): goods only, each item once, at the
+    item's own rate."""
     wanted: dict[str, tuple[float, str | None, tuple[float, bool] | None]] = {}
     for entry in lines:
-        q = entry.get("quantity")
-        if not isinstance(q, int | float) or not math.isfinite(q) or q <= 0 or round(q, 3) != q:
-            raise OrderActionRefused("bad_quantity")
+        q = checked_quantity(entry.get("quantity"))
         item_id = entry.get("item_id")
         if not item_id or item_id in wanted:
             raise OrderActionRefused("unknown_item")
@@ -95,7 +118,7 @@ async def _create(
         wanted[item_id] = (q, raw, _discount(raw))
     if not wanted:
         raise OrderActionRefused("bad_quantity")
-    with sync._busy_on_rate_limit(customer_id):
+    with sync._busy_on_rate_limit(key):
         found = await zoho_service.list_items_by_ids(db, list(wanted))
     items = {item.get("item_id"): item for item in found}
     if any(i not in items or (items[i].get("product_type") or "").endswith("service") for i in wanted):
@@ -106,6 +129,13 @@ async def _create(
         if discount is not None and not discount[1] and discount[0] > q * rate + 1e-9:
             raise OrderActionRefused("bad_discount")
         body_lines.append({"item_id": item_id, "quantity": q, "rate": rate, **({"discount": raw} if discount else {})})
+    return body_lines
+
+
+async def _create(
+    db: AsyncSession, customer_id: str, lines: list[dict], client_ref: str, by: str | None, fingerprint: str
+) -> str:
+    body_lines = await priced_lines(db, customer_id, lines)
     payload = {
         "customer_id": customer_id,
         "date": date.today().isoformat(),
@@ -147,9 +177,7 @@ async def _create(
     finally:
         sync.note_write(salesorder_id)
     # Remembered before any local write: a retry after a database failure must not confirm a second order.
-    _created[client_ref] = (fingerprint, salesorder_id)
-    while len(_created) > _KEEP_REFS:
-        del _created[next(iter(_created))]
+    remember(client_ref, fingerprint, salesorder_id)
     doc = await sync.find_stored(db, salesorder_id)  # a pass may have listed it already
     if doc is None:
         db.add(OrderBoardDoc(kind="salesorder", zoho_id=salesorder_id, header=created, pending=True))

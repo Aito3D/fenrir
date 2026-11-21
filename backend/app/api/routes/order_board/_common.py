@@ -89,6 +89,8 @@ async def _run(call: Awaitable[_T]) -> _T:
         return await call
     except (order_board_actions.OrderNotOnBoard, order_board_sync.OrderNotStored):
         raise HTTPException(status_code=404, detail="Order not found.") from None
+    except order_board_actions.QuoteNotStored:
+        raise HTTPException(status_code=404, detail="Quote not found.") from None
     except order_board_actions.OrderActionRefused as e:
         raise HTTPException(status_code=400, detail=e.args[0]) from None
     except order_board_actions.OrderBusy:

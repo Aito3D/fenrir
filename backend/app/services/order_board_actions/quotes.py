@@ -1,0 +1,171 @@
+"""Create, edit, decline and reopen a product quote (Books estimate) from the Order Board."""
+
+import contextlib
+import logging
+from datetime import date, timedelta
+
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from backend.app.services import order_board_sync as sync
+from backend.app.services.order_board_actions._common import OrderActionRefused, _log, _num, writing
+from backend.app.services.order_board_actions.create import (
+    _discount,
+    _fingerprint,
+    checked_quantity,
+    once_per_ref,
+    priced_lines,
+    remember,
+)
+from backend.app.services.order_board_quotes import editable_here, is_converted, quote_state
+from backend.app.services.zoho import zoho_service
+
+logger = logging.getLogger(__name__)
+
+_KEPT_FIELDS = ("line_item_id", "item_id", "name", "description", "rate", "tax_id", "unit")
+_DEFAULT_VALIDITY_DAYS = 16
+
+
+class QuoteNotStored(Exception):
+    """The quote has no stored copy (never listed, dropped, or owned by an Aito card): the board does not write it."""
+
+
+async def create_quote(
+    db: AsyncSession, customer_id: str, lines: list[dict], client_ref: str, *, by: str | None
+) -> str:
+    """Create a draft estimate at the items' own rates (tax inclusive) and store it; returns its ``estimate_id``. The
+    same ``client_ref`` twice returns the first quote."""
+    ref = "quote:" + client_ref
+    fingerprint = _fingerprint(customer_id, lines)
+
+    async def make() -> str:
+        payload = {
+            "customer_id": customer_id,
+            "date": date.today().isoformat(),
+            "is_inclusive_tax": True,
+            "discount_type": "item_level",
+            "is_discount_before_tax": True,
+            "line_items": await priced_lines(db, customer_id, lines),
+        }
+        with sync._busy_on_rate_limit(customer_id):
+            created = await zoho_service.create_estimate(db, payload)
+        estimate_id = str(created["estimate_id"])
+        logger.info("Order board write: quote=%s step=create", estimate_id)
+        remember(ref, fingerprint, estimate_id)  # before any local write: a retry must not create a second quote
+        await _settle(db, estimate_id, "quote.created", by)
+        return estimate_id
+
+    return await once_per_ref(ref, fingerprint, make)
+
+
+async def edit_quote(
+    db: AsyncSession, estimate_id: str, customer_id: str, lines: list[dict], *, by: str | None
+) -> None:
+    """Replace the quote's lines. A line naming a ``line_id`` keeps Books' own name, price and tax with the new quantity
+    and discount; a line without one is priced from its item. An expired quote is re-dated for its own validity."""
+    with writing(estimate_id):
+        detail = await _fresh(db, estimate_id)
+        if not editable_here(detail):
+            raise OrderActionRefused("quote_not_editable")
+        raws = {raw.get("line_item_id"): raw for raw in detail.get("line_items") or []}
+        kept: list[dict] = []
+        new: list[dict] = []
+        for entry in lines:
+            line_id = entry.get("line_id")
+            if line_id is None:
+                new.append(entry)
+                continue
+            if line_id not in raws or any(k.get("line_item_id") == line_id for k in kept):
+                raise OrderActionRefused("unknown_line")
+            raw = raws[line_id]
+            q = checked_quantity(entry.get("quantity"))
+            discount = _discount(entry.get("discount"))
+            if discount is not None and not discount[1] and discount[0] > q * _num(raw.get("rate")) + 1e-9:
+                raise OrderActionRefused("bad_discount")
+            kept.append(
+                {
+                    **{k: raw[k] for k in _KEPT_FIELDS if k in raw},
+                    "quantity": q,
+                    **({"discount": entry["discount"]} if discount else {}),
+                }
+            )
+        body_lines = kept + (await priced_lines(db, estimate_id, new) if new else [])
+        redate = None
+        if quote_state(detail, date.today()) == "expired":
+            redate = {"date": date.today().isoformat(), "expiry_date": _redated_expiry(detail).isoformat()}
+        sync.note_write(estimate_id)
+        with sync._busy_on_rate_limit(estimate_id):
+            await zoho_service.update_estimate_lines(
+                db,
+                estimate_id,
+                body_lines,
+                customer_id=customer_id if customer_id != detail.get("customer_id") else None,
+            )
+            logger.info("Order board write: quote=%s step=lines", estimate_id)
+            if redate is not None:
+                await zoho_service.update_estimate_fields(db, estimate_id, redate)
+                logger.info("Order board write: quote=%s step=redate", estimate_id)
+        await _settle(db, estimate_id, "quote.edited", by)
+
+
+async def decline_quote(db: AsyncSession, estimate_id: str, *, by: str | None) -> None:
+    with writing(estimate_id):
+        detail = await _fresh(db, estimate_id)
+        sync.note_write(estimate_id)
+        with sync._busy_on_rate_limit(estimate_id):
+            await zoho_service.advance_estimate_status(db, estimate_id, "declined", current=detail.get("status"))
+        logger.info("Order board write: quote=%s step=decline", estimate_id)
+        await _settle(db, estimate_id, "quote.declined", by)
+
+
+async def reopen_quote(db: AsyncSession, estimate_id: str, *, by: str | None) -> None:
+    with writing(estimate_id):
+        detail = await _fresh(db, estimate_id)
+        if detail.get("status") != "declined":
+            raise OrderActionRefused("not_declined")
+        sync.note_write(estimate_id)
+        with sync._busy_on_rate_limit(estimate_id):
+            await zoho_service.set_estimate_status(db, estimate_id, "sent")
+        logger.info("Order board write: quote=%s step=reopen", estimate_id)
+        await _settle(db, estimate_id, "quote.reopened", by)
+
+
+async def _fresh(db: AsyncSession, estimate_id: str) -> dict:
+    """Entry check of every quote write: a stored copy must exist (no Books call otherwise), and the estimate as Books
+    has it now must not be converted to an order or invoice. Returns that fresh estimate."""
+    if await sync.find_quote(db, estimate_id) is None:
+        raise QuoteNotStored(estimate_id)
+    if sync.zoho_busy():
+        raise sync.ZohoBusy(estimate_id)
+    with sync._busy_on_rate_limit(estimate_id):
+        detail = await zoho_service.get_estimate(db, estimate_id)
+    if is_converted(detail):
+        raise OrderActionRefused("quote_converted")
+    return detail
+
+
+def _redated_expiry(detail: dict) -> date:
+    """Today plus the quote's own validity (expiry minus date), 16 days when that is unknown or not positive."""
+    try:
+        days = (date.fromisoformat(detail["expiry_date"]) - date.fromisoformat(detail["date"])).days
+    except (KeyError, TypeError, ValueError):
+        days = 0
+    return date.today() + timedelta(days=days if days > 0 else _DEFAULT_VALIDITY_DAYS)
+
+
+async def _settle(db: AsyncSession, estimate_id: str, kind: str, by: str | None) -> None:
+    """After a Books write: re-read and store the quote, log the event, ping the open pages. The write stands even when
+    the re-read fails: the stored copy is then left pending for the next pass."""
+    sync.note_write(estimate_id)
+    try:
+        with sync._busy_on_rate_limit(estimate_id):
+            await sync.store_quote(db, await zoho_service.get_estimate(db, estimate_id))
+        await db.commit()
+    except Exception as e:
+        logger.warning("Order board: re-read after a write failed for quote %s (%s)", estimate_id, type(e).__name__)
+        with contextlib.suppress(Exception):
+            await db.rollback()
+            if (doc := await sync.find_quote(db, estimate_id)) is not None:
+                doc.pending = True
+                await db.commit()
+    await _log(db, estimate_id, kind, by)
+    await sync.announce_board_change(quotes=True)

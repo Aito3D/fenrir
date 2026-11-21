@@ -10,7 +10,7 @@ from backend.app.services.order_board_actions._common import (
     writing,
 )
 from backend.app.services.order_board_actions.cancel import cancel_order
-from backend.app.services.order_board_actions.create import create_counter_order
+from backend.app.services.order_board_actions.create import create_counter_order, once_per_ref, priced_lines
 from backend.app.services.order_board_actions.documents import (
     DocumentKind,
     apply_credit,
@@ -33,6 +33,13 @@ from backend.app.services.order_board_actions.line_edit import edit_lines, searc
 from backend.app.services.order_board_actions.parcel import create_parcel, picklist_content
 from backend.app.services.order_board_actions.parcel_edit import edit_parcel, package_content
 from backend.app.services.order_board_actions.picklist import create_picklist, picklist_preview
+from backend.app.services.order_board_actions.quotes import (
+    QuoteNotStored,
+    create_quote,
+    decline_quote,
+    edit_quote,
+    reopen_quote,
+)
 from backend.app.services.order_board_actions.stamps import stamp_contact, stamp_print
 
 __all__ = [
@@ -57,6 +64,13 @@ __all__ = [
     "handover_preview",
     "cancel_order",
     "create_counter_order",
+    "once_per_ref",
+    "priced_lines",
+    "QuoteNotStored",
+    "create_quote",
+    "edit_quote",
+    "decline_quote",
+    "reopen_quote",
     "search_items",
     "edit_lines",
     "package_content",

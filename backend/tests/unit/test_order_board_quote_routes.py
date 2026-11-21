@@ -1,5 +1,7 @@
 """The quote list route: who may read it and what shape it returns."""
 
+from uuid import uuid4
+
 import pytest
 
 from backend.app.services import order_board_sync
@@ -26,3 +28,33 @@ async def test_quotes_returns_rows_loading_ready(async_client, tokens, monkeypat
     monkeypatch.undo()
     r = await async_client.get("/api/v1/order-board/quotes", headers=tokens["read"])
     assert r.json() == {"rows": [], "loading": 0, "ready": False}
+
+
+_LINE = {"item_id": "A", "quantity": 1}
+_WRITES = [
+    ("post", "/api/v1/order-board/quotes", {"customer_id": "c1", "client_ref": str(uuid4()), "lines": [_LINE]}),
+    ("put", "/api/v1/order-board/quotes/e1", {"customer_id": "c1", "lines": [_LINE]}),
+    ("post", "/api/v1/order-board/quotes/e1/decline", None),
+    ("post", "/api/v1/order-board/quotes/e1/reopen", None),
+]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(("method", "url", "body"), _WRITES)
+async def test_quote_writes_need_orders_update(async_client, tokens, method, url, body):  # noqa: F811
+    r = await async_client.request(method, url, json=body, headers=tokens["read"])
+    assert r.status_code == 403
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(("method", "url", "body"), _WRITES[1:])
+async def test_a_write_on_an_unstored_quote_is_404(async_client, tokens, method, url, body):  # noqa: F811
+    r = await async_client.request(method, url, json=body, headers=tokens["both"])
+    assert (r.status_code, r.json()["detail"]) == (404, "Quote not found.")
+
+
+@pytest.mark.asyncio
+async def test_edit_with_201_lines_is_422(async_client, tokens):  # noqa: F811
+    body = {"customer_id": "c1", "lines": [{"item_id": f"i{n}", "quantity": 1} for n in range(201)]}
+    r = await async_client.put("/api/v1/order-board/quotes/e1", json=body, headers=tokens["both"])
+    assert r.status_code == 422
