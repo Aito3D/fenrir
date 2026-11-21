@@ -168,7 +168,8 @@ async def _check_month(db, month: str) -> None:
     await store.save_month_check(db, month, zoho_amount, await store.month_line_sum(db, month), _utcnow())
 
 
-def _num(v) -> float | None:
+def _optional_float(v) -> float | None:
+    # None for missing or unparsable; NaN/inf and bool pass, unlike sync_plan._strict_amount.
     try:
         return float(v) if v not in (None, "") else None
     except (TypeError, ValueError):
@@ -183,9 +184,9 @@ def _item_row(it: dict) -> dict:
         "brand": it.get("brand"),
         "nature": it.get("cf_nature_du_produit"),
         "item_type": it.get("item_type"),
-        "tax_percentage": _num(it.get("tax_percentage")),
-        "purchase_rate": _num(it.get("purchase_rate")),
-        "dealer_price": _num(it.get("cf_prix_dealer_usd_unformatted")),
+        "tax_percentage": _optional_float(it.get("tax_percentage")),
+        "purchase_rate": _optional_float(it.get("purchase_rate")),
+        "dealer_price": _optional_float(it.get("cf_prix_dealer_usd_unformatted")),
         "status": it.get("status"),
     }
 
@@ -195,8 +196,8 @@ def _payment_row(p: dict) -> dict:
         "payment_id": str(p["payment_id"]),
         "customer_id": str(p.get("customer_id") or ""),
         "date": p.get("date") or "",
-        "amount": _num(p.get("amount")) or 0.0,
-        "unapplied": _num(p.get("unused_amount")) or 0.0,
+        "amount": _optional_float(p.get("amount")) or 0.0,
+        "unapplied": _optional_float(p.get("unused_amount")) or 0.0,
         "last_modified_time": p.get("last_modified_time") or "",
     }
 
@@ -209,8 +210,8 @@ def _invoice_row(i: dict) -> dict:
         "customer_name": i.get("customer_name") or "",
         "date": i.get("date") or "",
         "due_date": i.get("due_date") or "",
-        "total": _num(i.get("total")) or 0.0,
-        "balance": _num(i.get("balance")) or 0.0,
+        "total": _optional_float(i.get("total")) or 0.0,
+        "balance": _optional_float(i.get("balance")) or 0.0,
     }
 
 
@@ -266,11 +267,11 @@ async def _refresh_cash(db) -> None:
             _step_retry[f"p:{payment_id}"] = time.monotonic() + STEP_RETRY_S
             continue
         applications = [
-            {"invoiceId": str(a.get("invoice_id") or ""), "amount": _num(a.get("amount_applied")) or 0.0}
+            {"invoiceId": str(a.get("invoice_id") or ""), "amount": _optional_float(a.get("amount_applied")) or 0.0}
             for a in p.get("invoices") or []
         ]
         await store.save_payment_applications(
-            db, payment_id, applications, _num(p.get("unused_amount")) or 0.0, _utcnow()
+            db, payment_id, applications, _optional_float(p.get("unused_amount")) or 0.0, _utcnow()
         )
     for invoice_id in invoice_ids[: SYNC.cash_detail_budget - len(payment_ids)]:
         try:

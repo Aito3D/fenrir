@@ -94,7 +94,7 @@ def count_legacy_days(days: list[DayRow], format: int) -> int:
     return sum(1 for d in days if d.format < format)
 
 
-def _amount(v: Any) -> tuple[float, bool]:
+def _strict_amount(v: Any) -> tuple[float, bool]:
     """(value, well-formed): a number or numeric string; anything else or non-finite reads as 0."""
     if v is None or isinstance(v, bool):
         return 0.0, False
@@ -117,8 +117,8 @@ def merge_day_rows(groups: list[dict]) -> tuple[list[dict], int]:
             if not item_id:
                 malformed += 1
                 continue
-            quantity, quantity_ok = _amount(r.get("quantity_sold"))
-            amount, amount_ok = _amount(r.get("amount"))
+            quantity, quantity_ok = _strict_amount(r.get("quantity_sold"))
+            amount, amount_ok = _strict_amount(r.get("amount"))
             name = r.get("item_name")
             if not (quantity_ok and amount_ok) or name is None:
                 malformed += 1

@@ -54,7 +54,8 @@ def customer_share(kind: str | None) -> float | None:
     return 1.0 if kind == ONLY_3D else 0.0 if kind == NO_3D else None
 
 
-def _amount(v) -> float:
+def _lenient_float(v) -> float:
+    # Lenient on purpose: NaN/inf pass and bool counts (True is 1), unlike sync_plan._strict_amount.
     try:
         return float(v or 0)
     except (TypeError, ValueError):
@@ -66,7 +67,7 @@ def invoice_share(line_items: list[dict], items: dict[str, ScopeItem], decisions
     decision_by_id = {d.item_id: d for d in decisions}
     total = in_scope = 0.0
     for li in line_items:
-        amount = _amount(li.get("item_total"))
+        amount = _lenient_float(li.get("item_total"))
         total += amount
         item_id = li.get("item_id") or ""
         if item_id and classify_revenue_item(items.get(item_id), decision_by_id.get(item_id)).included:

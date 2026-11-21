@@ -25,8 +25,12 @@ def _parse_or_raise(day: str) -> date:
     return d
 
 
+def _org_day_of(aware: datetime) -> str:
+    return aware.astimezone(ZoneInfo(ORG_TIME_ZONE)).date().isoformat()
+
+
 def org_today(now: datetime | None = None) -> str:
-    return (now or datetime.now(timezone.utc)).astimezone(ZoneInfo(ORG_TIME_ZONE)).date().isoformat()
+    return _org_day_of(now or datetime.now(timezone.utc))
 
 
 def day_to_utc(day: str) -> int:
