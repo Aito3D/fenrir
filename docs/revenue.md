@@ -232,8 +232,8 @@ cached history, identified customers only (no customer id and the walk-in accoun
 ## Quote funnel
 
 « Devis envoyés, 12 derniers mois » beside the order book: `GET /api/v1/revenue/funnel`, from the Aito board (local
-database). Cards whose quote was sent (`quote_sent_at`) in the last 365 days, trashed cards included and read by their
-status before the trash.
+database). Cards whose quote was sent (`quote_sent_at`) in the last 365 days, trashed cards included: binning a
+card declines its quote in Books, so it counts as declined.
 
 - `accepted` (accepted or invoiced), `declined`, `expired`, `awaiting` (sent or viewed); `sent` is the four together.
 - `conversion`: accepted ÷ decided (accepted + declined + expired), in count and in value, with `decided` so a rate on

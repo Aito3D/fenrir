@@ -92,9 +92,11 @@ def test_funnel_counts_each_outcome_and_converts_over_decided_quotes():
     assert f["conversion"] == {"count": 60.0, "value": 60.0, "decided": 5}
 
 
-def test_funnel_reads_a_trashed_card_by_its_status_before_the_trash():
-    f = pipeline.build_funnel([quote(None, 700, deleted=True, before_trash="declined")], NOW)
+def test_funnel_counts_a_trashed_card_as_declined_whatever_it_was_before():
+    # Trashing a card declines its quote in Books; the status before the trash only serves a restore.
+    f = pipeline.build_funnel([quote("declined", 700, deleted=True, before_trash="accepted")], NOW)
     assert f["declined"] == {"count": 1, "total": 700}
+    assert f["accepted"]["count"] == 0
 
 
 def test_funnel_counts_an_invoiced_quote_as_accepted_and_a_viewed_one_as_awaiting():

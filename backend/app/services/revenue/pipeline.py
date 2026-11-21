@@ -81,11 +81,10 @@ DECIDED = ("accepted", "declined", "expired")
 
 
 async def read_funnel_cards(conn: AsyncConnection) -> list:
-    """Every card a quote was sent from, trash included: a declined quote is often binned."""
+    """Every card a quote was sent from, trash included: binning a card declines its quote in Books, and the card's
+    quote_status says so (quote_status_before_trash only serves a restore)."""
     cols = (
-        AitoProject.status,
         AitoProject.quote_status,
-        AitoProject.quote_status_before_trash,
         AitoProject.quote_total,
         AitoProject.quote_sent_at,
         AitoProject.quote_accepted_at,
@@ -107,10 +106,7 @@ def build_funnel(cards: list, now: datetime) -> dict:
     for c in cards:
         if c.quote_sent_at is None or c.quote_sent_at < since:
             continue
-        status = (
-            c.quote_status_before_trash if c.status == "deleted" and c.quote_status_before_trash else c.quote_status
-        )
-        outcome = _OUTCOME.get(status or "")
+        outcome = _OUTCOME.get(c.quote_status or "")
         if outcome is None:
             continue
         for key in ("sent", outcome):
