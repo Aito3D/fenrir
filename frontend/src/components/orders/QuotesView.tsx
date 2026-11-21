@@ -1,13 +1,17 @@
 import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useQuery } from '@tanstack/react-query';
-import { FileText, Loader2, Search, SearchX } from 'lucide-react';
+import { Check, FileText, Loader2, Mail, RotateCcw, Search, SearchX } from 'lucide-react';
 import { Button } from '../Button';
 import { Skeleton } from '../Skeleton';
+import { prefersReducedMotion } from '../../utils/motion';
+import { OrderDocumentEmailModal } from './OrderDocumentEmailModal';
 import { QuoteCard } from './QuoteCard';
 import { chipOf, filterQuotes, quotesQuery } from './quotes';
 import type { QuoteChip } from './quotes';
-import type { QuoteRow } from '../../api/client';
+import { useQuoteActions, useQuoteBusy } from './useQuoteActions';
+import type { QuoteAction } from './useQuoteActions';
+import type { QuoteOrderResult, QuoteRow } from '../../api/client';
 
 const CHIPS: QuoteChip[] = ['current', 'expired', 'declined'];
 const CHIP_LABEL: Record<QuoteChip, string> = {
@@ -20,17 +24,23 @@ const EMPTY: Record<QuoteChip, string> = {
   expired: 'orders.quotes.empty.expired',
   declined: 'orders.quotes.empty.declined',
 };
+const PRIMARY = '!bg-violet-600 hover:!bg-violet-500 focus:!ring-violet-500';
 const chipCls = (on: boolean) =>
   `btn-press shrink-0 rounded-full border px-3 py-1.5 text-xs ${on ? 'border-violet-500 bg-violet-500/15 text-white' : 'border-bambu-dark-tertiary bg-bambu-dark-secondary text-bambu-gray hover:text-white'}`;
 
 /** The Devis side of the Order Board: one search, three chips (current, expired, declined), the quotes.
  *  `openId` is the opened quote (the page keeps it in the URL); a quote opened from a link brings its chip up,
- *  and so does one whose chip changed (an expired quote re-dated by an edit). `onEdit` opens the quote dialog. */
-export function QuotesView({ coreOnly, openId, onToggle, onEdit }: {
+ *  and so does one whose chip changed (an expired quote re-dated by an edit). `onEdit` opens the quote dialog;
+ *  `onOrdered` receives the order an Accept or Create order made. */
+export function QuotesView({ coreOnly, openId, onToggle, onEdit, onOrdered }: {
   coreOnly: boolean; openId: string | null; onToggle: (id: string) => void; onEdit?: (row: QuoteRow) => void;
+  onOrdered?: (result: QuoteOrderResult, id: string) => void;
 }) {
   const { t } = useTranslation();
   const { data, isError, refetch } = useQuery(quotesQuery);
+  const { canUpdate, act } = useQuoteActions(onOrdered);
+  const busy = useQuoteBusy(openId);
+  const [emailing, setEmailing] = useState<string | null>(null);
   const [chip, setChip] = useState<QuoteChip>('current');
   const [text, setText] = useState('');
   const rows = data?.ready ? data.rows : [];
@@ -41,6 +51,18 @@ export function QuotesView({ coreOnly, openId, onToggle, onEdit }: {
     followed.current = `${open.id}:${chipOf(open)}`;
     setChip(chipOf(open));
   }, [open]);
+  // A quote opened from a link is brought into view once its chip shows it; one opened by a click only if it slid away.
+  const clicked = useRef<string | null>(null);
+  const scrolled = useRef<string | null>(null);
+  useEffect(() => {
+    if (!openId) scrolled.current = null;
+    if (!open || scrolled.current === open.id || chipOf(open) !== chip) return;
+    scrolled.current = open.id;
+    document.getElementById(`quote-${open.id}`)?.scrollIntoView?.({
+      block: clicked.current === open.id ? 'nearest' : 'start',
+      behavior: prefersReducedMotion() ? 'auto' : 'smooth',
+    });
+  });
   const counts = Object.fromEntries(CHIPS.map(c => [c, filterQuotes(rows, { chip: c, text, coreOnly }).length])) as Record<QuoteChip, number>;
   const listed = filterQuotes(rows, { chip, text, coreOnly });
   // The opened quote stays on screen even when "3D only" or the search would hide it.
@@ -67,7 +89,42 @@ export function QuotesView({ coreOnly, openId, onToggle, onEdit }: {
       </div>
     );
   } else {
-    list = listed.map(r => <QuoteCard key={r.id} row={r} open={r.id === openId} onToggle={() => onToggle(r.id)} onEdit={onEdit && (() => onEdit(r))} />);
+    const run = (r: QuoteRow, action: QuoteAction) => act.mutate({ id: r.id, action });
+    const btn = (r: QuoteRow, action: QuoteAction, label: string, primary = false) => (
+      <Button key={action} size="sm" variant={primary ? 'primary' : 'secondary'} disabled={busy} onClick={() => run(r, action)}
+        className={primary ? `ml-auto ${PRIMARY}` : action === 'decline' ? '!text-red-600 dark:!text-red-300' : ''}>
+        {action === 'accept' && <Check aria-hidden="true" className="h-4 w-4" />}
+        {action === 'reopen' && <RotateCcw aria-hidden="true" className="h-4 w-4" />}
+        {label}
+      </Button>
+    );
+    // Draft, sent, expired: email, refuse, accept. Accepted: create its order (Books reuses a draft one), refuse. Declined: reopen.
+    const footer = (r: QuoteRow) => r.state === 'declined' ? btn(r, 'reopen', t('orders.quotes.reopen')) : (
+      <>
+        {r.state !== 'accepted' && (
+          <Button size="sm" variant="secondary" disabled={busy} onClick={() => setEmailing(r.id)}>
+            <Mail aria-hidden="true" className="h-4 w-4" />
+            {t('orders.quotes.send')}
+          </Button>
+        )}
+        {btn(r, 'decline', t('orders.quotes.state.declined'))}
+        {r.state === 'accepted' ? btn(r, 'order', t('orders.quotes.createOrder'), true) : btn(r, 'accept', t('orders.quotes.state.accepted'), true)}
+      </>
+    );
+    list = listed.map(r => (
+      <QuoteCard
+        key={r.id}
+        row={r}
+        open={r.id === openId}
+        onToggle={() => {
+          clicked.current = r.id;
+          onToggle(r.id);
+        }}
+        onEdit={onEdit && (() => onEdit(r))}
+      >
+        {canUpdate && r.id === openId ? footer(r) : null}
+      </QuoteCard>
+    ));
   }
 
   return (
@@ -99,6 +156,7 @@ export function QuotesView({ coreOnly, openId, onToggle, onEdit }: {
         </div>
       )}
       <div data-testid="quotes-list" className="space-y-2">{list}</div>
+      {emailing && <OrderDocumentEmailModal quoteId={emailing} onClose={() => setEmailing(null)} />}
     </div>
   );
 }

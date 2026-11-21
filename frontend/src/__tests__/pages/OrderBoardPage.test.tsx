@@ -1239,4 +1239,95 @@ describe('OrderBoardPage Devis side', () => {
     expect(screen.queryByRole('dialog', { name: 'New quote' })).not.toBeInTheDocument();
     expect(await screen.findByRole('button', { name: /DEV-00500/, expanded: true })).toBeInTheDocument();
   });
+
+  it('a quote opened by a link is scrolled into view', async () => {
+    const scroll = vi.fn();
+    Element.prototype.scrollIntoView = scroll;
+    serve(board());
+    serveQuotes(QUOTES);
+    server.use(http.get('/api/v1/order-board/quotes/:id/events', () => HttpResponse.json({ events: [], has_more: false })));
+    window.history.replaceState({}, '', '/orders?view=quotes&quote=e4');
+    render(<OrderBoardPage />);
+    await screen.findByText('Lycée Vauban');
+    await waitFor(() => expect(scroll).toHaveBeenCalled());
+    expect(scroll.mock.contexts[0]).toBe(document.getElementById('quote-e4'));
+  });
+
+  describe('accepting a quote', () => {
+    const accepted = { rows: [quote({ state: 'accepted' }), ...QUOTES.slice(1)], loading: 0, ready: true };
+    const NEW = row({ id: 'so9', number: 'SO-00232', customer: 'Nautic Service', status: 'to_order' });
+    const accept = () => {
+      Element.prototype.scrollIntoView = vi.fn();
+      serve(board());
+      serveQuotes(QUOTES);
+      server.use(
+        http.get('/api/v1/order-board/quotes/:id/events', () => HttpResponse.json({ events: [], has_more: false })),
+        http.get('/api/v1/order-board/orders/:id/events', () => HttpResponse.json({ events: [], has_more: false })),
+        http.post('/api/v1/order-board/quotes/e1/accept', () =>
+          HttpResponse.json({ quotes: accepted, board: board({ rows: [NEW, ...ROWS] }), row: NEW, salesorder_id: 'so9' })),
+      );
+      window.history.replaceState({}, '', '/orders?view=quotes&quote=e1');
+      render(<OrderBoardPage />);
+    };
+    const notice = () => screen.findByTestId('quote-accepted');
+
+    it('Accepted opens the new order on the Commandes side with the notice naming both documents', async () => {
+      const user = userEvent.setup();
+      accept();
+      await user.click(within(await screen.findByTestId('quote-actions')).getByRole('button', { name: 'Accepted' }));
+      expect(await notice()).toHaveTextContent('Quote DEV-00412 accepted — order SO-00232 created');
+      expect(window.location.search).toContain('order=so9');
+      expect(window.location.search).not.toContain('view=');
+      expect(window.location.search).not.toContain('quote=');
+      expect(await screen.findByRole('button', { name: /SO-00232/, expanded: true })).toBeInTheDocument();
+    });
+
+    it('Undo calls undo-accept with the order id and returns to the quote, opened', async () => {
+      const user = userEvent.setup();
+      accept();
+      const undone: unknown[] = [];
+      server.use(http.post('/api/v1/order-board/quotes/e1/undo-accept', async ({ request }) => {
+        undone.push(await request.json());
+        return HttpResponse.json({ quotes: { rows: QUOTES, loading: 0, ready: true }, board: board() });
+      }));
+      await user.click(within(await screen.findByTestId('quote-actions')).getByRole('button', { name: 'Accepted' }));
+      await user.click(within(await notice()).getByRole('button', { name: 'Undo' }));
+      await waitFor(() => expect(window.location.search).toContain('quote=e1'));
+      expect(undone).toEqual([{ salesorder_id: 'so9' }]);
+      expect(window.location.search).toContain('view=quotes');
+      expect(window.location.search).not.toContain('order=');
+      expect(screen.queryByTestId('quote-accepted')).not.toBeInTheDocument();
+      expect(await screen.findByRole('button', { name: /DEV-00412/, expanded: true })).toHaveTextContent('Sent');
+    });
+
+    it('an undo refused as too late says so and drops the Undo button', async () => {
+      const user = userEvent.setup();
+      accept();
+      server.use(http.post('/api/v1/order-board/quotes/e1/undo-accept', () => HttpResponse.json({ detail: 'undo_too_late' }, { status: 400 })));
+      await user.click(within(await screen.findByTestId('quote-actions')).getByRole('button', { name: 'Accepted' }));
+      await user.click(within(await notice()).getByRole('button', { name: 'Undo' }));
+      expect(await within(await notice()).findByText(/too late to undo/)).toBeInTheDocument();
+      expect(within(await notice()).queryByRole('button', { name: 'Undo' })).not.toBeInTheDocument();
+      expect(window.location.search).toContain('order=so9');
+    });
+
+    it('the notice goes when the viewer switches to the quotes', async () => {
+      const user = userEvent.setup();
+      accept();
+      await user.click(within(await screen.findByTestId('quote-actions')).getByRole('button', { name: 'Accepted' }));
+      await notice();
+      await user.click(screen.getByRole('button', { name: /^Quotes/ }));
+      await user.click(screen.getByRole('button', { name: 'Orders' }));
+      await screen.findByText('SO-00412');
+      expect(screen.queryByTestId('quote-accepted')).not.toBeInTheDocument();
+    });
+
+    it('the notice goes when dismissed', async () => {
+      const user = userEvent.setup();
+      accept();
+      await user.click(within(await screen.findByTestId('quote-actions')).getByRole('button', { name: 'Accepted' }));
+      await user.click(within(await notice()).getByRole('button', { name: 'Close' }));
+      expect(screen.queryByTestId('quote-accepted')).not.toBeInTheDocument();
+    });
+  });
 });

@@ -2,11 +2,11 @@ import { useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSearchParams } from 'react-router-dom';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useIsMutating, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { AlertTriangle, Box, Loader2, PackageCheck, Plug, Plus, PowerOff, Printer, RefreshCw, Search, SearchX, SlidersHorizontal } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { api } from '../api/client';
-import type { OrderBoardResponse, OrderBoardRow, OrderEditResult, QuoteRow } from '../api/client';
+import type { OrderBoardResponse, OrderBoardRow, OrderEditResult, QuoteOrderResult, QuoteRow } from '../api/client';
 import { Button } from '../components/Button';
 import { Skeleton } from '../components/Skeleton';
 import { Sheet } from '../components/mobile/Sheet';
@@ -17,6 +17,8 @@ import type { QuoteSaved } from '../components/orders/NewOrderDraftRow';
 import { OrderCard } from '../components/orders/OrderCard';
 import { OrderMobileFilters } from '../components/orders/OrderMobileFilters';
 import { OrderStatsStrip } from '../components/orders/OrderStatsStrip';
+import { QuoteAcceptedNotice } from '../components/orders/QuoteAcceptedNotice';
+import type { AcceptedQuote } from '../components/orders/QuoteAcceptedNotice';
 import { QuotesView } from '../components/orders/QuotesView';
 import { filterQuotes, quotesQuery } from '../components/orders/quotes';
 import {
@@ -44,6 +46,7 @@ import {
 } from '../components/orders/orderBoard';
 import type { FollowKey, PayFilter, StatusFilter } from '../components/orders/orderBoard';
 import { useOrderFilters } from '../components/orders/useOrderFilters';
+import { isQuoteAction } from '../components/orders/useQuoteActions';
 import { STATUSES, STATUS_META, TONE } from '../components/orders/orderStatus';
 import type { Tone } from '../components/orders/orderStatus';
 import { useAuth } from '../contexts/AuthContext';
@@ -305,6 +308,57 @@ export function OrderBoardPage() {
   };
   const syncing = !!data && (data.sync.running || data.sync.pending > 0);
 
+  // The quote just accepted and its order: page state only, shown on the Commandes side until the next order action,
+  // a trip to the Devis side, its own undo, or dismissed.
+  const [accepted, setAccepted] = useState<AcceptedQuote | null>(null);
+  const notice = quotesView ? null : accepted;
+  const noticeSeen = useRef(false);
+  useEffect(() => {
+    if (notice) noticeSeen.current = true;
+    else if (noticeSeen.current) {
+      noticeSeen.current = false;
+      setAccepted(null);
+    }
+  }, [notice]);
+  const orderWrites = useIsMutating({ predicate: m => !isQuoteAction(m.options.mutationKey) });
+  useEffect(() => {
+    if (orderWrites) setAccepted(null);
+  }, [orderWrites]);
+  // The accept answer can land after the viewer left the page: it must not pull them back to it.
+  const mounted = useRef(true);
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
+  // The new order opens on the Commandes side through `?order=` (the deep link shows and scrolls to it); Back returns to the quote.
+  const onOrdered = (r: QuoteOrderResult, quoteId: string) => {
+    if (!mounted.current) return;
+    setAccepted({
+      quoteId,
+      quote: r.quotes.rows.find(q => q.id === quoteId)?.number ?? '',
+      salesorderId: r.salesorder_id,
+      order: (r.row ?? r.board.rows.find(o => o.id === r.salesorder_id))?.number ?? '',
+    });
+    setSearchParams(prev => {
+      const next = new URLSearchParams(prev);
+      for (const key of ['view', 'quote', 'q', 'status', 'pay']) next.delete(key);
+      next.set('order', r.salesorder_id);
+      return next;
+    });
+  };
+  const onUndone = () => {
+    setAccepted(null);
+    setSearchParams(prev => {
+      const next = new URLSearchParams(prev);
+      next.delete('order');
+      next.set('view', 'quotes');
+      if (accepted) next.set('quote', accepted.quoteId);
+      return next;
+    }, { replace: true });
+  };
+
   const tile = (id: StatusFilter, label: string, hint: string, tone: Tone) => (
     <button
       key={id}
@@ -516,6 +570,7 @@ export function OrderBoardPage() {
           openId={quoteId}
           onToggle={toggleQuote}
           onEdit={hasPermission('orders:update') ? quote => setDrafting({ mode: 'quote', quote }) : undefined}
+          onOrdered={onOrdered}
         />
       )}
       {phone && !quotesView && (
@@ -630,6 +685,7 @@ export function OrderBoardPage() {
         </div>
       )}
 
+      {notice && <QuoteAcceptedNotice accepted={notice} onUndone={onUndone} onDismiss={() => setAccepted(null)} />}
       {!quotesView && <div data-testid="orders-list" className={`space-y-2 ${ready && entering ? 'orders-rows-enter stagger-children' : ''}`}>{list}</div>}
       {!quotesView && ready && listed.length > shown && (
         <button

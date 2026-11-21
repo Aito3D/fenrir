@@ -5,25 +5,32 @@ import type { OrderDocumentKind } from '../../api/client';
 import { useToast } from '../../contexts/ToastContext';
 import { SendEmailDialog } from '../aito/SendEmailDialog';
 import { useOrderActions } from './useOrderActions';
+import { useQuoteActions } from './useQuoteActions';
 
-/** Email the order's quote or a deposit invoice through Zoho Books: the Aito card's dialog and wording. */
-export function OrderDocumentEmailModal({ orderId, kind, docId, onClose }: { orderId: string; kind: OrderDocumentKind; docId: string; onClose: () => void }) {
+type Target = { orderId: string; kind: OrderDocumentKind; docId: string; quoteId?: never } | { quoteId: string; orderId?: never; kind?: never; docId?: never };
+
+/** Email the order's quote or a deposit invoice through Zoho Books: the Aito card's dialog and wording.
+ *  Given `quoteId` instead, it emails a quote of the Devis side (whose answer is the fresh quotes list). */
+export function OrderDocumentEmailModal({ onClose, ...target }: Target & { onClose: () => void }) {
   const { t } = useTranslation();
   const { showToast } = useToast();
   const { emailDocument } = useOrderActions();
+  const { email: emailQuote } = useQuoteActions();
+  const { orderId, kind, docId, quoteId } = target;
   // Books' current truth, never cached: an address Books has since removed would be refused by the send.
   const content = useQuery({
-    queryKey: ['order-document-email', orderId, kind, docId],
-    queryFn: () => api.getOrderDocumentEmail(orderId, kind, docId),
+    queryKey: quoteId ? ['quote-email', quoteId] : ['order-document-email', orderId, kind, docId],
+    queryFn: () => (quoteId ? api.getQuoteEmail(quoteId) : api.getOrderDocumentEmail(orderId!, kind!, docId!)),
     staleTime: 0,
     gcTime: 0,
     retry: false,
   });
-  const quote = kind === 'quote';
+  const quote = !!quoteId || kind === 'quote';
 
   const send = async (to: string) => {
     try {
-      await emailDocument.mutateAsync({ id: orderId, kind, docId, to });
+      if (quoteId) await emailQuote.mutateAsync({ id: quoteId, to });
+      else await emailDocument.mutateAsync({ id: orderId!, kind: kind!, docId: docId!, to });
     } catch (e) {
       showToast(e instanceof ApiError && e.code === 'recipient_recently_edited' ? t('aito.emailRecipientRecentlyEdited') : t(quote ? 'aito.quoteEmailFailed' : 'aito.retainerEmailFailed'), 'error');
       throw e;
