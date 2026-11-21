@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen } from '@testing-library/react';
 import { RevenueCash } from '../../../components/revenue/RevenueCash';
 import type { CashResponse, FunnelResponse, PipelineResponse } from '../../../components/revenue/lib/types';
 
