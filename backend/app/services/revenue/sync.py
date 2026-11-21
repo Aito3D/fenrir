@@ -72,6 +72,7 @@ _day_failures: dict[str, DayFailure] = {}
 _step_retry: dict[str, float] = {}
 _cash_at = float("-inf")
 _cash_error: str | None = None
+_low_seen: tuple[int, float] | None = None  # (daily_remaining below the floor, monotonic time first seen)
 
 
 class _DayTooLarge(ZohoUpstreamError):
@@ -91,8 +92,17 @@ def _utcnow() -> datetime:
 
 
 def _budget_low() -> bool:
+    """Below the floor, until that reading is `budget_probe_after_s` old: Books' quota may have reset since, and only
+    a reply refreshes `daily_remaining`, so a call is let through (any reply that changes the value restarts the wait)."""
+    global _low_seen
     remaining = zoho_service.daily_remaining
-    return remaining is not None and remaining < SYNC.daily_budget_floor
+    if remaining is None or remaining >= SYNC.daily_budget_floor:
+        _low_seen = None
+        return False
+    now = time.monotonic()
+    if _low_seen is None or _low_seen[0] != remaining:
+        _low_seen = (remaining, now)
+    return now - _low_seen[1] < SYNC.budget_probe_after_s
 
 
 def _public_error(exc: BaseException) -> str:
@@ -559,10 +569,11 @@ def reset_revenue_sync_state_for_tests() -> None:
         _loop_task, \
         _lane, \
         _cash_at, \
-        _cash_error
+        _cash_error, \
+        _low_seen
     if _loop_task is not None and not _loop_task.done():
         _loop_task.cancel()
-    _inflight = _last_batch_at = _last_error = _loop_task = _cash_error = None
+    _inflight = _last_batch_at = _last_error = _loop_task = _cash_error = _low_seen = None
     _last_read_at = _last_call_at = _cash_at = float("-inf")
     _lane = asyncio.Lock()
     _day_failures.clear()

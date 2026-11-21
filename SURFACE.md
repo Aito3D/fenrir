@@ -377,7 +377,7 @@ for m in sorted(x.name for x in pkgutil.iter_modules(pkg.__path__)):
             print(m + \".\" + n + \": \" + \", \".join(f.name + \": \" + str(f.type) for f in dataclasses.fields(c)))
 " 2>/dev/null```
 ```
-config.SyncConfig: day_batch_size: <class 'int'>, batch_pause_s: <class 'int'>, idle_interval_s: <class 'int'>, error_backoff_s: <class 'int'>, idle_after_s: <class 'int'>, live_ttl_s: <class 'int'>, recent_days: <class 'int'>, recent_ttl_s: <class 'int'>, customer_lookups: <class 'int'>, items_ttl_s: <class 'int'>, min_call_gap_s: <class 'float'>, call_ceiling: <class 'int'>, daily_budget_floor: <class 'int'>, cash_ttl_s: <class 'int'>, cash_detail_budget: <class 'int'>
+config.SyncConfig: day_batch_size: <class 'int'>, batch_pause_s: <class 'int'>, idle_interval_s: <class 'int'>, error_backoff_s: <class 'int'>, idle_after_s: <class 'int'>, live_ttl_s: <class 'int'>, recent_days: <class 'int'>, recent_ttl_s: <class 'int'>, customer_lookups: <class 'int'>, items_ttl_s: <class 'int'>, min_call_gap_s: <class 'float'>, call_ceiling: <class 'int'>, daily_budget_floor: <class 'int'>, budget_probe_after_s: <class 'int'>, cash_ttl_s: <class 'int'>, cash_detail_budget: <class 'int'>
 customers.RevenueCustomerFacts: customer_id: <class 'str'>, name: str | None, company_name: str | None, sub_type: str | None
 memo.CallerFlags: customers: bool, margin: bool
 production.MachineRate: watts: <class 'float'>, wear_per_hour: <class 'float'>

@@ -1175,3 +1175,25 @@ async def test_a_5xx_invoice_detail_is_parked_while_the_next_one_is_read(zoho, e
     zoho.cash_calls.clear()
     await refresh_cash()
     assert "bad" not in [c[1] for c in zoho.cash_calls if c[0] == "invoice"]
+
+
+def test_a_low_budget_reading_is_not_trusted_after_the_probe_age_and_a_changed_reply_restarts_the_wait(monkeypatch):
+    clock = [1000.0]
+    monkeypatch.setattr(sync.time, "monotonic", lambda: clock[0])
+    low = SYNC.daily_budget_floor - 1
+    monkeypatch.setattr(zoho_service, "daily_remaining", low)
+    assert sync._budget_low() is True
+    clock[0] += SYNC.budget_probe_after_s - 1
+    assert sync._budget_low() is True
+    clock[0] += 1
+    assert sync._budget_low() is False  # the reading is stale: one call may probe the reset
+    monkeypatch.setattr(zoho_service, "daily_remaining", low - 1)  # the reply still says low: wait again
+    assert sync._budget_low() is True
+    clock[0] += SYNC.budget_probe_after_s
+    assert sync._budget_low() is False
+    monkeypatch.setattr(zoho_service, "daily_remaining", SYNC.daily_budget_floor + 1000)  # the quota reset
+    assert sync._budget_low() is False
+    monkeypatch.setattr(zoho_service, "daily_remaining", low)
+    assert sync._budget_low() is True  # a fresh low reading starts its own wait
+    sync.reset_revenue_sync_state_for_tests()
+    assert sync._low_seen is None
