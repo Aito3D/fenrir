@@ -1467,7 +1467,7 @@
     },
     "to": "2026-03-11"
    },
-   "etag": "W/\"b63110f67b47ca9ef1f1ecca\"",
+   "etag": "W/\"0a65a0849e0a91ec06cd61a5\"",
    "request": null,
    "status": 200,
    "step": "GET /"
@@ -2373,7 +2373,7 @@
     },
     "to": "2026-03-11"
    },
-   "etag": "W/\"800967710b5134c20b747a08\"",
+   "etag": "W/\"1ef1b1bad35751b17f7a2ef8\"",
    "request": null,
    "status": 200,
    "step": "GET ?granularity=month&from=2025-01-01&to=2026-03-31"
@@ -3163,7 +3163,7 @@
     },
     "to": "2026-03-11"
    },
-   "etag": "W/\"b4a194d506c6c4bc16b5463b\"",
+   "etag": "W/\"15902618f25a5647322d2ec5\"",
    "request": null,
    "status": 200,
    "step": "GET ?granularity=day&from=2026-02-25&to=2026-03-11"
@@ -3596,7 +3596,7 @@
     },
     "to": "2026-03-11"
    },
-   "etag": "W/\"d705e5a1137f69a674193e2a\"",
+   "etag": "W/\"04896233579d0a59a94d395e\"",
    "request": null,
    "status": 200,
    "step": "GET ?granularity=week&from=2026-01-26&to=2026-03-15"
@@ -3853,7 +3853,7 @@
     },
     "to": "2026-03-11"
    },
-   "etag": "W/\"adad43dbbb950882fd0aa37d\"",
+   "etag": "W/\"e7e3bc1ff805615d216baa49\"",
    "request": null,
    "status": 200,
    "step": "GET ?granularity=year"
@@ -4109,7 +4109,7 @@
     },
     "to": "2026-03-11"
    },
-   "etag": "W/\"96478cdd5f01e5803f372d46\"",
+   "etag": "W/\"fc1bdac7ae3b540670dde955\"",
    "request": null,
    "status": 200,
    "step": "GET ?preset=this-year"
@@ -4901,7 +4901,7 @@
     },
     "to": "2026-03-11"
    },
-   "etag": "W/\"e1724499f6b1a26b79335170\"",
+   "etag": "W/\"c5261b99686aff4c2f1da358\"",
    "request": null,
    "status": 200,
    "step": "GET ?preset=last-12-months"
@@ -6371,7 +6371,7 @@
     },
     "to": "2026-03-11"
    },
-   "etag": "W/\"bfac91b92f8ea2f3f1af70c3\"",
+   "etag": "W/\"6f6b8c259b6258ffbbaec4b0\"",
    "request": null,
    "status": 200,
    "step": "GET ?preset=all"
@@ -7256,7 +7256,7 @@
     },
     "to": "2026-03-11"
    },
-   "etag": "W/\"b63ab111b033c29095425158\"",
+   "etag": "W/\"29fa07f6710a1e61d69e230f\"",
    "request": null,
    "status": 200,
    "step": "GET ?granularity=month&from=2025-01-01&to=2026-03-31&items=pla,print"
@@ -8141,7 +8141,7 @@
     },
     "to": "2026-03-11"
    },
-   "etag": "W/\"d4e22d9e70c72910511d84d2\"",
+   "etag": "W/\"92e58185e837be59a8227cd9\"",
    "request": null,
    "status": 200,
    "step": "GET ?granularity=month&from=2025-01-01&to=2026-03-31&brand=SUNLU&brand=Aito3D"
@@ -8864,7 +8864,7 @@
     },
     "to": "2026-03-11"
    },
-   "etag": "W/\"5bb51c11a09e801893fe95f7\"",
+   "etag": "W/\"8a8e1b010bce0f527338f153\"",
    "request": null,
    "status": 200,
    "step": "GET ?granularity=month&from=2025-01-01&to=2026-03-31&kind=services"
@@ -9755,7 +9755,7 @@
     },
     "to": "2026-03-11"
    },
-   "etag": "W/\"3f0dfbd8a47bc090a7318f03\"",
+   "etag": "W/\"ceb363cb926acc58b2bbace3\"",
    "request": null,
    "status": 200,
    "step": "GET ?granularity=month&from=2025-01-01&to=2026-03-31&kind=goods"
@@ -10582,7 +10582,7 @@
     },
     "to": "2026-03-11"
    },
-   "etag": "W/\"41840e18a40ed93a02b90da4\"",
+   "etag": "W/\"ef5d27e0b1b25f30cbeb69a5\"",
    "request": null,
    "status": 200,
    "step": "GET ?granularity=month&from=2025-01-01&to=2026-03-31&segment=pro"
@@ -11337,7 +11337,7 @@
     },
     "to": "2026-03-11"
    },
-   "etag": "W/\"74f80bb915cd0edd2a027f53\"",
+   "etag": "W/\"fc2f28d006599ba9aaa6a8fa\"",
    "request": null,
    "status": 200,
    "step": "GET ?granularity=month&from=2025-01-01&to=2026-03-31&segment=passage"
@@ -11446,7 +11446,7 @@
     ],
     "to": "2026-03-11"
    },
-   "etag": "W/\"ac9de78499ca4e7391678ba4\"",
+   "etag": "W/\"4e2c18e957205d05e7d99d40\"",
    "request": null,
    "status": 200,
    "step": "GET /items?from=2026-01-01&to=2026-03-11"
@@ -11487,7 +11487,7 @@
     ],
     "to": "2026-03-31"
    },
-   "etag": "W/\"84a853d4b1ca533b66273176\"",
+   "etag": "W/\"3ec0717c36e98949c9fa89c5\"",
    "request": null,
    "status": 200,
    "step": "GET /items?from=2026-03-01&to=2026-03-31&kind=goods"
@@ -11559,7 +11559,7 @@
      }
     ]
    },
-   "etag": "W/\"b40e0415920e97e22ae3334e\"",
+   "etag": "W/\"00fdf50b6c402441d14a5fb1\"",
    "request": null,
    "status": 200,
    "step": "GET /products"
@@ -11594,7 +11594,7 @@
      }
     ]
    },
-   "etag": "W/\"3ec123c4bc956aa938e3fa09\"",
+   "etag": "W/\"2dfeb4fc7bd525aef7cdeec6\"",
    "request": null,
    "status": 200,
    "step": "GET /review"
@@ -11615,7 +11615,7 @@
      "totalDays": 801
     }
    },
-   "etag": "W/\"681707709a095b50156c99c3\"",
+   "etag": "W/\"5cf1edd845839c3f3c861e67\"",
    "request": null,
    "status": 200,
    "step": "GET /sync"
@@ -11804,7 +11804,7 @@
      }
     ]
    },
-   "etag": "W/\"273d9134c601a4d8c0e93fed\"",
+   "etag": "W/\"8d9b2e12dede541d0e08cc11\"",
    "request": null,
    "status": 200,
    "step": "GET /yoy"
@@ -14007,7 +14007,7 @@
     "from": "2025-03-12",
     "to": "2026-03-11"
    },
-   "etag": "W/\"55fedf0868a1652e217b4f18\"",
+   "etag": "W/\"fadcaa43fbfcf90b23ca74a9\"",
    "request": null,
    "status": 200,
    "step": "GET /daily"
@@ -18826,7 +18826,7 @@
     "from": "2024-01-01",
     "to": "2026-03-11"
    },
-   "etag": "W/\"60b623e38c68d1f4ffcdcff2\"",
+   "etag": "W/\"89a4b3a5dc88ca5c578de97d\"",
    "request": null,
    "status": 200,
    "step": "GET /daily?from=2020-01-01"
@@ -18847,7 +18847,7 @@
      }
     ]
    },
-   "etag": "W/\"179b40f5f52460d9da5829a8\"",
+   "etag": "W/\"0c0550cdc7f02973c7f37bc6\"",
    "request": null,
    "status": 200,
    "step": "GET /targets"
@@ -18863,7 +18863,7 @@
      }
     ]
    },
-   "etag": "W/\"a3554ed68a14183bb08746a3\"",
+   "etag": "W/\"998934cd90decd149ac57242\"",
    "request": null,
    "status": 200,
    "step": "GET /annotations"
@@ -18890,7 +18890,7 @@
      }
     ]
    },
-   "etag": "W/\"1a3afe17da3b63de79daaf91\"",
+   "etag": "W/\"bf154b30c0fa383561cea36f\"",
    "request": null,
    "status": 200,
    "step": "GET /checks"
@@ -19035,7 +19035,7 @@
     "to": "2026-03-11",
     "unsplitHt": 3600
    },
-   "etag": "W/\"e6e8411d85c66b453fa74f31\"",
+   "etag": "W/\"516f46e8defa5df92b36fcf6\"",
    "request": null,
    "status": 200,
    "step": "GET /customers?from=2026-01-01&to=2026-03-11"
@@ -19292,7 +19292,7 @@
     "to": "2026-03-11",
     "unsplitHt": 3600
    },
-   "etag": "W/\"741cd57fb17db8476420da5c\"",
+   "etag": "W/\"630e242dbbcdb212cd8b712b\"",
    "request": null,
    "status": 200,
    "step": "GET /customers?from=2026-01-01&to=2026-03-11&granularity=week"
@@ -19399,7 +19399,7 @@
     "to": "2026-03-11",
     "unsplitHt": 0
    },
-   "etag": "W/\"b7fa2385dcd4eb687b810d2d\"",
+   "etag": "W/\"81afbb5f0fb0c5d23ae68830\"",
    "request": null,
    "status": 200,
    "step": "GET /customers?from=2025-01-01&to=2026-03-11&granularity=year&segment=pro"
@@ -19516,7 +19516,7 @@
      }
     ]
    },
-   "etag": "W/\"40dad16865ee28dec1faa9b7\"",
+   "etag": "W/\"42416572bfdd346dd0acc669\"",
    "request": null,
    "status": 200,
    "step": "GET /cash"
@@ -19548,7 +19548,7 @@
      "total": 200
     }
    },
-   "etag": "W/\"0bfa85819bc06a3284c839ba\"",
+   "etag": "W/\"bc3b62d3204bb6ea217edf0c\"",
    "request": null,
    "status": 200,
    "step": "GET /pipeline"
@@ -19626,7 +19626,7 @@
      "previous": 0
     }
    },
-   "etag": "W/\"a7c5eaafe09ecde9d7ae7284\"",
+   "etag": "W/\"1b706bc187c2a4a92d149af7\"",
    "request": null,
    "status": 200,
    "step": "GET /movers"
@@ -19755,7 +19755,7 @@
      "previous": 62400
     }
    },
-   "etag": "W/\"f318a9c0df6ce64405779452\"",
+   "etag": "W/\"b0c8d1f155b6ef9f1ff129f2\"",
    "request": null,
    "status": 200,
    "step": "GET /movers?granularity=month&key=2026-02"
@@ -19881,7 +19881,7 @@
      "previous": 0
     }
    },
-   "etag": "W/\"9433374cf927ddd2025d9693\"",
+   "etag": "W/\"c34ed75ab13a5f217a8213ba\"",
    "request": null,
    "status": 200,
    "step": "GET /movers?granularity=year&key=2025"
@@ -19967,7 +19967,7 @@
      "previous": 6000
     }
    },
-   "etag": "W/\"f8e2fba997421ce6266ad9b5\"",
+   "etag": "W/\"f9d8988b317855698871f2fc\"",
    "request": null,
    "status": 200,
    "step": "GET /movers?granularity=week&key=2026-W10"
@@ -20095,7 +20095,7 @@
      "previous": 10800
     }
    },
-   "etag": "W/\"32fbf90d07ca84da159767f6\"",
+   "etag": "W/\"5f6a671708978b3e8bfed1f6\"",
    "request": null,
    "status": 200,
    "step": "GET /movers?from=2026-01-01&to=2026-03-11&cfrom=2025-01-01&cto=2025-03-11"
@@ -20280,7 +20280,7 @@
     ],
     "to": "2026-03-11"
    },
-   "etag": "W/\"f23975c9396008384da71b19\"",
+   "etag": "W/\"ecaec4636eab08468285dff8\"",
    "request": null,
    "status": 200,
    "step": "GET /analysis?from=2026-01-01&to=2026-03-11"
@@ -20350,7 +20350,7 @@
     ],
     "to": "2026-03-11"
    },
-   "etag": "W/\"4506734da144bc7b9eb2608a\"",
+   "etag": "W/\"88e3059f644c849018e80d57\"",
    "request": null,
    "status": 200,
    "step": "GET /analysis?from=2025-01-01&to=2026-03-11&brand=SUNLU"
@@ -21383,7 +21383,7 @@
     },
     "to": "2026-03-11"
    },
-   "etag": "W/\"5b53c2a47df42dd9dc92cbf9\"",
+   "etag": "W/\"0516a005d4add06b3975b6b6\"",
    "request": null,
    "status": 200,
    "step": "GET /"
@@ -21444,7 +21444,7 @@
     ],
     "to": "2026-03-11"
    },
-   "etag": "W/\"8bdf3607502a26769ca0a218\"",
+   "etag": "W/\"3c1f9e2ce0132c713c90f939\"",
    "request": null,
    "status": 200,
    "step": "GET /items?from=2026-01-01&to=2026-03-11"
@@ -21542,7 +21542,7 @@
     },
     "syncedAt": "2026-03-11T19:00:00+00:00"
    },
-   "etag": "W/\"b263a7345a615210cd5a8354\"",
+   "etag": "W/\"45cf959fc6c01221fe11fd33\"",
    "request": null,
    "status": 200,
    "step": "GET /cash"
@@ -21633,7 +21633,7 @@
     "from": "2026-01-01",
     "to": "2026-03-11"
    },
-   "etag": "W/\"eadfe71f666e376863332865\"",
+   "etag": "W/\"5916588518fac5c3080662ec\"",
    "request": null,
    "status": 200,
    "step": "GET /analysis?from=2026-01-01&to=2026-03-11"
@@ -21742,7 +21742,7 @@
      "previous": 10800
     }
    },
-   "etag": "W/\"ee5d96e62c4b327cdd61e4c6\"",
+   "etag": "W/\"381261061acfe3ddec9bd09d\"",
    "request": null,
    "status": 200,
    "step": "GET /movers?from=2026-01-01&to=2026-03-11&cfrom=2025-01-01&cto=2025-03-11"
@@ -22875,7 +22875,7 @@
     },
     "to": "2026-03-11"
    },
-   "etag": "W/\"30afd3acf806db48da7e8e3b\"",
+   "etag": "W/\"b60f5516be760fee524c9525\"",
    "request": null,
    "status": 200,
    "step": "GET /"
@@ -22982,7 +22982,7 @@
      }
     ]
    },
-   "etag": "W/\"7fb48181cc531b530de1cf6b\"",
+   "etag": "W/\"6e36fb9e92072cf09b0051af\"",
    "request": null,
    "status": 200,
    "step": "GET /cash"
@@ -23127,7 +23127,7 @@
     "to": "2026-03-11",
     "unsplitHt": 3600
    },
-   "etag": "W/\"03ef9e377129b935147781db\"",
+   "etag": "W/\"02943f9510926435926c126a\"",
    "request": null,
    "status": 200,
    "step": "GET /customers?from=2026-01-01&to=2026-03-11"
@@ -24033,7 +24033,7 @@
     },
     "to": "2026-03-11"
    },
-   "etag": "W/\"800967710b5134c20b747a08\"",
+   "etag": "W/\"1ef1b1bad35751b17f7a2ef8\"",
    "request": null,
    "status": 200,
    "step": "GET ?granularity=month&from=2025-01-01&to=2026-03-31"
@@ -24041,7 +24041,7 @@
   {
    "as": "all",
    "body": "",
-   "etag": "W/\"800967710b5134c20b747a08\"",
+   "etag": "W/\"1ef1b1bad35751b17f7a2ef8\"",
    "request": null,
    "status": 304,
    "step": "GET ?granularity=month&from=2025-01-01&to=2026-03-31"
@@ -24656,7 +24656,7 @@
     },
     "to": "2026-03-11"
    },
-   "etag": "W/\"d73709aa4110139b8e99b5a5\"",
+   "etag": "W/\"6e086e6381bc5f8c63c55d18\"",
    "request": null,
    "status": 200,
    "step": "GET ?granularity=month&from=2025-01-01&to=2026-03-31"
@@ -24770,7 +24770,7 @@
     ],
     "unclassified": []
    },
-   "etag": "W/\"f53de36bf09c902f0a75a800\"",
+   "etag": "W/\"930f868e661df3d239896496\"",
    "request": null,
    "status": 200,
    "step": "GET /review"
@@ -24861,7 +24861,7 @@
      }
     ]
    },
-   "etag": "W/\"43cc4bbf6c665ed1369d8c09\"",
+   "etag": "W/\"3fe3ee76ce7a9a5c227f2161\"",
    "request": null,
    "status": 200,
    "step": "GET /targets"
@@ -24940,7 +24940,7 @@
      }
     ]
    },
-   "etag": "W/\"1d48eedabe9d2dc546c75b2e\"",
+   "etag": "W/\"7a3c869f2ac32c47aa054ff8\"",
    "request": null,
    "status": 200,
    "step": "GET /annotations"
@@ -25064,7 +25064,7 @@
      }
     ]
    },
-   "etag": "W/\"68d8422365929057fc38810b\"",
+   "etag": "W/\"8d5cbf275a4be5cad4155a61\"",
    "request": null,
    "status": 200,
    "step": "GET /checks"
@@ -25085,7 +25085,7 @@
      "totalDays": 801
     }
    },
-   "etag": "W/\"1d3c6faa4cf909e48855a25c\"",
+   "etag": "W/\"748c0804f65501ea0b9c7f94\"",
    "request": null,
    "status": 200,
    "step": "GET /sync"

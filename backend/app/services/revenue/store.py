@@ -12,8 +12,9 @@ from sqlalchemy import CursorResult, and_, delete, func, insert, select, update
 from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine, AsyncSession
 
 from backend.app.core import database
-from backend.app.models.calculator import CalculatorDefaults, CalculatorPrinter
+from backend.app.models.calculator import CalculatorDefaults, CalculatorFilament, CalculatorPrinter
 from backend.app.models.print_log import PrintLogEntry
+from backend.app.models.printer import Printer
 from backend.app.models.revenue import (
     RevenueAnnotation,
     RevenueCustomer,
@@ -389,10 +390,12 @@ async def revenue_data_stamp(conn: AsyncConnection) -> str:
         (RevenueAnnotation, RevenueAnnotation.created_at),
         (RevenueItem, RevenueItem.fetched_at),
         (RevenueMonthCheck, RevenueMonthCheck.checked_at),
-        # The services' margin reads the print log and the calculator's machine rates.
+        # The services' margin reads the print log, the calculator's machine rates, filament prices and printer names.
         (PrintLogEntry, PrintLogEntry.completed_at),
         (CalculatorPrinter, CalculatorPrinter.updated_at),
         (CalculatorDefaults, CalculatorDefaults.updated_at),
+        (CalculatorFilament, CalculatorFilament.updated_at),
+        (Printer, Printer.updated_at),
     ):
         n, at = (await conn.execute(select(func.count(), func.max(col)).select_from(model))).one()
         parts.append(f"{n}@{at or ''}")
