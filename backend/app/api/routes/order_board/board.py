@@ -206,6 +206,17 @@ async def list_order_events(
 ) -> OrderEventPage:
     """The order's timeline, newest first; the cursor is the pair (occurred_at, id), as on Aito."""
     await _require_order(db, salesorder_id)
+    return await events_page(db, salesorder_id, depth, before, before_at, limit)
+
+
+async def events_page(
+    db: AsyncSession,
+    salesorder_id: str,
+    depth: Literal["story", "detail", "everything"],
+    before: int | None,
+    before_at: datetime | None,
+    limit: int,
+) -> OrderEventPage:
     if (before is None) != (before_at is None):
         raise HTTPException(status_code=422, detail="The cursor needs both 'before' and 'before_at'")
     limit = max(1, min(limit, 200))

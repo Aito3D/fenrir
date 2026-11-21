@@ -137,6 +137,38 @@ async def reopen_quote(db: AsyncSession, estimate_id: str, *, by: str | None) ->
         await _settle(db, estimate_id, "quote.reopened", by)
 
 
+async def _stored_number(db: AsyncSession, estimate_id: str) -> str:
+    """The stored quote's number; no copy means no Books call (``QuoteNotStored``)."""
+    doc = await sync.find_quote(db, estimate_id)
+    if doc is None:
+        raise QuoteNotStored(estimate_id)
+    return str((doc.detail or {}).get("estimate_number") or estimate_id)
+
+
+async def quote_pdf(db: AsyncSession, estimate_id: str) -> tuple[bytes, str]:
+    """The quote's PDF and its number."""
+    number = await _stored_number(db, estimate_id)
+    return await zoho_service.get_estimate_pdf(db, estimate_id), number
+
+
+async def quote_email_content(db: AsyncSession, estimate_id: str) -> dict:
+    """What Books would email for the quote now, with the quote's id and number."""
+    number = await _stored_number(db, estimate_id)
+    content = await zoho_service.get_estimate_email_content(db, estimate_id)
+    return {**content, "document_id": estimate_id, "document_number": number}
+
+
+async def email_quote(db: AsyncSession, estimate_id: str, to: str, *, by: str | None) -> None:
+    """Email the quote through Books, which marks it sent itself (no status call), then re-read and store it."""
+    await _stored_number(db, estimate_id)
+    with writing(estimate_id):
+        sync.note_write(estimate_id)
+        with sync._busy_on_rate_limit(estimate_id):
+            await zoho_service.email_estimate(db, estimate_id, to_mail_ids=[to])
+        logger.info("Order board write: quote=%s step=email", estimate_id)
+        await _settle(db, estimate_id, "quote.emailed", by, to=to)
+
+
 async def _fresh(db: AsyncSession, estimate_id: str) -> dict:
     """Entry check of every quote write: a stored copy must exist (no Books call otherwise), and the estimate as Books
     has it now must not be converted to an order or invoice. Returns that fresh estimate."""
@@ -160,7 +192,7 @@ def _redated_expiry(detail: dict) -> date:
     return date.today() + timedelta(days=days if days > 0 else _DEFAULT_VALIDITY_DAYS)
 
 
-async def _settle(db: AsyncSession, estimate_id: str, kind: str | None, by: str | None) -> None:
+async def _settle(db: AsyncSession, estimate_id: str, kind: str | None, by: str | None, **detail) -> None:
     """After a Books write: re-read and store the quote, log the event (if any), ping the open pages. The write stands
     even when the re-read fails: the stored copy is then left pending for the next pass."""
     sync.note_write(estimate_id)
@@ -176,5 +208,5 @@ async def _settle(db: AsyncSession, estimate_id: str, kind: str | None, by: str 
                 doc.pending = True
                 await db.commit()
     if kind is not None:
-        await _log(db, estimate_id, kind, by)
+        await _log(db, estimate_id, kind, by, **detail)
     await sync.announce_board_change(quotes=True)

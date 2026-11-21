@@ -39,6 +39,9 @@ from backend.app.services.order_board_actions.quotes import (
     create_quote,
     decline_quote,
     edit_quote,
+    email_quote,
+    quote_email_content,
+    quote_pdf,
     reopen_quote,
 )
 from backend.app.services.order_board_actions.stamps import stamp_contact, stamp_print
@@ -72,6 +75,9 @@ __all__ = [
     "edit_quote",
     "decline_quote",
     "reopen_quote",
+    "quote_pdf",
+    "quote_email_content",
+    "email_quote",
     "accept_quote",
     "create_order_from_quote",
     "undo_accept",

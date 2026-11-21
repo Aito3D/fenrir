@@ -41,6 +41,7 @@ async def _guarded_email(
     *,
     db: AsyncSession,
     salesorder_id: str,
+    doc_kind: str = "salesorder",
     keep_armed: tuple[type[Exception], ...] = (ZohoUnreachable,),
 ) -> None:
     """Send one document email: only to an address Books offered and not just edited, once a minute per document and address."""
@@ -48,7 +49,7 @@ async def _guarded_email(
         raise HTTPException(status_code=422, detail=refused_detail)
     doc = (
         await db.execute(
-            select(OrderBoardDoc).where(OrderBoardDoc.kind == "salesorder", OrderBoardDoc.zoho_id == salesorder_id)
+            select(OrderBoardDoc).where(OrderBoardDoc.kind == doc_kind, OrderBoardDoc.zoho_id == salesorder_id)
         )
     ).scalar_one_or_none()
     customer_id = str(

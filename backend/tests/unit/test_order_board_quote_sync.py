@@ -9,6 +9,7 @@ from sqlalchemy import select
 from backend.app.models.aito_project import AitoProject
 from backend.app.models.order_board_doc import OrderBoardDoc
 from backend.app.services import order_board_sync as sync
+from backend.app.services.zoho import ZohoNotConfiguredError, zoho_service
 from backend.tests.unit.test_order_board_sync import (  # noqa: F401
     days_ago,
     no_back_off_left_over,
@@ -193,3 +194,17 @@ async def test_pending_quote_details_do_not_raise_the_board_pending_count(db_ses
     await sync.run_pass(db_session)
     assert (await sync.read_quotes(db_session))["loading"] == 6
     assert (await sync.read_board(db_session))["sync"]["pending"] == 0
+
+
+@pytest.mark.asyncio
+async def test_quote_rows_carry_the_books_address_or_none(db_session, zoho, monkeypatch):  # noqa: F811
+    zoho.estimates["e1"] = quote(1)
+    await sync.run_pass(db_session)
+    rows = (await sync.read_quotes(db_session))["rows"]
+    assert rows and all(r["zoho_url"].endswith("#/quotes/" + r["id"]) for r in rows)
+
+    async def unconfigured(db, estimate_id):
+        raise ZohoNotConfiguredError("no")
+
+    monkeypatch.setattr(zoho_service, "books_app_url", unconfigured)
+    assert all(r["zoho_url"] is None for r in (await sync.read_quotes(db_session))["rows"])

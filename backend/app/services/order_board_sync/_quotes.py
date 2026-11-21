@@ -20,7 +20,7 @@ from backend.app.services.order_board_sync._common import (
     _state,
     load_settings,
 )
-from backend.app.services.zoho import zoho_service
+from backend.app.services.zoho import ZohoNotConfiguredError, zoho_service
 
 FULL_LISTING_EVERY = timedelta(hours=24)
 # A full listing is many pages: only start one while Books is nearly idle.
@@ -160,5 +160,13 @@ async def read_quotes(db: AsyncSession) -> dict:
     held = held_by_orders(current.get("rows") or [])
     core = {brand.casefold() for brand in settings.core_brands}
     today = date.today()
+    try:
+        base = await zoho_service.books_app_url(db, "")
+    except ZohoNotConfiguredError:
+        base = None
     rows = (quote_row(d.header, d.detail, items, held, today, core) for d in docs if d.kind == "estimate")
-    return {"rows": [r for r in rows if r is not None], "loading": loading, "ready": True}
+    return {
+        "rows": [{**r, "zoho_url": f"{base}{r['id']}" if base else None} for r in rows if r is not None],
+        "loading": loading,
+        "ready": True,
+    }
