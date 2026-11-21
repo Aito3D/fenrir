@@ -13054,6 +13054,8 @@ export default {
       other: 'Overige',
       cumulative: 'Cumulatief',
       projection: 'Prognose',
+      trend: 'Trendlijn',
+      trendSlope: { day: '{{slope}} per dag', week: '{{slope}} per week', month: '{{slope}} per maand', year: '{{slope}} per jaar' },
       target: 'Doel',
       inProgress: 'lopend',
       missingDays: 'Ontbrekende dagen: {{n}}',

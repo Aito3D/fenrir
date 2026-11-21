@@ -12634,6 +12634,8 @@ export default {
       other: 'Прочее',
       cumulative: 'Нарастающий итог',
       projection: 'Прогноз',
+      trend: 'Тренд',
+      trendSlope: { day: '{{slope}} / день', week: '{{slope}} / неделю', month: '{{slope}} / месяц', year: '{{slope}} / год' },
       target: 'Цель',
       inProgress: 'в процессе',
       missingDays: 'Пропущено дней: {{n}}',

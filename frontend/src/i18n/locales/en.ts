@@ -13086,6 +13086,8 @@ export default {
       other: 'Others',
       cumulative: 'Running total',
       projection: 'Projection',
+      trend: 'Trend',
+      trendSlope: { day: '{{slope}} / day', week: '{{slope}} / week', month: '{{slope}} / month', year: '{{slope}} / year' },
       target: 'Target',
       inProgress: 'in progress',
       missingDays: 'Missing days: {{n}}',

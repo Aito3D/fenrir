@@ -13015,6 +13015,8 @@ export default {
       other: 'Altri',
       cumulative: 'Cumulato',
       projection: 'Proiezione',
+      trend: 'Tendenza',
+      trendSlope: { day: '{{slope}} / giorno', week: '{{slope}} / settimana', month: '{{slope}} / mese', year: '{{slope}} / anno' },
       target: 'Obiettivo',
       inProgress: 'in corso',
       missingDays: 'Giorni mancanti: {{n}}',

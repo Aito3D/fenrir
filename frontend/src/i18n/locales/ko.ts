@@ -12612,6 +12612,8 @@ export default {
       other: '기타',
       cumulative: '누계',
       projection: '예측',
+      trend: '추세',
+      trendSlope: { day: '{{slope}} / 일', week: '{{slope}} / 주', month: '{{slope}} / 월', year: '{{slope}} / 년' },
       target: '목표',
       inProgress: '진행 중',
       missingDays: '누락된 일수: {{n}}',

@@ -12957,6 +12957,8 @@ export default {
       other: 'Diğer',
       cumulative: 'Kümülatif',
       projection: 'Tahmin',
+      trend: 'Eğilim',
+      trendSlope: { day: '{{slope}} / gün', week: '{{slope}} / hafta', month: '{{slope}} / ay', year: '{{slope}} / yıl' },
       target: 'Hedef',
       inProgress: 'devam ediyor',
       missingDays: 'Eksik gün: {{n}}',

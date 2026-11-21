@@ -12677,6 +12677,8 @@ export default {
       other: 'Інше',
       cumulative: 'Наростаючий підсумок',
       projection: 'Прогноз',
+      trend: 'Тренд',
+      trendSlope: { day: '{{slope}} / день', week: '{{slope}} / тиждень', month: '{{slope}} / місяць', year: '{{slope}} / рік' },
       target: 'Ціль',
       inProgress: 'триває',
       missingDays: 'Пропущено днів: {{n}}',

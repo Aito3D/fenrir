@@ -13029,6 +13029,8 @@ export default {
       other: 'その他',
       cumulative: '累計',
       projection: '予測',
+      trend: '傾向',
+      trendSlope: { day: '{{slope}} / 日', week: '{{slope}} / 週', month: '{{slope}} / 月', year: '{{slope}} / 年' },
       target: '目標',
       inProgress: '進行中',
       missingDays: '欠損日数: {{n}}',

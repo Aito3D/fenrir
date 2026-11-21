@@ -13087,6 +13087,8 @@ errors: {
       other: 'Övriga',
       cumulative: 'Ackumulerat',
       projection: 'Prognos',
+      trend: 'Trendlinje',
+      trendSlope: { day: '{{slope}} / dag', week: '{{slope}} / vecka', month: '{{slope}} / månad', year: '{{slope}} / år' },
       target: 'Mål',
       inProgress: 'pågående',
       missingDays: 'Saknade dagar: {{n}}',

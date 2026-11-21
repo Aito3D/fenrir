@@ -176,20 +176,29 @@ function Half<T>({ title, url, version, children }: { title: string; url: string
 }
 
 /** « Trésorerie et carnet »: this month's cash vs invoiced and what is owed, then the Aito order book. Whole-business figures. */
-export function RevenueCash({ version }: { version: unknown }) {
+export function RevenueCash({ version, below, aside }: {
+  version: unknown;
+  /** Stacked under the cash panel, and under the order book and quotes: each column packs on its own, so a tall panel leaves no hole beside it. */
+  below?: ReactNode;
+  aside?: ReactNode;
+}) {
   const { t } = useTranslation();
   return (
     <Split>
-      <Half<CashResponse> title={t('revenue.cash.title')} url="/api/v1/revenue/cash" version={version}>
-        {(d) => (d.syncedAt === null && !d.error ? <Empty>{t('revenue.cash.empty')}</Empty> : <Cash data={d} />)}
-      </Half>
-      <div className="grid gap-3">
+      <div className="grid min-w-0 content-start gap-3">
+        <Half<CashResponse> title={t('revenue.cash.title')} url="/api/v1/revenue/cash" version={version}>
+          {(d) => (d.syncedAt === null && !d.error ? <Empty>{t('revenue.cash.empty')}</Empty> : <Cash data={d} />)}
+        </Half>
+        {below}
+      </div>
+      <div className="grid min-w-0 content-start gap-3">
         <Half<PipelineResponse> title={t('revenue.pipeline.title')} url="/api/v1/revenue/pipeline" version={version}>
           {(d) => <Pipeline data={d} />}
         </Half>
         <Half<FunnelResponse> title={t('revenue.funnel.title')} url="/api/v1/revenue/funnel" version={version}>
           {(d) => <Funnel data={d} />}
         </Half>
+        {aside}
       </div>
     </Split>
   );

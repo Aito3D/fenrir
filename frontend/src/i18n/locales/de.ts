@@ -13030,6 +13030,8 @@ export default {
       other: 'Sonstige',
       cumulative: 'Kumuliert',
       projection: 'Prognose',
+      trend: 'Trend',
+      trendSlope: { day: '{{slope}} / Tag', week: '{{slope}} / Woche', month: '{{slope}} / Monat', year: '{{slope}} / Jahr' },
       target: 'Ziel',
       inProgress: 'laufend',
       missingDays: 'Fehlende Tage: {{n}}',

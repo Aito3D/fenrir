@@ -13013,6 +13013,8 @@ export default {
       other: '其他',
       cumulative: '累計',
       projection: '預測',
+      trend: '趨勢',
+      trendSlope: { day: '{{slope}} / 天', week: '{{slope}} / 週', month: '{{slope}} / 月', year: '{{slope}} / 年' },
       target: '目標',
       inProgress: '進行中',
       missingDays: '缺少天數：{{n}}',

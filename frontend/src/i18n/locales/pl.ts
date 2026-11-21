@@ -13235,6 +13235,8 @@ export default {
       other: 'Inne',
       cumulative: 'Narastająco',
       projection: 'Prognoza',
+      trend: 'Tendencja',
+      trendSlope: { day: '{{slope}} / dzień', week: '{{slope}} / tydzień', month: '{{slope}} / miesiąc', year: '{{slope}} / rok' },
       target: 'Cel',
       inProgress: 'w toku',
       missingDays: 'Brakujące dni: {{n}}',

@@ -53,7 +53,7 @@ function ItemRows({ bucket, filterParams, version, cols, margin }: { bucket: Rev
   const { t } = useTranslation();
   const { data, error } = useRevenueResource<ItemsResponse>(`/api/v1/revenue/items?from=${bucket.start}&to=${bucket.end}${filterParams}`, version);
   const note = (text: string, cls = 'text-bambu-gray') => (
-    <div role="row" className="px-3 pl-9">
+    <div role="row" className="animate-fade-in px-3 pl-9">
       <span role="cell" className={`text-xs ${cls}`}>{text}</span>
     </div>
   );
@@ -63,7 +63,7 @@ function ItemRows({ bucket, filterParams, version, cols, margin }: { bucket: Rev
   return (
     <>
       {data.items.map((r) => (
-        <div key={r.itemId} role="row" className={`${ROW} py-1 text-xs text-bambu-gray-light`} style={{ gridTemplateColumns: cols }}>
+        <div key={r.itemId} role="row" className={`animate-fade-in ${ROW} py-1 text-xs text-bambu-gray-light`} style={{ gridTemplateColumns: cols }}>
           <span role="cell" className="min-w-0 pl-6">
             <span className="block truncate text-white" title={r.name}>{r.name}</span>
             <span className="block truncate text-[11px] text-bambu-gray">
