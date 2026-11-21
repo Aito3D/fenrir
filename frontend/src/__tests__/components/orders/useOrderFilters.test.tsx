@@ -24,6 +24,7 @@ function Box() {
       <output data-testid="state">{`${f.payFilter}|${f.follow}|${f.sort.key}|${f.sort.flipped}|${f.coreOnly}`}</output>
       <button onClick={() => f.setSort({ key: 'value', flipped: true })}>sort</button>
       <button onClick={() => f.setFollow('unbilled')}>follow</button>
+      <button onClick={() => f.setFollow(null)}>unfollow</button>
       <button onClick={() => f.chooseCoreOnly(false)}>core</button>
       <button onClick={() => f.setCoreOnly(false)}>core-temp</button>
     </>
@@ -95,6 +96,15 @@ describe('useOrderFilters', () => {
     fireEvent.click(screen.getByText('follow'));
     expect(screen.getByTestId('state').textContent).toBe('all|unbilled|age|false|true');
     expect(putUiPref).toHaveBeenLastCalledWith('orders', { follow: 'unbilled' });
+  });
+
+  it('saves clearing the follow-up filter, merged over the saved one', async () => {
+    getUiPrefs.mockResolvedValue({ orders: { follow: 'notCollected', pay: 'unpaid' } });
+    mount('/orders');
+    await waitFor(() => expect(screen.getByTestId('state').textContent).toBe('unpaid|notCollected|age|false|true'));
+    fireEvent.click(screen.getByText('unfollow'));
+    expect(screen.getByTestId('state').textContent).toBe('unpaid|null|age|false|true');
+    expect(putUiPref).toHaveBeenLastCalledWith('orders', { follow: null, pay: 'unpaid' });
   });
 
   it('takes a known follow-up filter saved on the account', async () => {
