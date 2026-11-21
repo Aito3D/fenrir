@@ -12348,6 +12348,20 @@ export default {
   },
   // Order Board: open sales orders against stock (pages/OrderBoardPage.tsx)
   orders: {
+    quotes: {
+      tab: "見積",
+      search: "顧客、番号、商品…",
+      loading: "見積を読み込み中… 残り {{n}} 件",
+      loadFailed: "見積を読み込めませんでした。",
+      validUntil: "{{date}} まで有効",
+      document: "書類",
+      inStock: "在庫 {{n}}",
+      toOrder: "要発注",
+      chip: { current: "進行中", expired: "期限切れ", declined: "辞退" },
+      empty: { current: "進行中の見積はありません。", expired: "期限切れの見積はありません。", declined: "辞退された見積はありません。" },
+      state: { draft: "下書き", sent: "送信済み", accepted: "承諾済み", expired: "期限切れ", declined: "辞退" },
+      col: { item: "商品", stock: "在庫", qty: "数量", discount: "割引", total: "税込合計" },
+    },
     mobile: {
       back: '注文に戻る',
       more: 'その他',
@@ -12425,6 +12439,13 @@ export default {
       documentEmailed: "{{document}} をメール送信しました",
       creditApplied: "{{invoice}} に {{amount}} のクレジットを適用しました",
       contactEdited: "連絡先を編集しました",
+      quoteCreated: "見積を作成",
+      quoteAccepted: "見積を承諾済みにしました",
+      quoteDeclined: "見積を辞退にしました",
+      quoteEdited: "見積を編集",
+      quoteReopened: "見積を再開",
+      quoteEmailed: "見積をメールで送信",
+      quoteAcceptUndone: "承諾を取り消しました",
       short: {
         created: '注文作成',
         received: '注文受信',

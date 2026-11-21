@@ -31,6 +31,13 @@ const LABEL_KEY: Record<string, string> = {
   'document.emailed': 'orders.history.documentEmailed',
   'credit.applied': 'orders.history.creditApplied',
   'contact.edited': 'orders.history.contactEdited',
+  'quote.created': 'orders.history.quoteCreated',
+  'quote.accepted': 'orders.history.quoteAccepted',
+  'quote.declined': 'orders.history.quoteDeclined',
+  'quote.edited': 'orders.history.quoteEdited',
+  'quote.reopened': 'orders.history.quoteReopened',
+  'quote.emailed': 'orders.history.quoteEmailed',
+  'quote.accept_undone': 'orders.history.quoteAcceptUndone',
 };
 
 /** The row subtitle's noun phrase per kind ("SMS de retrait"). */

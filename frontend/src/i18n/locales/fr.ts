@@ -12334,6 +12334,20 @@ export default {
   },
   // Order Board: open sales orders against stock (pages/OrderBoardPage.tsx)
   orders: {
+    quotes: {
+      tab: "Devis",
+      search: "Rechercher un client, un n°, un article…",
+      loading: "Chargement des devis… {{n}} restants",
+      loadFailed: "Impossible de charger les devis.",
+      validUntil: "valable jusqu'au {{date}}",
+      document: "Document",
+      inStock: "{{n}} dispo",
+      toOrder: "à commander",
+      chip: { current: "En cours", expired: "Expirés", declined: "Refusés" },
+      empty: { current: "Aucun devis en cours.", expired: "Aucun devis expiré.", declined: "Aucun devis refusé." },
+      state: { draft: "Brouillon", sent: "Envoyé", accepted: "Accepté", expired: "Expiré", declined: "Refusé" },
+      col: { item: "Article", stock: "Stock", qty: "Qté", discount: "Remise", total: "Total TTC" },
+    },
     mobile: {
       back: 'Retour aux commandes',
       more: 'Plus',
@@ -12411,6 +12425,13 @@ export default {
       documentEmailed: "a envoyé {{document}} par e-mail",
       creditApplied: "a appliqué {{amount}} d’avoir sur {{invoice}}",
       contactEdited: "a modifié le contact",
+      quoteCreated: "a créé le devis",
+      quoteAccepted: "a marqué le devis accepté",
+      quoteDeclined: "a marqué le devis refusé",
+      quoteEdited: "a modifié le devis",
+      quoteReopened: "a rouvert le devis",
+      quoteEmailed: "a envoyé le devis par e-mail",
+      quoteAcceptUndone: "a annulé l'acceptation",
       short: {
         created: 'Commande créée',
         received: 'Commande reçue',

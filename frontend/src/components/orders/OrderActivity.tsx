@@ -9,17 +9,18 @@ import { orderEventDetail, orderEventLabel } from './orderEventKinds';
 // The rail renders Aito's event shape; an order event just has no subject.
 const asRailEvent = (e: OrderEvent) => ({ ...e, occurred_until: null, subject_type: null, subject_id: null, subject_label: null });
 
-/** The order's history behind the side column's Activity tab: Aito's rail fed from the order's events. */
-export function OrderActivity({ soId, currency }: { soId: string; currency: string }) {
+/** The order's history behind the side column's Activity tab: Aito's rail fed from the order's events.
+ *  With `quote`, `soId` is a quote's id and the rail reads its events (no notes on a quote). */
+export function OrderActivity({ soId, currency, quote = false }: { soId: string; currency: string; quote?: boolean }) {
   const { t } = useTranslation();
   const { hasPermission } = useAuth();
   const source: EventSource = {
-    key: ['order-events', soId],
+    key: [quote ? 'quote-events' : 'order-events', soId],
     fetchPage: async (depth, cursor) => {
-      const page = await api.getOrderEvents(soId, { depth, cursor, limit: 50 });
+      const page = await (quote ? api.getQuoteEvents : api.getOrderEvents)(soId, { depth, cursor, limit: 50 });
       return { ...page, events: page.events.map(asRailEvent) };
     },
-    addNote: hasPermission('orders:update') ? async (body) => asRailEvent(await api.addOrderNote(soId, body)) : undefined,
+    addNote: hasPermission('orders:update') && !quote ? async (body) => asRailEvent(await api.addOrderNote(soId, body)) : undefined,
     label: (event) => orderEventLabel(event, currency),
     detail: (event) => orderEventDetail(event, currency, t),
     depthKey: 'orders.history.depth',

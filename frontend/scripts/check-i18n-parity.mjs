@@ -253,6 +253,7 @@ const FR_COGNATES = [
   'STARTTLS (Port 587)', 'SSL/TLS (Port 465)',
   'Bundle', 'Slicer Bundles', 'Imported',
   'Page', 'Note', 'Tare', 'Est.', 'Cloud', 'Style', 'Notes', 'Stock',
+  'Document',  // orders.quotes.document — the French word too
   'Accent', 'Orange', 'Global', 'Stable', 'Archive', 'visible', 'minutes',
   'Message', 'Slicer', 'Rotation', 'Original', 'Direction', 'Architecture',
   'notifications', 'Maintenance OK', 'total', 'Provider', 'Token name',
@@ -664,6 +665,7 @@ const UK_COGNATES = [
 // checked individually against the Dutch translation in #2891.
 const NL_COGNATES = [
   'Week',  // revenue.controls.week — the Dutch word too
+  'Document',  // orders.quotes.document — the Dutch word too
   'Contact',  // orders.contact.title — same word in Dutch
   'Filters',  // queue.mobile.filters — same word in Dutch
   '{{count}} project',  // projectsPdm.catalog.mobile.projects_one — "project" is the Dutch word too

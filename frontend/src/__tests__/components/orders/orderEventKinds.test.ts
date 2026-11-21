@@ -130,4 +130,12 @@ describe('orderEventLabel remaining kinds', () => {
     expect(label('note.added')).toEqual({ key: 'orders.history.noteAdded' });
     expect(label('nope.unknown')).toBeNull();
   });
+
+  it.each([
+    ['quote.created', 'quoteCreated'], ['quote.accepted', 'quoteAccepted'], ['quote.declined', 'quoteDeclined'],
+    ['quote.edited', 'quoteEdited'], ['quote.reopened', 'quoteReopened'], ['quote.emailed', 'quoteEmailed'],
+    ['quote.accept_undone', 'quoteAcceptUndone'],
+  ])('%s has its sentence', (kind, key) => {
+    expect(label(kind)).toEqual({ key: `orders.history.${key}` });
+  });
 });

@@ -8,7 +8,7 @@ import userEvent from '@testing-library/user-event';
 import { http, HttpResponse } from 'msw';
 import { Link } from 'react-router-dom';
 import { server } from '../mocks/server';
-import type { FinishedOrderDetail, FinishedOrderRow, OrderPayment, OrderBoardLine, OrderBoardResponse, OrderBoardRow } from '../../api/client';
+import type { FinishedOrderDetail, FinishedOrderRow, OrderPayment, OrderBoardLine, OrderBoardResponse, OrderBoardRow, QuoteRow } from '../../api/client';
 
 const mockUseAuth = {
   user: { id: 1, username: 'operator', permissions: [] as string[] },
@@ -1130,5 +1130,54 @@ describe('OrderBoardPage on the phone', () => {
     expect(line).toHaveTextContent(/38\D?350/);
     expect(line).toHaveTextContent(/Updated/);
     expect(within(line).getByRole('button', { name: 'Refresh' })).toBeInTheDocument();
+  });
+});
+
+describe('OrderBoardPage Devis side', () => {
+  const quote = (o: Partial<QuoteRow> = {}): QuoteRow => ({
+    id: 'e1', number: 'DEV-00412', customer: 'Nautic Service', customer_id: 'c1', date: '2026-11-10', expiry_date: '2026-12-10',
+    state: 'sent', total: 248900, currency: 'XPF', reference: '', age_days: 2, is_core: true, editable: true,
+    has_draft_order: false, modified: '', lines: [], ...o,
+  });
+  const serveQuotes = (rows: QuoteRow[]) =>
+    server.use(http.get('/api/v1/order-board/quotes', () => HttpResponse.json({ rows, loading: 0, ready: true })));
+  const QUOTES = [
+    quote(),
+    quote({ id: 'e2', number: 'DEV-00414', customer: 'Marc Le Goff', state: 'draft' }),
+    quote({ id: 'e3', number: 'DEV-00415', customer: 'Hors 3D', is_core: false }),
+    quote({ id: 'e4', number: 'DEV-00398', customer: 'Lycée Vauban', state: 'expired' }),
+  ];
+
+  it('the switch counts the current 3D quotes and swaps the orders for the quotes, view=quotes in the URL', async () => {
+    const user = userEvent.setup();
+    serve(board());
+    serveQuotes(QUOTES);
+    render(<OrderBoardPage />);
+    expect(await screen.findByText('SO-00412')).toBeInTheDocument();
+    expect(screen.getByTestId('orders-tiles')).toBeInTheDocument();
+    const devis = await screen.findByRole('button', { name: /^Quotes 2$/ });
+    expect(devis).toHaveAttribute('aria-pressed', 'false');
+    await user.click(devis);
+    expect(window.location.search).toContain('view=quotes');
+    expect(await screen.findByText('Nautic Service')).toBeInTheDocument();
+    expect(screen.queryByTestId('orders-tiles')).not.toBeInTheDocument();
+    expect(screen.queryByText('SO-00412')).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Orders' }));
+    expect(window.location.search).not.toContain('view=');
+    expect(await screen.findByText('SO-00412')).toBeInTheDocument();
+  });
+
+  it('a link to ?view=quotes&quote=<id> opens that quote', async () => {
+    serve(board());
+    serveQuotes(QUOTES);
+    server.use(http.get('/api/v1/order-board/quotes/:id/events', () => HttpResponse.json({ events: [], has_more: false })));
+    window.history.replaceState({}, '', '/orders?view=quotes&quote=e4');
+    render(<OrderBoardPage />);
+    const row = (await screen.findByText('Lycée Vauban')).closest('button')!;
+    expect(row).toHaveAttribute('aria-expanded', 'true');
+    expect(screen.getByRole('button', { name: /^Expired 1/ })).toHaveAttribute('aria-pressed', 'true');
+    await userEvent.setup().click(row);
+    expect(window.location.search).not.toContain('quote=');
+    expect(window.location.search).toContain('view=quotes');
   });
 });

@@ -25,6 +25,7 @@ function Box() {
       <button onClick={() => f.setSort({ key: 'value', flipped: true })}>sort</button>
       <button onClick={() => f.chooseCoreOnly(false)}>core</button>
       <button onClick={() => f.setCoreOnly(false)}>core-temp</button>
+      <button onClick={() => f.setView(f.view === 'orders' ? 'quotes' : 'orders')}>view-{f.view}</button>
     </>
   );
 }
@@ -153,5 +154,23 @@ describe('useOrderFilters', () => {
       { sort: 'value', flip: true },
       { sort: 'value', flip: true, coreOnly: false },
     ]);
+  });
+
+  it('mirrors the Devis view in the URL as view=quotes, never saved to the account', async () => {
+    const { router } = mount('/orders?order=so1');
+    fireEvent.click(screen.getByText('view-orders'));
+    await waitFor(() => expect(router.state.location.search).toBe('?order=so1&view=quotes'));
+    fireEvent.click(screen.getByText('view-quotes'));
+    await waitFor(() => expect(router.state.location.search).toBe('?order=so1'));
+    expect(putUiPref).not.toHaveBeenCalled();
+  });
+
+  it('reads the view from the URL and follows an outside change', async () => {
+    const { router } = mount('/orders?view=quotes');
+    expect(screen.getByText('view-quotes')).toBeInTheDocument();
+    await act(async () => {
+      await router.navigate('/orders');
+    });
+    expect(screen.getByText('view-orders')).toBeInTheDocument();
   });
 });

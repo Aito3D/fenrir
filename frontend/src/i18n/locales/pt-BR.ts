@@ -12334,6 +12334,20 @@ export default {
   },
   // Order Board: open sales orders against stock (pages/OrderBoardPage.tsx)
   orders: {
+    quotes: {
+      tab: "Orçamentos",
+      search: "Cliente, número, produto…",
+      loading: "Carregando orçamentos… faltam {{n}}",
+      loadFailed: "Não foi possível carregar os orçamentos.",
+      validUntil: "válido até {{date}}",
+      document: "Documento",
+      inStock: "{{n}} disponíveis",
+      toOrder: "a encomendar",
+      chip: { current: "Em andamento", expired: "Expirados", declined: "Recusados" },
+      empty: { current: "Nenhum orçamento em andamento.", expired: "Nenhum orçamento expirado.", declined: "Nenhum orçamento recusado." },
+      state: { draft: "Rascunho", sent: "Enviado", accepted: "Aceito", expired: "Expirado", declined: "Recusado" },
+      col: { item: "Produto", stock: "Estoque", qty: "Qtd.", discount: "Desconto", total: "Total c/ impostos" },
+    },
     mobile: {
       back: 'Voltar aos pedidos',
       more: 'Mais',
@@ -12411,6 +12425,13 @@ export default {
       documentEmailed: "enviou {{document}} por e-mail",
       creditApplied: "aplicou {{amount}} de crédito em {{invoice}}",
       contactEdited: "editou o contato",
+      quoteCreated: "criou o orçamento",
+      quoteAccepted: "marcou o orçamento como aceito",
+      quoteDeclined: "marcou o orçamento como recusado",
+      quoteEdited: "editou o orçamento",
+      quoteReopened: "reabriu o orçamento",
+      quoteEmailed: "enviou o orçamento por e-mail",
+      quoteAcceptUndone: "desfez a aceitação",
       short: {
         created: 'Pedido criado',
         received: 'Pedido recebido',

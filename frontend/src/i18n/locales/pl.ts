@@ -12554,6 +12554,20 @@ export default {
   },
   // Order Board: open sales orders against stock (pages/OrderBoardPage.tsx)
   orders: {
+    quotes: {
+      tab: "Oferty",
+      search: "Klient, numer, produkt…",
+      loading: "Wczytywanie ofert… pozostało {{n}}",
+      loadFailed: "Nie udało się wczytać ofert.",
+      validUntil: "ważna do {{date}}",
+      document: "Dokument",
+      inStock: "dostępne: {{n}}",
+      toOrder: "do zamówienia",
+      chip: { current: "Bieżące", expired: "Wygasłe", declined: "Odrzucone" },
+      empty: { current: "Brak bieżących ofert.", expired: "Brak wygasłych ofert.", declined: "Brak odrzuconych ofert." },
+      state: { draft: "Szkic", sent: "Wysłana", accepted: "Przyjęta", expired: "Wygasła", declined: "Odrzucona" },
+      col: { item: "Produkt", stock: "Stan", qty: "Ilość", discount: "Rabat", total: "Razem brutto" },
+    },
     mobile: {
       back: 'Wróć do zamówień',
       more: 'Więcej',
@@ -12631,6 +12645,13 @@ export default {
       documentEmailed: "wysłał(a) {{document}} e-mailem",
       creditApplied: "zastosował(a) {{amount}} środków na {{invoice}}",
       contactEdited: "zmienił(a) kontakt",
+      quoteCreated: "utworzył ofertę",
+      quoteAccepted: "oznaczył ofertę jako przyjętą",
+      quoteDeclined: "oznaczył ofertę jako odrzuconą",
+      quoteEdited: "edytował ofertę",
+      quoteReopened: "ponownie otworzył ofertę",
+      quoteEmailed: "wysłał ofertę e-mailem",
+      quoteAcceptUndone: "cofnął przyjęcie",
       short: {
         created: 'Zamówienie utworzone',
         received: 'Zamówienie otrzymane',

@@ -12332,6 +12332,20 @@ export default {
   },
   // Order Board: open sales orders against stock (pages/OrderBoardPage.tsx)
   orders: {
+    quotes: {
+      tab: "報價",
+      search: "客戶、編號、商品…",
+      loading: "正在載入報價… 剩餘 {{n}} 個",
+      loadFailed: "無法載入報價。",
+      validUntil: "有效期至 {{date}}",
+      document: "文件",
+      inStock: "庫存 {{n}}",
+      toOrder: "需訂購",
+      chip: { current: "進行中", expired: "已過期", declined: "已拒絕" },
+      empty: { current: "沒有進行中的報價。", expired: "沒有已過期的報價。", declined: "沒有已拒絕的報價。" },
+      state: { draft: "草稿", sent: "已傳送", accepted: "已接受", expired: "已過期", declined: "已拒絕" },
+      col: { item: "商品", stock: "庫存", qty: "數量", discount: "折扣", total: "含稅合計" },
+    },
     mobile: {
       back: '返回訂單',
       more: '更多',
@@ -12409,6 +12423,13 @@ export default {
       documentEmailed: "已透過郵件寄送 {{document}}",
       creditApplied: "已將 {{amount}} 餘額抵扣至 {{invoice}}",
       contactEdited: "已編輯聯絡人",
+      quoteCreated: "建立了報價",
+      quoteAccepted: "將報價標記為已接受",
+      quoteDeclined: "將報價標記為已拒絕",
+      quoteEdited: "編輯了報價",
+      quoteReopened: "重新開啟了報價",
+      quoteEmailed: "透過郵件傳送了報價",
+      quoteAcceptUndone: "撤銷了接受",
       short: {
         created: '訂單已建立',
         received: '已收到訂單',

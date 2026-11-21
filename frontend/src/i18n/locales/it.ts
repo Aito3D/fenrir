@@ -12334,6 +12334,20 @@ export default {
   },
   // Order Board: open sales orders against stock (pages/OrderBoardPage.tsx)
   orders: {
+    quotes: {
+      tab: "Preventivi",
+      search: "Cliente, numero, articolo…",
+      loading: "Caricamento preventivi… {{n}} rimanenti",
+      loadFailed: "Impossibile caricare i preventivi.",
+      validUntil: "valido fino al {{date}}",
+      document: "Documento",
+      inStock: "{{n}} disponibili",
+      toOrder: "da ordinare",
+      chip: { current: "In corso", expired: "Scaduti", declined: "Rifiutati" },
+      empty: { current: "Nessun preventivo in corso.", expired: "Nessun preventivo scaduto.", declined: "Nessun preventivo rifiutato." },
+      state: { draft: "Bozza", sent: "Inviato", accepted: "Accettato", expired: "Scaduto", declined: "Rifiutato" },
+      col: { item: "Articolo", stock: "Magazzino", qty: "Qtà", discount: "Sconto", total: "Totale IVA incl." },
+    },
     mobile: {
       back: 'Torna agli ordini',
       more: 'Altro',
@@ -12411,6 +12425,13 @@ export default {
       documentEmailed: "ha inviato {{document}} via e-mail",
       creditApplied: "ha applicato {{amount}} di credito a {{invoice}}",
       contactEdited: "ha modificato il contatto",
+      quoteCreated: "ha creato il preventivo",
+      quoteAccepted: "ha segnato il preventivo come accettato",
+      quoteDeclined: "ha segnato il preventivo come rifiutato",
+      quoteEdited: "ha modificato il preventivo",
+      quoteReopened: "ha riaperto il preventivo",
+      quoteEmailed: "ha inviato il preventivo per e-mail",
+      quoteAcceptUndone: "ha annullato l'accettazione",
       short: {
         created: 'Ordine creato',
         received: 'Ordine ricevuto',

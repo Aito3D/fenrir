@@ -11996,6 +11996,20 @@ export default {
   },
   // Order Board: open sales orders against stock (pages/OrderBoardPage.tsx)
   orders: {
+    quotes: {
+      tab: "Кошториси",
+      search: "Клієнт, номер, товар…",
+      loading: "Завантаження кошторисів… залишилось {{n}}",
+      loadFailed: "Не вдалося завантажити кошториси.",
+      validUntil: "дійсний до {{date}}",
+      document: "Документ",
+      inStock: "в наявності: {{n}}",
+      toOrder: "замовити",
+      chip: { current: "Поточні", expired: "Прострочені", declined: "Відхилені" },
+      empty: { current: "Немає поточних кошторисів.", expired: "Немає прострочених кошторисів.", declined: "Немає відхилених кошторисів." },
+      state: { draft: "Чернетка", sent: "Надіслано", accepted: "Прийнято", expired: "Прострочено", declined: "Відхилено" },
+      col: { item: "Товар", stock: "Залишок", qty: "К-сть", discount: "Знижка", total: "Разом з ПДВ" },
+    },
     mobile: {
       back: 'Назад до замовлень',
       more: 'Ще',
@@ -12073,6 +12087,13 @@ export default {
       documentEmailed: "надіслав(ла) {{document}} поштою",
       creditApplied: "зарахував(ла) {{amount}} кредиту в {{invoice}}",
       contactEdited: "змінив(ла) контакт",
+      quoteCreated: "створив кошторис",
+      quoteAccepted: "позначив кошторис прийнятим",
+      quoteDeclined: "позначив кошторис відхиленим",
+      quoteEdited: "змінив кошторис",
+      quoteReopened: "знову відкрив кошторис",
+      quoteEmailed: "надіслав кошторис поштою",
+      quoteAcceptUndone: "скасував прийняття",
       short: {
         created: 'Замовлення створено',
         received: 'Замовлення отримано',

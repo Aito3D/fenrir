@@ -12405,6 +12405,20 @@ export default {
   },
   // Order Board: open sales orders against stock (pages/OrderBoardPage.tsx)
   orders: {
+    quotes: {
+      tab: "Quotes",
+      search: "Customer, number, product…",
+      loading: "Loading quotes… {{n}} remaining",
+      loadFailed: "Could not load the quotes.",
+      validUntil: "valid until {{date}}",
+      document: "Document",
+      inStock: "{{n}} available",
+      toOrder: "to order",
+      chip: { current: "Current", expired: "Expired", declined: "Declined" },
+      empty: { current: "No current quotes.", expired: "No expired quotes.", declined: "No declined quotes." },
+      state: { draft: "Draft", sent: "Sent", accepted: "Accepted", expired: "Expired", declined: "Declined" },
+      col: { item: "Item", stock: "Stock", qty: "Qty", discount: "Discount", total: "Total incl. tax" },
+    },
     mobile: {
       back: 'Back to orders',
       more: 'More',
@@ -12482,6 +12496,13 @@ export default {
       documentEmailed: "emailed {{document}}",
       creditApplied: "applied {{amount}} of credit to {{invoice}}",
       contactEdited: "edited the contact",
+      quoteCreated: "created the quote",
+      quoteAccepted: "marked the quote accepted",
+      quoteDeclined: "marked the quote declined",
+      quoteEdited: "edited the quote",
+      quoteReopened: "reopened the quote",
+      quoteEmailed: "emailed the quote",
+      quoteAcceptUndone: "undid the acceptance",
       short: {
         created: 'Order created',
         received: 'Order received',

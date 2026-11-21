@@ -12373,6 +12373,20 @@ export default {
   },
   // Order Board: open sales orders against stock (pages/OrderBoardPage.tsx)
   orders: {
+    quotes: {
+      tab: "Offertes",
+      search: "Klant, nummer, artikel…",
+      loading: "Offertes laden… nog {{n}}",
+      loadFailed: "Kan de offertes niet laden.",
+      validUntil: "geldig tot {{date}}",
+      document: "Document",
+      inStock: "{{n}} beschikbaar",
+      toOrder: "te bestellen",
+      chip: { current: "Lopend", expired: "Verlopen", declined: "Afgewezen" },
+      empty: { current: "Geen lopende offertes.", expired: "Geen verlopen offertes.", declined: "Geen afgewezen offertes." },
+      state: { draft: "Concept", sent: "Verzonden", accepted: "Geaccepteerd", expired: "Verlopen", declined: "Afgewezen" },
+      col: { item: "Artikel", stock: "Voorraad", qty: "Aantal", discount: "Korting", total: "Totaal incl. btw" },
+    },
     mobile: {
       back: 'Terug naar bestellingen',
       more: 'Meer',
@@ -12450,6 +12464,13 @@ export default {
       documentEmailed: "heeft {{document}} gemaild",
       creditApplied: "heeft {{amount}} tegoed toegepast op {{invoice}}",
       contactEdited: "heeft het contact bewerkt",
+      quoteCreated: "heeft de offerte gemaakt",
+      quoteAccepted: "heeft de offerte als geaccepteerd gemarkeerd",
+      quoteDeclined: "heeft de offerte als afgewezen gemarkeerd",
+      quoteEdited: "heeft de offerte bewerkt",
+      quoteReopened: "heeft de offerte heropend",
+      quoteEmailed: "heeft de offerte gemaild",
+      quoteAcceptUndone: "heeft de acceptatie ongedaan gemaakt",
       short: {
         created: 'Bestelling aangemaakt',
         received: 'Bestelling ontvangen',

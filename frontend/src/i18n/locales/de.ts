@@ -12349,6 +12349,20 @@ export default {
   },
   // Order Board: open sales orders against stock (pages/OrderBoardPage.tsx)
   orders: {
+    quotes: {
+      tab: "Angebote",
+      search: "Kunde, Nummer, Artikel…",
+      loading: "Angebote werden geladen… {{n}} verbleibend",
+      loadFailed: "Angebote konnten nicht geladen werden.",
+      validUntil: "gültig bis {{date}}",
+      document: "Dokument",
+      inStock: "{{n}} verfügbar",
+      toOrder: "zu bestellen",
+      chip: { current: "Laufend", expired: "Abgelaufen", declined: "Abgelehnt" },
+      empty: { current: "Keine laufenden Angebote.", expired: "Keine abgelaufenen Angebote.", declined: "Keine abgelehnten Angebote." },
+      state: { draft: "Entwurf", sent: "Gesendet", accepted: "Angenommen", expired: "Abgelaufen", declined: "Abgelehnt" },
+      col: { item: "Artikel", stock: "Bestand", qty: "Menge", discount: "Rabatt", total: "Gesamt inkl. MwSt." },
+    },
     mobile: {
       back: 'Zurück zu den Bestellungen',
       more: 'Mehr',
@@ -12426,6 +12440,13 @@ export default {
       documentEmailed: "hat {{document}} per E-Mail gesendet",
       creditApplied: "hat {{amount}} Guthaben auf {{invoice}} angerechnet",
       contactEdited: "hat den Kontakt bearbeitet",
+      quoteCreated: "hat das Angebot erstellt",
+      quoteAccepted: "hat das Angebot als angenommen markiert",
+      quoteDeclined: "hat das Angebot als abgelehnt markiert",
+      quoteEdited: "hat das Angebot bearbeitet",
+      quoteReopened: "hat das Angebot wieder geöffnet",
+      quoteEmailed: "hat das Angebot per E-Mail gesendet",
+      quoteAcceptUndone: "hat die Annahme rückgängig gemacht",
       short: {
         created: 'Bestellung angelegt',
         received: 'Bestellung eingegangen',

@@ -16,6 +16,8 @@ import { NewOrderDraftRow } from '../components/orders/NewOrderDraftRow';
 import { OrderCard } from '../components/orders/OrderCard';
 import { OrderMobileFilters } from '../components/orders/OrderMobileFilters';
 import { OrderStatsStrip } from '../components/orders/OrderStatsStrip';
+import { QuotesView } from '../components/orders/QuotesView';
+import { filterQuotes } from '../components/orders/quotes';
 import {
   byBrand,
   byFinishedPayment,
@@ -108,8 +110,11 @@ export function OrderBoardPage() {
     onError: () => showToast(t('orders.refreshFailed'), 'error'),
   });
 
-  const { query, setQuery, status, setStatus, payFilter, setPayFilter, follow, setFollow, sort, setSort, coreOnly, setCoreOnly, chooseCoreOnly } =
+  const { query, setQuery, status, setStatus, payFilter, setPayFilter, follow, setFollow, sort, setSort, coreOnly, setCoreOnly, chooseCoreOnly, view, setView } =
     useOrderFilters();
+  const quotesView = view === 'quotes';
+  // Read on both sides: the Devis button counts the current quotes.
+  const quotes = useQuery({ queryKey: ['order-board', 'quotes'], queryFn: api.getQuotes });
   const [statsOpen, setStatsOpen] = useState(readStatsOpen);
   const [shown, setShown] = useState(PAGE);
   const [start, setStart] = useState<{ id: string; target: string; tick: number } | null>(null);
@@ -124,6 +129,15 @@ export function OrderBoardPage() {
   const searchRef = useRef<HTMLInputElement>(null);
 
   const finishedQuery = useQuery({ queryKey: FINISHED_KEY, queryFn: api.getFinishedOrders });
+  // The opened quote, kept in the URL (`?quote=`) the way `?order=` is.
+  const quoteId = searchParams.get('quote');
+  const toggleQuote = (id: string) =>
+    setSearchParams(prev => {
+      const next = new URLSearchParams(prev);
+      if (quoteId === id) next.delete('quote');
+      else next.set('quote', id);
+      return next;
+    }, { replace: quoteId === id });
 
   // Opening adds a history entry (Back closes it); closing replaces, so Back never reopens what was just closed.
   const setOrder = (id: string | null, clearFilters = false) => {
@@ -338,6 +352,20 @@ export function OrderBoardPage() {
     ? t('orders.syncing', { n: data?.sync.pending })
     : data?.computed_at && t('orders.updated', { when: formatRelativeTime(data.computed_at, 'system', t) });
   const chips = [...STATUSES, 'all', 'finished'] as StatusFilter[];
+  const segCls = (on: boolean, tone: string) =>
+    `btn-press inline-flex flex-1 items-center justify-center gap-1.5 rounded-md px-3.5 py-1.5 text-sm font-medium md:flex-none ${on ? tone : 'text-bambu-gray hover:text-white'}`;
+  // Devis | Commandes, at every width. The quotes wear violet, the orders the board's green.
+  const viewSwitch = (
+    <div className="flex rounded-lg border border-bambu-dark-tertiary bg-bambu-dark-secondary p-0.5 md:inline-flex">
+      <button type="button" aria-pressed={quotesView} onClick={() => setView('quotes')} className={segCls(quotesView, 'bg-violet-500/20 text-violet-700 dark:text-violet-200')}>
+        {t('orders.quotes.tab')}{' '}
+        <span className="text-xs opacity-70">{quotes.data?.ready ? filterQuotes(quotes.data.rows, { chip: 'current', text: '', coreOnly }).length : '–'}</span>
+      </button>
+      <button type="button" aria-pressed={!quotesView} onClick={() => setView('orders')} className={segCls(!quotesView, 'bg-bambu-green/15 text-white')}>
+        {t('orders.title')}
+      </button>
+    </div>
+  );
 
   let list: ReactNode;
   if (isError && !data) {
@@ -408,6 +436,7 @@ export function OrderBoardPage() {
           <PackageCheck className="h-7 w-7 text-bambu-green" />
           {t('orders.title')}
         </h1>
+        {viewSwitch}
         <div className="ml-auto flex items-center gap-3">
           {data && (
             <span className="inline-flex items-center gap-2 text-sm text-bambu-gray" role="status">
@@ -451,7 +480,9 @@ export function OrderBoardPage() {
           onClose={() => setDrafting(false)}
         />
       )}
-      {phone && (
+      {phone && <div className="mb-3">{viewSwitch}</div>}
+      {quotesView && <QuotesView coreOnly={coreOnly} openId={quoteId} onToggle={toggleQuote} />}
+      {phone && !quotesView && (
         <>
           <div className="-mx-4 mb-3 flex gap-2 overflow-x-auto px-4 pb-1">
             {chips.map(id => (
@@ -505,7 +536,7 @@ export function OrderBoardPage() {
         </>
       )}
 
-      {!phone && (<>
+      {!phone && !quotesView && (<>
       <div data-testid="orders-tiles" className="mb-5 grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-6">
         {STATUSES.map(id => tile(
           id,
@@ -532,7 +563,7 @@ export function OrderBoardPage() {
       )}
       </>)}
 
-      {!phone && (
+      {!phone && !quotesView && (
       <div className="mb-4 flex flex-wrap items-center gap-2">
         <div className="relative max-w-md grow basis-64">
           <Search aria-hidden="true" className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-bambu-gray/50" />
@@ -551,7 +582,7 @@ export function OrderBoardPage() {
       </div>
       )}
 
-      {batch.length > 0 && (
+      {!quotesView && batch.length > 0 && (
         <div data-testid="orders-batch" className="animate-rise-sm sticky top-2 z-10 mb-3 flex flex-wrap items-center gap-2 rounded-lg border border-bambu-green/50 bg-bambu-dark-secondary px-3 py-2">
           <Button size="sm" onClick={printSelected} disabled={printingBatch}>
             {printingBatch ? <Loader2 aria-hidden="true" className="h-4 w-4 animate-spin" /> : <Printer aria-hidden="true" className="h-4 w-4" />}
@@ -563,8 +594,8 @@ export function OrderBoardPage() {
         </div>
       )}
 
-      <div data-testid="orders-list" className={`space-y-2 ${ready && entering ? 'orders-rows-enter stagger-children' : ''}`}>{list}</div>
-      {ready && listed.length > shown && (
+      {!quotesView && <div data-testid="orders-list" className={`space-y-2 ${ready && entering ? 'orders-rows-enter stagger-children' : ''}`}>{list}</div>}
+      {!quotesView && ready && listed.length > shown && (
         <button
           type="button"
           onClick={() => setShown(n => n + PAGE)}
@@ -573,7 +604,7 @@ export function OrderBoardPage() {
           {t('orders.showMore')}
         </button>
       )}
-      {ready && status === 'finished' && finishedQuery.isError && (
+      {!quotesView && ready && status === 'finished' && finishedQuery.isError && (
         <div className="mt-2 flex items-center justify-center gap-3 text-sm text-bambu-gray">
           {t('orders.finished.loadListFailed')}
           <Button variant="secondary" size="sm" onClick={() => finishedQuery.refetch()}>

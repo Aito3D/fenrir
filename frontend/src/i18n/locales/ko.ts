@@ -11931,6 +11931,20 @@ export default {
   },
   // Order Board: open sales orders against stock (pages/OrderBoardPage.tsx)
   orders: {
+    quotes: {
+      tab: "견적",
+      search: "고객, 번호, 품목…",
+      loading: "견적 불러오는 중… {{n}}개 남음",
+      loadFailed: "견적을 불러올 수 없습니다.",
+      validUntil: "{{date}}까지 유효",
+      document: "문서",
+      inStock: "{{n}}개 재고",
+      toOrder: "주문 필요",
+      chip: { current: "진행 중", expired: "만료됨", declined: "거절됨" },
+      empty: { current: "진행 중인 견적이 없습니다.", expired: "만료된 견적이 없습니다.", declined: "거절된 견적이 없습니다." },
+      state: { draft: "임시", sent: "발송됨", accepted: "수락됨", expired: "만료됨", declined: "거절됨" },
+      col: { item: "품목", stock: "재고", qty: "수량", discount: "할인", total: "세금 포함 합계" },
+    },
     mobile: {
       back: '주문으로 돌아가기',
       more: '더 보기',
@@ -12008,6 +12022,13 @@ export default {
       documentEmailed: "{{document}}을(를) 이메일로 보냈습니다",
       creditApplied: "{{invoice}}에 크레딧 {{amount}}을(를) 적용했습니다",
       contactEdited: "연락처를 수정했습니다",
+      quoteCreated: "견적을 생성함",
+      quoteAccepted: "견적을 수락으로 표시함",
+      quoteDeclined: "견적을 거절로 표시함",
+      quoteEdited: "견적을 수정함",
+      quoteReopened: "견적을 다시 열었음",
+      quoteEmailed: "견적을 이메일로 보냄",
+      quoteAcceptUndone: "수락을 취소함",
       short: {
         created: '주문 생성됨',
         received: '주문 접수',

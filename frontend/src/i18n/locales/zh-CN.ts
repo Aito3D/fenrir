@@ -12332,6 +12332,20 @@ export default {
   },
   // Order Board: open sales orders against stock (pages/OrderBoardPage.tsx)
   orders: {
+    quotes: {
+      tab: "报价",
+      search: "客户、编号、商品…",
+      loading: "正在加载报价… 剩余 {{n}} 个",
+      loadFailed: "无法加载报价。",
+      validUntil: "有效期至 {{date}}",
+      document: "文档",
+      inStock: "库存 {{n}}",
+      toOrder: "需订购",
+      chip: { current: "进行中", expired: "已过期", declined: "已拒绝" },
+      empty: { current: "没有进行中的报价。", expired: "没有已过期的报价。", declined: "没有已拒绝的报价。" },
+      state: { draft: "草稿", sent: "已发送", accepted: "已接受", expired: "已过期", declined: "已拒绝" },
+      col: { item: "商品", stock: "库存", qty: "数量", discount: "折扣", total: "含税合计" },
+    },
     mobile: {
       back: '返回订单',
       more: '更多',
@@ -12409,6 +12423,13 @@ export default {
       documentEmailed: "已通过邮件发送 {{document}}",
       creditApplied: "已将 {{amount}} 余额抵扣到 {{invoice}}",
       contactEdited: "已编辑联系人",
+      quoteCreated: "创建了报价",
+      quoteAccepted: "将报价标记为已接受",
+      quoteDeclined: "将报价标记为已拒绝",
+      quoteEdited: "编辑了报价",
+      quoteReopened: "重新打开了报价",
+      quoteEmailed: "通过邮件发送了报价",
+      quoteAcceptUndone: "撤销了接受",
       short: {
         created: '订单已创建',
         received: '已收到订单',

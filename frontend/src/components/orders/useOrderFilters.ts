@@ -9,6 +9,7 @@ import { STATUSES } from './orderStatus';
 const STATUS_VALUES: StatusFilter[] = ['all', ...STATUSES, 'finished'];
 const PAY_VALUES: PayFilter[] = ['all', 'unpaid', 'partial', 'paid', 'overdue'];
 export const SORTS: SortKey[] = ['age', 'value', 'customer', 'ready'];
+const VIEWS = ['orders', 'quotes'] as const;
 
 const pick = <T extends string>(value: string | null, allowed: readonly T[], fallback: T): T =>
   allowed.includes(value as T) ? (value as T) : fallback;
@@ -19,6 +20,7 @@ const fromUrl = (params: URLSearchParams) => ({
   payFilter: pick(params.get('pay'), PAY_VALUES, 'all'),
   follow: (FOLLOW_KEYS as string[]).includes(params.get('follow') ?? '') ? (params.get('follow') as FollowKey) : null,
   sort: { key: pick(params.get('sort'), SORTS, 'age'), flipped: params.get('flip') === '1' },
+  view: pick(params.get('view'), VIEWS, 'orders'),
 });
 
 const CORE_ONLY_KEY = 'orders.coreOnly';
@@ -45,7 +47,7 @@ function readCoreOnly(): boolean {
   }
 }
 
-/** The board's filters, mirrored into the URL (`q`, `status`, `pay`, `follow`, `sort`, `flip`) with defaults left out.
+/** The board's filters, mirrored into the URL (`q`, `status`, `pay`, `follow`, `sort`, `flip`, `view`) with defaults left out.
  *  State is local and the URL follows with `replace`, so typing neither lags nor fills the history; other
  *  parameters (`?order=`) are kept. A URL changed by anything else (a link to bare /orders, back/forward) is
  *  copied into the state.
@@ -61,6 +63,8 @@ export function useOrderFilters() {
   const [follow, setFollow] = useState<FollowKey | null>(initial.follow);
   const [sort, setSort] = useState<{ key: SortKey; flipped: boolean }>(initial.sort);
   const [coreOnly, setCoreOnly] = useState(readCoreOnly);
+  // Devis or Commandes: in the URL only, never saved to the account.
+  const [view, setView] = useState(initial.view);
   const queryClient = useQueryClient();
   const prefs = useQuery({ queryKey: PREFS_QUERY, queryFn: api.getUiPrefs, staleTime: Infinity });
   const saved = useRef<OrderPrefs | null>(null);
@@ -152,6 +156,7 @@ export function useOrderFilters() {
       setPayFilter(f.payFilter);
       setFollow(f.follow);
       setSort(s => (s.key === f.sort.key && s.flipped === f.sort.flipped ? s : f.sort));
+      setView(f.view);
       return;
     }
     const next = new URLSearchParams(params);
@@ -162,12 +167,13 @@ export function useOrderFilters() {
     put('follow', follow);
     put('sort', sort.key === 'age' ? null : sort.key);
     put('flip', sort.flipped ? '1' : null);
+    put('view', view === 'quotes' ? view : null);
     known.current = next.toString();
     if (known.current !== current) {
       inflight.current.add(current).add(known.current);
       setParams(next, { replace: true });
     } else inflight.current.clear();
-  }, [query, status, payFilter, follow, sort, params, setParams]);
+  }, [query, status, payFilter, follow, sort, view, params, setParams]);
 
   return {
     query, setQuery, status, setStatus,
@@ -175,5 +181,6 @@ export function useOrderFilters() {
     follow, setFollow: chooseFollow,
     sort, setSort: chooseSort,
     coreOnly, setCoreOnly, chooseCoreOnly,
+    view, setView,
   };
 }

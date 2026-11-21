@@ -12276,6 +12276,20 @@ export default {
   },
   // Order Board: open sales orders against stock (pages/OrderBoardPage.tsx)
   orders: {
+    quotes: {
+      tab: "Teklifler",
+      search: "Müşteri, numara, ürün…",
+      loading: "Teklifler yükleniyor… {{n}} kaldı",
+      loadFailed: "Teklifler yüklenemedi.",
+      validUntil: "{{date}} tarihine kadar geçerli",
+      document: "Belge",
+      inStock: "{{n}} mevcut",
+      toOrder: "sipariş edilecek",
+      chip: { current: "Süren", expired: "Süresi dolan", declined: "Reddedilen" },
+      empty: { current: "Süren teklif yok.", expired: "Süresi dolan teklif yok.", declined: "Reddedilen teklif yok." },
+      state: { draft: "Taslak", sent: "Gönderildi", accepted: "Kabul edildi", expired: "Süresi doldu", declined: "Reddedildi" },
+      col: { item: "Ürün", stock: "Stok", qty: "Adet", discount: "İndirim", total: "KDV dahil toplam" },
+    },
     mobile: {
       back: 'Siparişlere dön',
       more: 'Daha fazla',
@@ -12353,6 +12367,13 @@ export default {
       documentEmailed: "{{document}} e-postayla gönderdi",
       creditApplied: "{{invoice}} faturasına {{amount}} alacak uyguladı",
       contactEdited: "kişiyi düzenledi",
+      quoteCreated: "teklifi oluşturdu",
+      quoteAccepted: "teklifi kabul edildi olarak işaretledi",
+      quoteDeclined: "teklifi reddedildi olarak işaretledi",
+      quoteEdited: "teklifi düzenledi",
+      quoteReopened: "teklifi yeniden açtı",
+      quoteEmailed: "teklifi e-postayla gönderdi",
+      quoteAcceptUndone: "kabulü geri aldı",
       short: {
         created: 'Sipariş oluşturuldu',
         received: 'Sipariş alındı',

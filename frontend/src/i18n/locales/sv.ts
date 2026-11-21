@@ -12406,6 +12406,20 @@ errors: {
   },
   // Order Board: open sales orders against stock (pages/OrderBoardPage.tsx)
   orders: {
+    quotes: {
+      tab: "Offerter",
+      search: "Kund, nummer, artikel…",
+      loading: "Läser in offerter… {{n}} kvar",
+      loadFailed: "Det gick inte att läsa in offerterna.",
+      validUntil: "giltig till {{date}}",
+      document: "Dokument",
+      inStock: "{{n}} i lager",
+      toOrder: "att beställa",
+      chip: { current: "Pågående", expired: "Utgångna", declined: "Avböjda" },
+      empty: { current: "Inga pågående offerter.", expired: "Inga utgångna offerter.", declined: "Inga avböjda offerter." },
+      state: { draft: "Utkast", sent: "Skickad", accepted: "Accepterad", expired: "Utgången", declined: "Avböjd" },
+      col: { item: "Artikel", stock: "Lager", qty: "Antal", discount: "Rabatt", total: "Totalt inkl. moms" },
+    },
     mobile: {
       back: 'Tillbaka till beställningar',
       more: 'Mer',
@@ -12483,6 +12497,13 @@ errors: {
       documentEmailed: "mejlade {{document}}",
       creditApplied: "tillämpade {{amount}} tillgodo på {{invoice}}",
       contactEdited: "redigerade kontakten",
+      quoteCreated: "skapade offerten",
+      quoteAccepted: "markerade offerten som accepterad",
+      quoteDeclined: "markerade offerten som avböjd",
+      quoteEdited: "redigerade offerten",
+      quoteReopened: "öppnade offerten igen",
+      quoteEmailed: "mejlade offerten",
+      quoteAcceptUndone: "ångrade accepten",
       short: {
         created: 'Order skapad',
         received: 'Order mottagen',

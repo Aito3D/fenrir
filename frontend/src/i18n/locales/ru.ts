@@ -11953,6 +11953,20 @@ export default {
   },
   // Order Board: open sales orders against stock (pages/OrderBoardPage.tsx)
   orders: {
+    quotes: {
+      tab: "Сметы",
+      search: "Клиент, номер, товар…",
+      loading: "Загрузка смет… осталось {{n}}",
+      loadFailed: "Не удалось загрузить сметы.",
+      validUntil: "действует до {{date}}",
+      document: "Документ",
+      inStock: "в наличии: {{n}}",
+      toOrder: "заказать",
+      chip: { current: "Текущие", expired: "Истёкшие", declined: "Отклонённые" },
+      empty: { current: "Нет текущих смет.", expired: "Нет истёкших смет.", declined: "Нет отклонённых смет." },
+      state: { draft: "Черновик", sent: "Отправлена", accepted: "Принята", expired: "Истекла", declined: "Отклонена" },
+      col: { item: "Товар", stock: "Остаток", qty: "Кол-во", discount: "Скидка", total: "Итого с НДС" },
+    },
     mobile: {
       back: 'Назад к заказам',
       more: 'Ещё',
@@ -12030,6 +12044,13 @@ export default {
       documentEmailed: "отправил(а) {{document}} по почте",
       creditApplied: "зачёл(ла) {{amount}} кредита в {{invoice}}",
       contactEdited: "изменил(а) контакт",
+      quoteCreated: "создал смету",
+      quoteAccepted: "отметил смету как принятую",
+      quoteDeclined: "отметил смету как отклонённую",
+      quoteEdited: "изменил смету",
+      quoteReopened: "снова открыл смету",
+      quoteEmailed: "отправил смету по почте",
+      quoteAcceptUndone: "отменил принятие",
       short: {
         created: 'Заказ создан',
         received: 'Заказ получен',
