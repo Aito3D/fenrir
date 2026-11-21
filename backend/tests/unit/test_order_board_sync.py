@@ -22,6 +22,7 @@ from backend.app.services.zoho import (
     ModifiedSinceRows,
     ZohoNotConfiguredError,
     ZohoRateLimited,
+    ZohoRequestRejected,
     ZohoService,
     ZohoUpstreamError,
     zoho_service,
@@ -118,6 +119,11 @@ class FakeZoho:
         self.fail_retainers: Exception | None = None
         self.customer_payments: list[dict] = []
         self.customer_retainers: list[dict] = []
+        self.estimates: dict[str, dict] = {}  # full estimates; the list rows are derived from them
+        self.touched: set[str] = set()  # what the modified-since estimate listing returns
+        self.estimates_truncated = False
+        self.estimate_since: list[str] = []
+        self.rejected_estimates: set[str] = set()
 
     def add(self, *docs: dict):
         for doc in docs:
@@ -140,7 +146,25 @@ class FakeZoho:
 
     async def get_estimate(self, db, estimate_id):
         self.calls["estimate"] += 1
-        return {"estimate_id": estimate_id, "estimate_number": f"DEV26-{estimate_id}"}
+        if estimate_id in self.rejected_estimates:
+            raise ZohoRequestRejected("no such estimate")
+        return self.estimates.get(estimate_id) or {
+            "estimate_id": estimate_id,
+            "estimate_number": f"DEV26-{estimate_id}",
+        }
+
+    def _estimate_row(self, estimate: dict) -> dict:
+        return {k: v for k, v in estimate.items() if k not in ("line_items", "salesorders", "invoice_ids")}
+
+    async def list_estimates(self, db):
+        self.calls["list_estimates"] += 1
+        return [self._estimate_row(e) for e in self.estimates.values()]
+
+    async def list_estimate_rows_modified_since(self, db, since):
+        self.calls["estimate_changes"] += 1
+        self.estimate_since.append(since)
+        rows = [self._estimate_row(e) for i, e in self.estimates.items() if i in self.touched]
+        return rows, self.estimates_truncated
 
     async def list_project_retainers(self, db, quote):
         self.calls["retainers"] += 1
@@ -226,6 +250,8 @@ def zoho(monkeypatch):
         "list_purchaseorders",
         "get_salesorder",
         "get_estimate",
+        "list_estimates",
+        "list_estimate_rows_modified_since",
         "get_purchaseorder",
         "list_items_by_ids",
         "list_items_page_all",
@@ -1102,7 +1128,7 @@ def pings(monkeypatch):
 async def test_a_pass_that_changes_the_board_pings_the_open_pages_once(db_session, zoho, pings):
     zoho.add(order(1, qty=2))
     await sync.run_pass(db_session)
-    assert pings == [{"type": "order_board_updated", "finished": True}]  # the first computed board
+    assert pings == [{"type": "order_board_updated", "finished": True, "quotes": False}]  # the first computed board
     await sync.run_pass(db_session)
     assert len(pings) == 1  # nothing changed: no ping
     zoho.orders["so1"] = order(1, qty=2, packed=2)
@@ -1130,10 +1156,14 @@ async def test_a_reread_after_a_write_pings_when_the_row_changed(db_session, zoh
     assert pings == []  # Books shows the same order
     zoho.orders["so1"] = order(1, qty=2, packed=2)
     await sync.refresh_order(db_session, "so1")
-    assert pings == [{"type": "order_board_updated", "finished": False}]  # same orders on the board
+    assert pings == [{"type": "order_board_updated", "finished": False, "quotes": False}]  # same orders on the board
     zoho.orders["so1"] = order(1, qty=2, shipped=2)
     await sync.refresh_order(db_session, "so1")
-    assert pings[-1] == {"type": "order_board_updated", "finished": True}  # it left the board: finished list moves
+    assert pings[-1] == {
+        "type": "order_board_updated",
+        "finished": True,
+        "quotes": False,
+    }  # it left the board: finished list moves
 
 
 @pytest.mark.asyncio

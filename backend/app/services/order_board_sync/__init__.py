@@ -1,7 +1,7 @@
 """The Order Board's local copy of Zoho Books and the pass that keeps it fresh.
 
 Read-only towards Books: GETs only. One bounded pass lists every sales order
-and purchase order (three calls today), fetches the detail of at most
+and purchase order (three calls today) and the changed product quotes (``_quotes``), fetches the detail of at most
 ``MAX_DETAILS_PER_PASS`` documents whose list row changed, re-reads stock for
 the items on open order lines, then recomputes and stores the board; a
 stale local copy of the goods catalogue (``_catalog``) is swept after. Opening
@@ -57,6 +57,7 @@ from backend.app.services.order_board_sync._finished import (
 )
 from backend.app.services.order_board_sync._loop import _iteration, run_loop, start_order_board_sync
 from backend.app.services.order_board_sync._pass import run_pass
+from backend.app.services.order_board_sync._quotes import find_quote, read_quotes, store_quote
 from backend.app.services.order_board_sync._recompute import refresh_order, save_settings
 
 __all__ = [
@@ -82,6 +83,7 @@ __all__ = [
     "_written_at",
     "announce_board_change",
     "find_board_row",
+    "find_quote",
     "find_stored",
     "load_settings",
     "needs_refresh",
@@ -91,11 +93,13 @@ __all__ = [
     "search_catalog",
     "read_finished",
     "read_finished_order",
+    "read_quotes",
     "refresh_order",
     "run_loop",
     "run_pass",
     "save_settings",
     "start_order_board_sync",
+    "store_quote",
     "ws_manager",
     "zoho_busy",
 ]

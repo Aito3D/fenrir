@@ -135,10 +135,11 @@ async def _state(db: AsyncSession) -> OrderBoardDoc:
     return state
 
 
-async def _pending_count(db: AsyncSession) -> int:
-    return (
-        await db.execute(select(func.count()).select_from(OrderBoardDoc).where(OrderBoardDoc.pending.is_(True)))
-    ).scalar_one()
+async def _pending_count(db: AsyncSession, kinds: tuple[str, ...] | None = None) -> int:
+    query = select(func.count()).select_from(OrderBoardDoc).where(OrderBoardDoc.pending.is_(True))
+    if kinds is not None:
+        query = query.where(OrderBoardDoc.kind.in_(kinds))
+    return (await db.execute(query)).scalar_one()
 
 
 def zoho_busy(ceiling: int = OPERATOR_CALL_CEILING) -> bool:
@@ -173,12 +174,12 @@ def _busy_on_rate_limit(key: str) -> Iterator[None]:
         raise ZohoBusy(key) from e
 
 
-async def announce_board_change(*, finished: bool = False) -> None:
+async def announce_board_change(*, finished: bool = False, quotes: bool = False) -> None:
     """Tell the open Order Board pages to refetch: a bare ping, the board itself stays behind its permission.
-    ``finished`` also refetches the finished list (a pass, or an order that left the board). Best effort:
-    polling is the fallback."""
+    ``finished`` also refetches the finished list (a pass, or an order that left the board); ``quotes`` the quotes
+    tab (a pass changed a stored quote). Best effort: polling is the fallback."""
     try:
-        await ws_manager.broadcast({"type": "order_board_updated", "finished": finished})
+        await ws_manager.broadcast({"type": "order_board_updated", "finished": finished, "quotes": quotes})
     except Exception:
         logger.warning("Order board: the live update broadcast failed", exc_info=True)
 

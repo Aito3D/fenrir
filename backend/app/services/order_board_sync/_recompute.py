@@ -84,7 +84,8 @@ async def recompute(
     current = (state.detail if state else None) or {}
     if state is None or not current.get("stock_loaded_at"):
         return ""
-    if not current.get("computed_at") and await _pending_count(db):
+    # Quote details do not feed the board: a pending quote never holds back its first computation.
+    if not current.get("computed_at") and await _pending_count(db, ("salesorder", "purchaseorder")):
         return ""
     settings = await load_settings(db)
     docs = (

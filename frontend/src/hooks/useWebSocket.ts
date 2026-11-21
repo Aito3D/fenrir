@@ -41,6 +41,8 @@ interface WebSocketMessage {
   verified?: boolean;
   // order_board_updated: the finished-orders list may have changed too.
   finished?: boolean;
+  // order_board_updated: a stored product quote changed.
+  quotes?: boolean;
   kprofile_applied?: boolean;
   // Slicer Pipeline run events (#1425 PR C). ``run`` carries the full
   // PipelineRunResponse payload — typed loosely here so the WebSocket hook
@@ -740,6 +742,9 @@ export function useWebSocket() {
         queryClient.invalidateQueries({ queryKey: ['order-board'], exact: true });
         if (message.finished !== false) {
           queryClient.invalidateQueries({ queryKey: ['order-board', 'finished'], exact: true });
+        }
+        if (message.quotes) {
+          queryClient.invalidateQueries({ queryKey: ['order-board', 'quotes'], exact: true });
         }
         break;
       // Slicer Pipeline runs (#1425 PR C). State transitions on the run

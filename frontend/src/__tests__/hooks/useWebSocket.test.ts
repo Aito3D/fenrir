@@ -1224,6 +1224,20 @@ describe('useWebSocket hook', () => {
       vi.useRealTimers();
     });
 
+    it('refreshes the quotes tab only when the ping says a quote changed', async () => {
+      vi.useFakeTimers();
+      const { ws, invalidateSpy } = await openSocket();
+      act(() => {
+        ws.simulateMessage({ type: 'order_board_updated', finished: false });
+      });
+      expect(invalidateSpy).not.toHaveBeenCalledWith({ queryKey: ['order-board', 'quotes'], exact: true });
+      act(() => {
+        ws.simulateMessage({ type: 'order_board_updated', finished: false, quotes: true });
+      });
+      expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['order-board', 'quotes'], exact: true });
+      vi.useRealTimers();
+    });
+
     it.each(['queue_changed', 'queue_item_acked', 'queue_item_failed', 'print_start', 'print_complete'])(
       'refreshes the queue on %s',
       async (type) => {

@@ -2,7 +2,7 @@
 
 import logging
 import time
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -12,6 +12,7 @@ from backend.app.services import order_board_events
 from backend.app.services.aito_poll_watermark import format_books_time
 from backend.app.services.inbox import broadcast_pending
 from backend.app.services.order_board_payment import quote_number_missing
+from backend.app.services.order_board_quotes import quote_state
 from backend.app.services.order_board_sync import _common
 from backend.app.services.order_board_sync._catalog import refresh_catalog_if_stale
 from backend.app.services.order_board_sync._common import (
@@ -40,12 +41,15 @@ from backend.app.services.order_board_sync._finished import (
     _is_stale,
     _store_quote_number,
 )
+from backend.app.services.order_board_sync._quotes import reconcile_quotes, store_quote
 from backend.app.services.order_board_sync._recompute import recompute
 from backend.app.services.order_board_sync._retainers import _retainers
 from backend.app.services.zoho import (
     ZohoAmbiguous,
     ZohoNotConfiguredError,
+    ZohoNotFound,
     ZohoRateLimited,
+    ZohoRequestRejected,
     ZohoUnreachable,
     ZohoUpstreamError,
     zoho_service,
@@ -143,10 +147,17 @@ async def _mark_payment_changes(
 
 
 async def _fetch_pending_details(db: AsyncSession, stored: dict[tuple[str, str], OrderBoardDoc]) -> None:
-    # Oldest sales orders first: they are served first, so they matter most.
+    # Oldest sales orders first: they are served first, so they matter most. Then purchase orders, then quotes
+    # newest first (the ones still in play).
     pending = sorted(
         (d for d in stored.values() if d.pending),
         key=lambda d: (d.kind != "salesorder", d.header.get("date") or "", d.zoho_id),
+    ) + sorted(
+        (
+            await db.execute(select(OrderBoardDoc).where(OrderBoardDoc.kind == "estimate", OrderBoardDoc.pending))
+        ).scalars(),
+        key=lambda d: (d.header.get("date") or "", d.zoho_id),
+        reverse=True,
     )
     fetched_count = 0
     payments: dict[str, list[dict]] = {}  # each customer's payments, read once this pass
@@ -155,21 +166,31 @@ async def _fetch_pending_details(db: AsyncSession, stored: dict[tuple[str, str],
             logger.info("Order board: Zoho call ceiling reached, the remaining details wait for the next pass")
             break
         fetched_count += 1
-        get = zoho_service.get_salesorder if doc.kind == "salesorder" else zoho_service.get_purchaseorder
         began = time.monotonic()
-        fetched = await get(db, doc.zoho_id)
+        try:
+            fetched = await getattr(zoho_service, f"get_{doc.kind}")(db, doc.zoho_id)
+        except (ZohoRequestRejected, ZohoNotFound):
+            if doc.kind != "estimate":
+                raise
+            await db.delete(doc)  # gone or refused in Books: the next listing says whether it comes back
+            await db.commit()
+            continue
         await db.refresh(doc)  # the copy loaded at the pass start may predate a write: diff against what is stored now
-        if _written_at.get(doc.zoho_id, -1.0) >= began and doc.kind == "salesorder":
+        written_here = doc.kind in ("salesorder", "estimate")
+        if _written_at.get(doc.zoho_id, -1.0) >= began and written_here:
             continue  # a write here is newer than this copy: keep it, and the pending mark
-        previous = doc.detail
-        retainers = await _retainers(db, fetched, previous, payments) if doc.kind == "salesorder" else {}
-        doc.detail = {**fetched, "_fetched_at": _now(), **retainers}
-        doc.pending = False
-        if doc.kind == "salesorder":
-            await _observe(db, doc.zoho_id, _record_fetch_events, doc.zoho_id, previous, fetched)
+        if doc.kind == "estimate":
+            await store_quote(db, fetched)  # a quote takes none of the order's payment or alert work
+        else:
+            previous = doc.detail
+            retainers = await _retainers(db, fetched, previous, payments) if doc.kind == "salesorder" else {}
+            doc.detail = {**fetched, "_fetched_at": _now(), **retainers}
+            doc.pending = False
+            if doc.kind == "salesorder":
+                await _observe(db, doc.zoho_id, _record_fetch_events, doc.zoho_id, previous, fetched)
         await db.commit()  # a later failure must not lose what was fetched
         await broadcast_pending(db)
-        if _written_at.get(doc.zoho_id, -1.0) >= began and doc.kind == "salesorder":
+        if _written_at.get(doc.zoho_id, -1.0) >= began and written_here:
             doc.pending = True  # a write began while this copy was being stored: it may predate the write
             await db.commit()
 
@@ -205,14 +226,21 @@ async def _fetch_pending_details(db: AsyncSession, stored: dict[tuple[str, str],
 
 
 async def _reload_stock(
-    db: AsyncSession, stored: dict[tuple[str, str], OrderBoardDoc], settings: OrderBoardSettings
+    db: AsyncSession, stored: dict[tuple[str, str], OrderBoardDoc], settings: OrderBoardSettings, *, quotes: bool
 ) -> None:
-    # Stock has no change feed in Books, so it is re-read on every pass.
+    # Stock has no change feed in Books, so it is re-read on every pass: for open orders and for live quotes.
+    today = date.today()
+    quotes_live = (
+        d
+        for d in (await db.execute(select(OrderBoardDoc).where(OrderBoardDoc.kind == "estimate"))).scalars()
+        if quote_state(d.header, today) in ("draft", "sent", "accepted")
+    )
+    orders_open = (d for d in stored.values() if d.kind == "salesorder" and _is_candidate(d.kind, d.header, settings))
     item_ids = sorted(
         {
             line["item_id"]
-            for d in stored.values()
-            if d.kind == "salesorder" and d.detail and _is_candidate(d.kind, d.header, settings)
+            for d in (*orders_open, *quotes_live)
+            if d.detail
             for line in d.detail.get("line_items") or []
             if line.get("item_id")
         }
@@ -241,8 +269,18 @@ async def _reload_stock(
     state.detail = {**(state.detail or {}), "last_success_at": _now(), "last_error": None, "last_error_at": None}
     await db.commit()
     await broadcast_pending(db)
-    if changed:
-        await announce_board_change(finished=True)
+    if changed or quotes:
+        await announce_board_change(finished=bool(changed), quotes=quotes)
+
+
+async def _quote_marks(db: AsyncSession) -> set[tuple]:
+    """What tells a stored quote changed: inserted or deleted, marked pending, its detail landed, a new list row."""
+    rows = await db.execute(
+        select(OrderBoardDoc.zoho_id, OrderBoardDoc.pending, OrderBoardDoc.header).where(
+            OrderBoardDoc.kind == "estimate"
+        )
+    )
+    return {(zoho_id, pending, header.get("last_modified_time")) for zoho_id, pending, header in rows}
 
 
 async def _sync(db: AsyncSession) -> None:
@@ -250,8 +288,10 @@ async def _sync(db: AsyncSession) -> None:
     settings = await load_settings(db)
     stored = await _reconcile_listings(db, settings)
     await _mark_payment_changes(db, stored, settings, started)
+    before = await _quote_marks(db)
+    await reconcile_quotes(db, settings)
     await _fetch_pending_details(db, stored)
-    await _reload_stock(db, stored, settings)
+    await _reload_stock(db, stored, settings, quotes=await _quote_marks(db) != before)
     await refresh_catalog_if_stale(db)
 
 
