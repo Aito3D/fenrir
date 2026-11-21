@@ -22,6 +22,8 @@ export function RevenueMenu(p: {
   /** Absent without the margin permission: wages are margin data. */
   laborOpen?: boolean;
   onLabor?: () => void;
+  fixedCostsOpen?: boolean;
+  onFixedCosts?: () => void;
   onReview: () => void;
   onCopy: () => void;
   onExport: () => void;
@@ -109,6 +111,11 @@ export function RevenueMenu(p: {
                 {p.onLabor && (
                   <button type="button" role="menuitem" className={ITEM} onClick={pick(p.onLabor)}>
                     {p.laborOpen ? t('revenue.menu.hideLabor') : t('revenue.menu.labor')}
+                  </button>
+                )}
+                {p.onFixedCosts && (
+                  <button type="button" role="menuitem" className={ITEM} onClick={pick(p.onFixedCosts)}>
+                    {p.fixedCostsOpen ? t('revenue.fixedCosts.hideMenu') : t('revenue.fixedCosts.menu')}
                   </button>
                 )}
                 <button type="button" role="menuitem" className={ITEM} onClick={pick(p.onReview)}>

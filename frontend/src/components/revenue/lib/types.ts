@@ -374,3 +374,8 @@ export interface AnalysisResponse {
   marginByNature?: MarginRow[];
   dormant: DormantRow[];
 }
+
+export interface FixedCost {
+  label: string;
+  monthly: number;
+}

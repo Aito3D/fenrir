@@ -20,6 +20,7 @@ import { RevenueCalendar } from '../components/revenue/RevenueCalendar';
 import { RevenueMenu } from '../components/revenue/RevenueMenu';
 import { RevenueReview } from '../components/revenue/RevenueReview';
 import { RevenueLabor } from '../components/revenue/RevenueLabor';
+import { RevenueFixedCosts } from '../components/revenue/RevenueFixedCosts';
 import { RevenueTargets } from '../components/revenue/RevenueTargets';
 import { RevenueControls as ControlsRow } from '../components/revenue/RevenueControls';
 import { RevenueChip, RevenueProductSearch } from '../components/revenue/RevenueProductSearch';
@@ -178,6 +179,8 @@ export function RevenuePage() {
   const [reviewOpen, setReviewOpen] = useState(false);
   const [targetsOpen, setTargetsOpen] = useState(false);
   const [laborOpen, setLaborOpen] = useState(false);
+  const [fixedOpen, setFixedOpen] = useState(false);
+  const fixedOpener = useRef<HTMLElement | null>(null);
   // Where focus goes back when a panel closes: the pill or ⋯ that opened it.
   const reviewOpener = useRef<HTMLElement | null>(null);
   const targetsOpener = useRef<HTMLElement | null>(null);
@@ -387,6 +390,10 @@ export function RevenuePage() {
     if (!targetsOpen) targetsOpener.current = document.activeElement as HTMLElement | null;
     setTargetsOpen(!targetsOpen);
   };
+  const toggleFixed = () => {
+    if (!fixedOpen) fixedOpener.current = document.activeElement as HTMLElement | null;
+    setFixedOpen(!fixedOpen);
+  };
   const toggleLabor = () => {
     if (!laborOpen) laborOpener.current = document.activeElement as HTMLElement | null;
     setLaborOpen(!laborOpen);
@@ -423,7 +430,7 @@ export function RevenuePage() {
           />
           <div data-slot="revenue-menu">
             <RevenueMenu canExport={can.export} canSync={can.sync} ready={ready} rebuildBusy={rebuildBusy} reviewCount={reviewCount ?? 0}
-              targetsOpen={targetsOpen} onTargets={toggleTargets} laborOpen={laborOpen} onLabor={can.margin ? toggleLabor : undefined} onReview={() => toggleReview()} onCopy={() => void copySummary()} onExport={exportCsv}
+              targetsOpen={targetsOpen} onTargets={toggleTargets} laborOpen={laborOpen} onLabor={can.margin ? toggleLabor : undefined} fixedCostsOpen={fixedOpen} onFixedCosts={can.margin ? toggleFixed : undefined} onReview={() => toggleReview()} onCopy={() => void copySummary()} onExport={exportCsv}
               onRebuild={() => void rebuild()} triggerRef={menuTrigger} />
           </div>
         </div>
@@ -492,6 +499,10 @@ export function RevenuePage() {
       {targetsOpen && (
         <RevenueTargets canManage={can.targets} onChanged={refresh} today={today} actualByMonth={actualByMonth}
           onClose={() => setTargetsOpen(false)} returnFocus={() => focusOpener(targetsOpener.current)} />
+      )}
+      {fixedOpen && can.margin && (
+        <RevenueFixedCosts canManage={can.targets} onChanged={refresh}
+          onClose={() => setFixedOpen(false)} returnFocus={() => focusOpener(fixedOpener.current)} />
       )}
       {laborOpen && can.margin && (
         <RevenueLabor canManage={can.targets} onChanged={refresh}

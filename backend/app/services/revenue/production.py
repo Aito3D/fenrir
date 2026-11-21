@@ -24,6 +24,7 @@ COSTS_START = "2026-07-01"
 MAX_RUN_SECONDS = 72 * 3600
 # Settings row holding the labour list: [{"name", "hourlyRate", "hoursPerDay", "daysPerWeek", "since"}].
 LABOR_KEY = "revenue_labor"
+FIXED_COSTS_KEY = "revenue_fixed_costs"
 
 
 @dataclass(frozen=True)
@@ -168,20 +169,41 @@ def labor_by_day(providers: Iterable[dict], today: str, since: str = COSTS_START
     return by_day
 
 
-async def read_labor(conn: AsyncConnection) -> list[dict]:
-    raw = (await conn.execute(select(Settings.value).where(Settings.key == LABOR_KEY))).scalar_one_or_none()
+async def _read_json(conn: AsyncConnection, key: str) -> list[dict]:
+    raw = (await conn.execute(select(Settings.value).where(Settings.key == key))).scalar_one_or_none()
     return json.loads(raw) if raw else []
 
 
-async def save_labor(db, providers: list[dict]) -> list[dict]:
-    row = (await db.execute(select(Settings).where(Settings.key == LABOR_KEY))).scalar_one_or_none()
-    value = json.dumps(providers)
+async def _save_json(db, key: str, rows: list[dict]) -> list[dict]:
+    row = (await db.execute(select(Settings).where(Settings.key == key))).scalar_one_or_none()
+    value = json.dumps(rows)
     if row is None:
-        db.add(Settings(key=LABOR_KEY, value=value))
+        db.add(Settings(key=key, value=value))
     else:
         row.value = value
     await db.commit()
-    return providers
+    return rows
+
+
+async def read_labor(conn: AsyncConnection) -> list[dict]:
+    return await _read_json(conn, LABOR_KEY)
+
+
+async def save_labor(db, providers: list[dict]) -> list[dict]:
+    return await _save_json(db, LABOR_KEY, providers)
+
+
+async def read_fixed_costs(conn: AsyncConnection) -> list[dict]:
+    """Monthly fixed charges typed by hand, `{label, monthly}`: the 3D part only (the Zoho org is shared)."""
+    return await _read_json(conn, FIXED_COSTS_KEY)
+
+
+async def save_fixed_costs(db, costs: list[dict]) -> list[dict]:
+    return await _save_json(db, FIXED_COSTS_KEY, costs)
+
+
+def fixed_monthly(costs: Iterable[dict]) -> float:
+    return sum((c["monthly"] for c in costs), 0.0)
 
 
 async def read_production_costs(conn: AsyncConnection, today: str) -> ProductionCosts:

@@ -689,3 +689,24 @@ async def test_pipeline_reads_aito_cards_and_etag_moves_on_card_change(async_cli
     assert body["accepted"]["count"] == 1 and body["accepted"]["total"] == 800
     assert body["accepted"]["byColumn"] == [{"column": "print", "count": 1, "total": 800}]
     assert body["awaiting"]["count"] == 1 and body["awaiting"]["total"] == 200
+
+
+@pytest.mark.asyncio
+async def test_fixed_costs_need_margin_to_read_and_targets_too_to_write(async_client, revenue_db, tokens):
+    url = f"{URL}/fixed-costs"
+    assert (await async_client.get(url, headers=tokens["read"])).status_code == 403
+    assert (await async_client.get(url, headers=tokens["read_margin"])).json() == {"costs": []}
+    body = {"costs": [{"label": "  Loyer ", "monthly": 120000}]}
+    for who in ("read_margin", "targets"):
+        assert (await async_client.put(url, json=body, headers=tokens[who])).status_code == 403
+    r = await async_client.put(url, json=body, headers=tokens["labor"])
+    assert r.status_code == 200
+    assert r.json() == {"costs": [{"label": "Loyer", "monthly": 120000}]}
+    assert (await async_client.get(url, headers=tokens["labor"])).json() == r.json()
+    for bad in (
+        [{"label": "Loyer", "monthly": -1}],
+        [{"label": "   ", "monthly": 1}],
+        [{"label": "x" * 81, "monthly": 1}],
+        [{"label": "a", "monthly": 1}] * 51,
+    ):
+        assert (await async_client.put(url, json={"costs": bad}, headers=tokens["labor"])).status_code == 422

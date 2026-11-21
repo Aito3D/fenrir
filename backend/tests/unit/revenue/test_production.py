@@ -88,3 +88,10 @@ def test_filament_prices_take_the_cheapest_sheet_of_the_material_then_a_named_sh
     # Unknown or missing: the median (2400), not the mean the PPS-CF would drag up.
     assert prices.per_g("PA-CF") == prices.per_g(None) == 2.4
     assert FilamentPrices([]).per_g("PLA") is None
+
+
+def test_fixed_monthly_sums_the_list():
+    from backend.app.services.revenue.production import fixed_monthly
+
+    assert fixed_monthly([{"label": "a", "monthly": 100.0}, {"label": "b", "monthly": 50.5}]) == 150.5
+    assert fixed_monthly([]) == 0.0

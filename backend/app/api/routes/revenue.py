@@ -546,6 +546,15 @@ class LaborBody(BaseModel):
     providers: list[LaborProvider] = Field(max_length=100)
 
 
+class FixedCost(BaseModel):
+    label: str = Field(min_length=1, max_length=80)
+    monthly: float = Field(ge=0, le=1e9)
+
+
+class FixedCostsBody(BaseModel):
+    costs: list[FixedCost] = Field(max_length=50)
+
+
 class AnnotationBody(BaseModel):
     day: Any = None
     label: Any = None
@@ -647,6 +656,29 @@ async def put_labor(
         p["name"] = p["name"].strip()
     async with _writer()() as db:
         return {"providers": await production.save_labor(db, providers)}
+
+
+@router.get("/fixed-costs")
+async def get_fixed_costs(
+    user: User | None = RequirePermissionIfAuthEnabled(Permission.REVENUE_READ, Permission.REVENUE_VIEW_MARGIN),
+):
+    async with store.snapshot() as conn:
+        return {"costs": await production.read_fixed_costs(conn)}
+
+
+@router.put("/fixed-costs")
+async def put_fixed_costs(
+    body: FixedCostsBody,
+    # Same rights as labour: charges are margin data.
+    user: User | None = RequirePermissionIfAuthEnabled(
+        Permission.REVENUE_VIEW_MARGIN, Permission.REVENUE_MANAGE_TARGETS
+    ),
+):
+    costs = [{"label": c.label.strip(), "monthly": c.monthly} for c in body.costs]
+    if any(not c["label"] for c in costs):
+        raise _unprocessable("label must not be blank")
+    async with _writer()() as db:
+        return {"costs": await production.save_fixed_costs(db, costs)}
 
 
 @router.post("/annotations", status_code=201)
