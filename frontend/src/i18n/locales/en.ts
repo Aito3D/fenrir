@@ -12429,6 +12429,8 @@ export default {
       accepted: "Quote {{quote}} accepted — order {{order}} created",
       undo: "Undo",
       undoFailed: "Undo failed: {{reason}}",
+      orderGone: "the order is no longer on the board",
+      emailFailed: "Quote not sent: {{reason}}",
     },
     mobile: {
       back: 'Back to orders',

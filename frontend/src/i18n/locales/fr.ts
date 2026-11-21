@@ -12358,6 +12358,8 @@ export default {
       accepted: "Devis {{quote}} accepté — commande {{order}} créée",
       undo: "Annuler",
       undoFailed: "Annulation impossible : {{reason}}",
+      orderGone: "la commande n'est plus dans le tableau",
+      emailFailed: "Devis non envoyé : {{reason}}",
     },
     mobile: {
       back: 'Retour aux commandes',

@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useMutation, useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Check, Loader2, Plus, RotateCcw, X } from 'lucide-react';
 import { api } from '../../api/client';
 import type { FinishedOrderRow, OrderBoardRow, OrderEditResult, QuoteRow, QuotesResponse, ZohoContact } from '../../api/client';
@@ -21,6 +21,7 @@ import { lineTotal, normDiscount } from './orderBoard';
 import { OrderClientHistory } from './OrderClientHistory';
 import { OrderContactBlock } from './OrderContactBlock';
 import { errorReason } from './orderErrors';
+import { quotesQuery } from './quotes';
 
 const MODAL_OUT_MS = 170;
 
@@ -52,6 +53,7 @@ export function NewOrderDraftRow({ currency, open, finished, mode = 'order', quo
 }) {
   const { t } = useTranslation();
   const { showToast } = useToast();
+  const queryClient = useQueryClient();
   const [start] = useState(() => (quote ? fromQuote(quote) : undefined));
   const { draft, setDraft, reset } = useNewOrderDraft(mode, start);
   const isQuote = mode === 'quote';
@@ -100,7 +102,11 @@ export function NewOrderDraftRow({ currency, open, finished, mode = 'order', quo
       if (!quote) reset();
       onCreated(result);
     },
-    onError: e => showToast(t(isQuote ? 'orders.newQuote.failed' : 'orders.newOrder.failed', { reason: errorReason(t, e, isQuote ? 'orders.newQuote.err' : undefined) }), 'error'),
+    onError: e => {
+      // A refused quote save (converted, no longer editable, a line gone): the list shows what Books now holds.
+      if (isQuote) void queryClient.invalidateQueries({ queryKey: quotesQuery.queryKey, exact: true });
+      showToast(t(isQuote ? 'orders.newQuote.failed' : 'orders.newOrder.failed', { reason: errorReason(t, e, isQuote ? 'orders.newQuote.err' : undefined) }), 'error');
+    },
   });
   const busy = create.isPending;
   const canCreate = !why && !busy;

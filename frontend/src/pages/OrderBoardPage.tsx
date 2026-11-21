@@ -2,7 +2,7 @@ import { useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSearchParams } from 'react-router-dom';
-import { useIsMutating, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { AlertTriangle, Box, Loader2, PackageCheck, Plug, Plus, PowerOff, Printer, RefreshCw, Search, SearchX, SlidersHorizontal } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { api } from '../api/client';
@@ -47,6 +47,7 @@ import {
 import type { FollowKey, PayFilter, StatusFilter } from '../components/orders/orderBoard';
 import { useOrderFilters } from '../components/orders/useOrderFilters';
 import { isQuoteAction } from '../components/orders/useQuoteActions';
+import type { ClickedQuote } from '../components/orders/useQuoteActions';
 import { STATUSES, STATUS_META, TONE } from '../components/orders/orderStatus';
 import type { Tone } from '../components/orders/orderStatus';
 import { useAuth } from '../contexts/AuthContext';
@@ -205,15 +206,16 @@ export function OrderBoardPage() {
     if (deepLinked.current === openId || !ready) return;
     const row = openId ? data?.rows.find(r => r.id === openId) : null;
     const fin = openId && !row ? finishedQuery.data?.rows.find(r => r.id === openId) : null;
-    if (openId && !row && !fin && finishedQuery.isLoading) return; // it may be a finished order: wait for that list
+    // Not found yet: it may be a finished order still loading, or an order just made from a quote that a later board brings.
+    if (openId && !row && !fin) return;
     deepLinked.current = openId;
-    if (!openId || (!row && !fin)) return;
+    if (!openId) return;
     // Turned off for this visit only: the saved choice stays as the viewer set it.
     if (coreOnly && (row ?? fin)?.is_core === false) setCoreOnly(false);
     if (fin) setStatus('finished');
     else if (status === 'finished') setStatus('all');
     scrollTarget.current = { id: openId, block: 'start' };
-  }, [openId, ready, data, finishedQuery.data, finishedQuery.isLoading, coreOnly, status, setStatus, setCoreOnly]);
+  }, [openId, ready, data, finishedQuery.data, coreOnly, status, setStatus, setCoreOnly]);
   // After the target renders, bring it into view. Declared after the effect above, so one pass does both.
   useEffect(() => {
     if (phone) { // the full-screen view covers the list
@@ -320,10 +322,10 @@ export function OrderBoardPage() {
       setAccepted(null);
     }
   }, [notice]);
-  const orderWrites = useIsMutating({ predicate: m => !isQuoteAction(m.options.mutationKey) });
-  useEffect(() => {
-    if (orderWrites) setAccepted(null);
-  }, [orderWrites]);
+  // Any other write starting ends it (watched on the cache: a fast write is over before a count would show it).
+  useEffect(() => queryClient.getMutationCache().subscribe(e => {
+    if (e.type === 'added' && !isQuoteAction(e.mutation.options.mutationKey)) setAccepted(null);
+  }), [queryClient]);
   // The accept answer can land after the viewer left the page: it must not pull them back to it.
   const mounted = useRef(true);
   useEffect(() => {
@@ -333,13 +335,15 @@ export function OrderBoardPage() {
     };
   }, []);
   // The new order opens on the Commandes side through `?order=` (the deep link shows and scrolls to it); Back returns to the quote.
-  const onOrdered = (r: QuoteOrderResult, quoteId: string) => {
+  const onOrdered = (r: QuoteOrderResult, quote: ClickedQuote) => {
     if (!mounted.current) return;
     setAccepted({
-      quoteId,
-      quote: r.quotes.rows.find(q => q.id === quoteId)?.number ?? '',
+      quoteId: quote.id,
+      quote: quote.number,
       salesorderId: r.salesorder_id,
-      order: (r.row ?? r.board.rows.find(o => o.id === r.salesorder_id))?.number ?? '',
+      order: (r.row ?? r.board.rows.find(o => o.id === r.salesorder_id))?.number || r.salesorder_id,
+      // A draft order Books reused existed before the click: undoing would delete more than this click made.
+      undoable: !quote.has_draft_order,
     });
     setSearchParams(prev => {
       const next = new URLSearchParams(prev);
@@ -554,6 +558,7 @@ export function OrderBoardPage() {
 
       {drafting && (
         <NewOrderDraftRow
+          key={drafting.quote?.id ?? drafting.mode}
           currency={drafting.quote?.currency ?? all[0]?.currency ?? finishedQuery.data?.rows[0]?.currency ?? ''}
           open={all}
           finished={finishedQuery.data?.rows ?? []}

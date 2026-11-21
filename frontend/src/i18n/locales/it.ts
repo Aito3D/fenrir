@@ -12358,6 +12358,8 @@ export default {
       accepted: "Preventivo {{quote}} accettato — ordine {{order}} creato",
       undo: "Annulla",
       undoFailed: "Annullamento non riuscito: {{reason}}",
+      orderGone: "l'ordine non è più nel tabellone",
+      emailFailed: "Preventivo non inviato: {{reason}}",
     },
     mobile: {
       back: 'Torna agli ordini',

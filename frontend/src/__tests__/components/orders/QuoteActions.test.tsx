@@ -110,7 +110,7 @@ describe('Quote actions', () => {
     const onOrdered = vi.fn();
     show({ onOrdered });
     await user.click((await footer()).getByRole('button', { name: 'Accepted' }));
-    await waitFor(() => expect(onOrdered).toHaveBeenCalledWith(expect.objectContaining({ salesorder_id: 'so9' }), 'e1'));
+    await waitFor(() => expect(onOrdered).toHaveBeenCalledWith(expect.objectContaining({ salesorder_id: 'so9' }), expect.objectContaining({ id: 'e1', number: 'DEV-00412' })));
   });
 
   it('an accept that fails toasts the reason and shows the quote as the server now has it', async () => {
@@ -136,6 +136,24 @@ describe('Quote actions', () => {
     show();
     await user.click((await footer()).getByRole('button', { name: 'Create order' }));
     expect(await screen.findByText('Quote action failed: another action on this quote is still running')).toBeInTheDocument();
+  });
+
+  it('a refused quote email says why', async () => {
+    const user = userEvent.setup();
+    serve('sent');
+    server.use(
+      http.get('/api/v1/order-board/quotes/e1/email', () => HttpResponse.json({
+        subject: 'Devis', body: '<p>Bonjour</p>', recipients: [{ email: 'yann@client.pf', name: 'Yann', contact_person_id: 'cp1' }],
+        default_email: 'yann@client.pf', document_id: 'e1', document_number: 'DEV-00412',
+      })),
+      http.post('/api/v1/order-board/quotes/e1/email', () => HttpResponse.json({ detail: 'busy' }, { status: 409 })),
+    );
+    show();
+    await user.click((await footer()).getByRole('button', { name: 'Send by email' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Send quote by email' });
+    await waitFor(() => expect(within(dialog).getByRole('combobox')).toHaveValue('yann@client.pf'));
+    await user.click(within(dialog).getByRole('button', { name: 'Send' }));
+    expect(await screen.findByText('Quote not sent: another action on this quote is still running')).toBeInTheDocument();
   });
 
   it('Send by email sends through the quote endpoint and the pill becomes Sent from the returned list', async () => {

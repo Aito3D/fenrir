@@ -12300,6 +12300,8 @@ export default {
       accepted: "Teklif {{quote}} kabul edildi — sipariş {{order}} oluşturuldu",
       undo: "Geri al",
       undoFailed: "Geri alınamadı: {{reason}}",
+      orderGone: "sipariş artık panoda değil",
+      emailFailed: "Teklif gönderilmedi: {{reason}}",
     },
     mobile: {
       back: 'Siparişlere dön',

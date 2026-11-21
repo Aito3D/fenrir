@@ -10,7 +10,7 @@ import { QuoteCard } from './QuoteCard';
 import { chipOf, filterQuotes, quotesQuery } from './quotes';
 import type { QuoteChip } from './quotes';
 import { useQuoteActions, useQuoteBusy } from './useQuoteActions';
-import type { QuoteAction } from './useQuoteActions';
+import type { ClickedQuote, QuoteAction } from './useQuoteActions';
 import type { QuoteOrderResult, QuoteRow } from '../../api/client';
 
 const CHIPS: QuoteChip[] = ['current', 'expired', 'declined'];
@@ -34,7 +34,7 @@ const chipCls = (on: boolean) =>
  *  `onOrdered` receives the order an Accept or Create order made. */
 export function QuotesView({ coreOnly, openId, onToggle, onEdit, onOrdered }: {
   coreOnly: boolean; openId: string | null; onToggle: (id: string) => void; onEdit?: (row: QuoteRow) => void;
-  onOrdered?: (result: QuoteOrderResult, id: string) => void;
+  onOrdered?: (result: QuoteOrderResult, quote: ClickedQuote) => void;
 }) {
   const { t } = useTranslation();
   const { data, isError, refetch } = useQuery(quotesQuery);

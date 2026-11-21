@@ -12372,6 +12372,8 @@ export default {
       accepted: "見積 {{quote}} を承認 — 注文 {{order}} を作成しました",
       undo: "元に戻す",
       undoFailed: "元に戻せませんでした: {{reason}}",
+      orderGone: "注文はもうボードにありません",
+      emailFailed: "見積を送信できませんでした: {{reason}}",
     },
     mobile: {
       back: '注文に戻る',

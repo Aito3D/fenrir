@@ -12358,6 +12358,8 @@ export default {
       accepted: "Orçamento {{quote}} aceito — pedido {{order}} criado",
       undo: "Desfazer",
       undoFailed: "Não foi possível desfazer: {{reason}}",
+      orderGone: "o pedido não está mais no quadro",
+      emailFailed: "Orçamento não enviado: {{reason}}",
     },
     mobile: {
       back: 'Voltar aos pedidos',

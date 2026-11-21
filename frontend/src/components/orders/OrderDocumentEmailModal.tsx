@@ -5,7 +5,7 @@ import type { OrderDocumentKind } from '../../api/client';
 import { useToast } from '../../contexts/ToastContext';
 import { SendEmailDialog } from '../aito/SendEmailDialog';
 import { useOrderActions } from './useOrderActions';
-import { useQuoteActions } from './useQuoteActions';
+import { quoteReason, useQuoteActions } from './useQuoteActions';
 
 type Target = { orderId: string; kind: OrderDocumentKind; docId: string; quoteId?: never } | { quoteId: string; orderId?: never; kind?: never; docId?: never };
 
@@ -32,7 +32,12 @@ export function OrderDocumentEmailModal({ onClose, ...target }: Target & { onClo
       if (quoteId) await emailQuote.mutateAsync({ id: quoteId, to });
       else await emailDocument.mutateAsync({ id: orderId!, kind: kind!, docId: docId!, to });
     } catch (e) {
-      showToast(e instanceof ApiError && e.code === 'recipient_recently_edited' ? t('aito.emailRecipientRecentlyEdited') : t(quote ? 'aito.quoteEmailFailed' : 'aito.retainerEmailFailed'), 'error');
+      showToast(
+        e instanceof ApiError && e.code === 'recipient_recently_edited' ? t('aito.emailRecipientRecentlyEdited')
+        : quoteId ? t('orders.quotes.emailFailed', { reason: quoteReason(t, e) })
+        : t(quote ? 'aito.quoteEmailFailed' : 'aito.retainerEmailFailed'),
+        'error',
+      );
       throw e;
     }
     showToast(t(quote ? 'aito.quoteEmailed' : 'aito.retainerEmailed', { email: to }), 'success');

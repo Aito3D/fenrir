@@ -11977,6 +11977,8 @@ export default {
       accepted: "Предложение {{quote}} принято — заказ {{order}} создан",
       undo: "Отменить",
       undoFailed: "Не удалось отменить: {{reason}}",
+      orderGone: "заказа больше нет на доске",
+      emailFailed: "Предложение не отправлено: {{reason}}",
     },
     mobile: {
       back: 'Назад к заказам',

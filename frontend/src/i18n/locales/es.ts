@@ -12381,6 +12381,8 @@ export default {
       accepted: "Presupuesto {{quote}} aceptado — pedido {{order}} creado",
       undo: "Deshacer",
       undoFailed: "No se pudo deshacer: {{reason}}",
+      orderGone: "el pedido ya no está en el tablero",
+      emailFailed: "Presupuesto no enviado: {{reason}}",
     },
     mobile: {
       back: 'Volver a los pedidos',

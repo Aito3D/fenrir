@@ -3,7 +3,9 @@ import { fireEvent, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { http, HttpResponse } from 'msw';
 import { server } from '../../mocks/server';
+import { useQuery } from '@tanstack/react-query';
 import { render } from '../../utils';
+import { quotesQuery } from '../../../components/orders/quotes';
 import { NewOrderDraftRow } from '../../../components/orders/NewOrderDraftRow';
 import type { OrderItemHit, QuoteLine, QuoteRow } from '../../../api/client';
 import { formatMoney } from '../../../utils/pricing';
@@ -482,6 +484,28 @@ describe('NewOrderDraftRow', () => {
       await screen.findByDisplayValue('Client de passage');
       await user.click(screen.getByRole('button', { name: 'Create quote' }));
       expect(await screen.findByText('Quote not saved: Zoho Books did not confirm the quote, nothing was saved')).toBeInTheDocument();
+    });
+
+    it('a refused quote edit refetches the quotes list', async () => {
+      const user = userEvent.setup();
+      let gets = 0;
+      server.use(
+        http.get('/api/v1/order-board/quotes', () => {
+          gets += 1;
+          return HttpResponse.json({ rows: [], loading: 0, ready: true });
+        }),
+        http.get('/api/v1/zoho/contacts/c1', () => HttpResponse.json({ id: 'c1', name: 'Nautic Service', phone: '', mobile: '', email: '' })),
+        http.put('/api/v1/order-board/quotes/e1', () => HttpResponse.json({ detail: 'quote_converted' }, { status: 400 })),
+      );
+      const Probe = () => {
+        useQuery(quotesQuery);
+        return null;
+      };
+      render(<><Probe /><NewOrderDraftRow mode="quote" quote={quote()} currency="XPF" open={[]} finished={[]} onCreated={vi.fn()} onClose={vi.fn()} /></>);
+      await waitFor(() => expect(gets).toBe(1));
+      await user.click(screen.getByRole('button', { name: 'Save quote' }));
+      expect(await screen.findByText(/Quote not saved/)).toBeInTheDocument();
+      await waitFor(() => expect(gets).toBe(2));
     });
 
     it('an expired quote says saving re-dates it to today', () => {

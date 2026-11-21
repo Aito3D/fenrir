@@ -12356,6 +12356,8 @@ export default {
       accepted: "報價 {{quote}} 已接受 — 訂單 {{order}} 已建立",
       undo: "復原",
       undoFailed: "復原失敗：{{reason}}",
+      orderGone: "該訂單已不在看板上",
+      emailFailed: "報價未寄出：{{reason}}",
     },
     mobile: {
       back: '返回訂單',

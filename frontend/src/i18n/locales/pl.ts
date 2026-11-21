@@ -12578,6 +12578,8 @@ export default {
       accepted: "Oferta {{quote}} przyjęta — zamówienie {{order}} utworzone",
       undo: "Cofnij",
       undoFailed: "Nie udało się cofnąć: {{reason}}",
+      orderGone: "zamówienia nie ma już na tablicy",
+      emailFailed: "Oferta niewysłana: {{reason}}",
     },
     mobile: {
       back: 'Wróć do zamówień',

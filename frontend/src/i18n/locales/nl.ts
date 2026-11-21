@@ -12397,6 +12397,8 @@ export default {
       accepted: "Offerte {{quote}} geaccepteerd — order {{order}} aangemaakt",
       undo: "Ongedaan maken",
       undoFailed: "Ongedaan maken mislukt: {{reason}}",
+      orderGone: "de order staat niet meer op het overzicht",
+      emailFailed: "Offerte niet verstuurd: {{reason}}",
     },
     mobile: {
       back: 'Terug naar bestellingen',

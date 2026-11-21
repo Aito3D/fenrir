@@ -12373,6 +12373,8 @@ export default {
       accepted: "Angebot {{quote}} angenommen — Auftrag {{order}} erstellt",
       undo: "Rückgängig",
       undoFailed: "Rückgängig fehlgeschlagen: {{reason}}",
+      orderGone: "der Auftrag ist nicht mehr auf der Übersicht",
+      emailFailed: "Angebot nicht gesendet: {{reason}}",
     },
     mobile: {
       back: 'Zurück zu den Bestellungen',

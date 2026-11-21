@@ -1254,17 +1254,20 @@ describe('OrderBoardPage Devis side', () => {
   });
 
   describe('accepting a quote', () => {
-    const accepted = { rows: [quote({ state: 'accepted' }), ...QUOTES.slice(1)], loading: 0, ready: true };
+    // As the server does: a converted quote leaves the list it returns.
+    const accepted = { rows: QUOTES.slice(1), loading: 0, ready: true };
     const NEW = row({ id: 'so9', number: 'SO-00232', customer: 'Nautic Service', status: 'to_order' });
-    const accept = () => {
+    const accept = ({ draft = false, withRow = true } = {}) => {
       Element.prototype.scrollIntoView = vi.fn();
       serve(board());
-      serveQuotes(QUOTES);
+      serveQuotes([quote({ has_draft_order: draft, state: draft ? 'accepted' : 'sent' }), ...QUOTES.slice(1)]);
       server.use(
         http.get('/api/v1/order-board/quotes/:id/events', () => HttpResponse.json({ events: [], has_more: false })),
         http.get('/api/v1/order-board/orders/:id/events', () => HttpResponse.json({ events: [], has_more: false })),
-        http.post('/api/v1/order-board/quotes/e1/accept', () =>
-          HttpResponse.json({ quotes: accepted, board: board({ rows: [NEW, ...ROWS] }), row: NEW, salesorder_id: 'so9' })),
+        http.post(`/api/v1/order-board/quotes/e1/${draft ? 'order' : 'accept'}`, () =>
+          HttpResponse.json(withRow
+            ? { quotes: accepted, board: board({ rows: [NEW, ...ROWS] }), row: NEW, salesorder_id: 'so9' }
+            : { quotes: accepted, board: board(), row: null, salesorder_id: 'so9' })),
       );
       window.history.replaceState({}, '', '/orders?view=quotes&quote=e1');
       render(<OrderBoardPage />);
@@ -1276,6 +1279,7 @@ describe('OrderBoardPage Devis side', () => {
       accept();
       await user.click(within(await screen.findByTestId('quote-actions')).getByRole('button', { name: 'Accepted' }));
       expect(await notice()).toHaveTextContent('Quote DEV-00412 accepted — order SO-00232 created');
+      expect(await notice()).toHaveFocus();
       expect(window.location.search).toContain('order=so9');
       expect(window.location.search).not.toContain('view=');
       expect(window.location.search).not.toContain('quote=');
@@ -1320,6 +1324,48 @@ describe('OrderBoardPage Devis side', () => {
       await user.click(screen.getByRole('button', { name: 'Orders' }));
       await screen.findByText('SO-00412');
       expect(screen.queryByTestId('quote-accepted')).not.toBeInTheDocument();
+    });
+
+    it('an order not on the returned board is named by its id, and opens once a later board has it', async () => {
+      const user = userEvent.setup();
+      accept({ withRow: false });
+      server.use(http.post('/api/v1/order-board/refresh', () => HttpResponse.json(board({ rows: [NEW, ...ROWS] }))));
+      await user.click(within(await screen.findByTestId('quote-actions')).getByRole('button', { name: 'Accepted' }));
+      expect(await notice()).toHaveTextContent('Quote DEV-00412 accepted — order so9 created');
+      await screen.findByText('SO-00412');
+      const scroll = vi.fn();
+      Element.prototype.scrollIntoView = scroll;
+      await user.click(screen.getByRole('button', { name: 'Refresh' }));
+      expect(await screen.findByRole('button', { name: /SO-00232/, expanded: true })).toBeInTheDocument();
+      await waitFor(() => expect(scroll.mock.contexts).toContain(document.getElementById('order-so9')));
+    });
+
+    it('the notice goes on the next order action', async () => {
+      const user = userEvent.setup();
+      accept();
+      server.use(http.post('/api/v1/order-board/refresh', () => HttpResponse.json(board({ rows: [NEW, ...ROWS] }))));
+      await user.click(within(await screen.findByTestId('quote-actions')).getByRole('button', { name: 'Accepted' }));
+      await notice();
+      await user.click(screen.getByRole('button', { name: 'Refresh' }));
+      await waitFor(() => expect(screen.queryByTestId('quote-accepted')).not.toBeInTheDocument());
+    });
+
+    it('Create order on a quote whose draft order Books reuses offers no Undo', async () => {
+      const user = userEvent.setup();
+      accept({ draft: true });
+      await user.click(within(await screen.findByTestId('quote-actions')).getByRole('button', { name: 'Create order' }));
+      expect(await notice()).toHaveTextContent('Quote DEV-00412 accepted — order SO-00232 created');
+      expect(within(await notice()).queryByRole('button', { name: 'Undo' })).not.toBeInTheDocument();
+    });
+
+    it('an undo answered 404 says the order left the board and drops the Undo button', async () => {
+      const user = userEvent.setup();
+      accept();
+      server.use(http.post('/api/v1/order-board/quotes/e1/undo-accept', () => HttpResponse.json({ detail: 'Not found' }, { status: 404 })));
+      await user.click(within(await screen.findByTestId('quote-actions')).getByRole('button', { name: 'Accepted' }));
+      await user.click(within(await notice()).getByRole('button', { name: 'Undo' }));
+      expect(await within(await notice()).findByText(/the order is no longer on the board/i)).toBeInTheDocument();
+      expect(within(await notice()).queryByRole('button', { name: 'Undo' })).not.toBeInTheDocument();
     });
 
     it('the notice goes when dismissed', async () => {

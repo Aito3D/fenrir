@@ -88,4 +88,11 @@ describe('QuoteCard', () => {
     render(<QuoteCard row={quote({ editable: false, zoho_url: null })} open onToggle={vi.fn()} onEdit={onEdit} />);
     expect(screen.queryByTestId('quote-actions')).not.toBeInTheDocument();
   });
+
+  it('a quote this screen cannot edit links to Zoho even for a viewer without the update right', () => {
+    stub();
+    render(<QuoteCard row={quote({ editable: false, zoho_url: 'https://books.example/estimates/e1' })} open onToggle={vi.fn()} />);
+    expect(screen.getByRole('link', { name: /Edit in Zoho/ })).toHaveAttribute('href', 'https://books.example/estimates/e1');
+    expect(screen.queryByRole('button', { name: 'Edit' })).not.toBeInTheDocument();
+  });
 });

@@ -84,14 +84,14 @@ function QuoteSide({ row }: { row: QuoteRow }) {
 }
 
 /** One quote, in the quotes' violet: the collapsed row is the button that opens its lines.
- *  `children` and, given `onEdit`, Edit (or "Edit in Zoho" for a quote this screen cannot edit) form the action footer;
- *  nothing renders without one. */
+ *  `children`, Edit (given `onEdit`) and, for a quote this screen cannot edit, "Edit in Zoho" (a plain link, for every
+ *  viewer) form the action footer; nothing renders without one. */
 export function QuoteCard({ row, open, onToggle, onEdit, children }: {
   row: QuoteRow; open: boolean; onToggle: () => void; onEdit?: () => void; children?: ReactNode;
 }) {
   const { t } = useTranslation();
   const money = (n: number) => formatMoney(n, row.currency);
-  const edit = !onEdit ? null : row.editable ? (
+  const edit = row.editable ? onEdit && (
     <Button variant="secondary" size="sm" onClick={onEdit}>
       <Pencil aria-hidden="true" className="h-4 w-4" />
       {t('orders.quotes.edit')}

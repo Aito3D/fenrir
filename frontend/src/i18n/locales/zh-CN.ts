@@ -12356,6 +12356,8 @@ export default {
       accepted: "报价 {{quote}} 已接受 — 订单 {{order}} 已创建",
       undo: "撤销",
       undoFailed: "撤销失败：{{reason}}",
+      orderGone: "该订单已不在看板上",
+      emailFailed: "报价未发送：{{reason}}",
     },
     mobile: {
       back: '返回订单',

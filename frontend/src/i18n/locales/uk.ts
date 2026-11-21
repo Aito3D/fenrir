@@ -12020,6 +12020,8 @@ export default {
       accepted: "Пропозицію {{quote}} прийнято — замовлення {{order}} створено",
       undo: "Скасувати",
       undoFailed: "Не вдалося скасувати: {{reason}}",
+      orderGone: "замовлення більше немає на дошці",
+      emailFailed: "Пропозицію не надіслано: {{reason}}",
     },
     mobile: {
       back: 'Назад до замовлень',

@@ -11955,6 +11955,8 @@ export default {
       accepted: "견적 {{quote}} 수락됨 — 주문 {{order}} 생성됨",
       undo: "실행 취소",
       undoFailed: "실행 취소 실패: {{reason}}",
+      orderGone: "주문이 더 이상 보드에 없습니다",
+      emailFailed: "견적을 보내지 못했습니다: {{reason}}",
     },
     mobile: {
       back: '주문으로 돌아가기',

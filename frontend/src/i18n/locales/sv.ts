@@ -12430,6 +12430,8 @@ errors: {
       accepted: "Offert {{quote}} accepterad — order {{order}} skapad",
       undo: "Ångra",
       undoFailed: "Kunde inte ångra: {{reason}}",
+      orderGone: "ordern finns inte längre på tavlan",
+      emailFailed: "Offerten skickades inte: {{reason}}",
     },
     mobile: {
       back: 'Tillbaka till beställningar',
