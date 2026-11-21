@@ -96,9 +96,9 @@ def price_volume_mix(cur: list[dict], prev: list[dict], shown: int = PVM_ROWS) -
     volume_items = price = new = lost = 0.0
     q0_all = q1_all = r0_all = 0.0
     items = []
-    for item_id in after.keys() | before.keys():
+    for item_id, row in {**before, **after}.items():
         a, b = after.get(item_id), before.get(item_id)
-        name = (a or b)["name"]
+        name = row["name"]
         if a and b and a["quantity"] > 0 and b["quantity"] > 0:
             p0 = b["ht"] / b["quantity"]
             vol = (a["quantity"] - b["quantity"]) * p0
@@ -117,7 +117,7 @@ def price_volume_mix(cur: list[dict], prev: list[dict], shown: int = PVM_ROWS) -
             lost -= b["ht"]
             items.append({"name": name, "effect": -b["ht"], "volume": 0, "price": 0, "kind": "lost"})
     volume = (q1_all - q0_all) * r0_all / q0_all if q0_all else 0.0
-    out = {
+    out: dict = {
         "previous": js_round(sum(r["ht"] for r in prev)),
         "current": js_round(sum(r["ht"] for r in cur)),
         "volume": js_round(volume),
