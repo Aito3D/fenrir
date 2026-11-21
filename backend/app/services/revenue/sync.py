@@ -45,7 +45,7 @@ CEILING_POLL_S = 1.0
 DAY_RETRY_CAP_S = 6 * 3600
 # A 5xx can be one heavy day or Zoho itself: retried soon, so an outage that marks days one by one heals quickly.
 DAY_RETRY_CAP_5XX_S = 600
-STEP_RETRY_S = 6 * 3600  # a customer lookup or month check Zoho rejects (4xx)
+STEP_RETRY_S = 6 * 3600  # a customer lookup, month check or cash detail read Zoho rejects
 FAILED_DAYS_SHOWN = 5
 CASH_PAGE_CAP = 10  # 2 000 payments a run; a capped run resumes from the cursor
 UNPAID_STATUSES = ("unpaid", "overdue", "partially_paid")  # Books' statuses overlap: their union is safe
@@ -68,9 +68,11 @@ _last_call_at = float("-inf")
 _loop_task: asyncio.Task | None = None
 _lane = asyncio.Lock()
 _day_failures: dict[str, DayFailure] = {}
-_step_retry: dict[str, float] = {}  # "c:<customer id>" / "m:<month>" -> monotonic time it may run again
+# "c:<customer id>" / "m:<month>" / "p:<payment id>" / "i:<invoice id>" -> monotonic time it may run again
+_step_retry: dict[str, float] = {}
 _cash_at = float("-inf")
 _cash_error: str | None = None
+_low_seen: tuple[int, float] | None = None  # (daily_remaining below the floor, monotonic time first seen)
 
 
 class _DayTooLarge(ZohoUpstreamError):
@@ -90,8 +92,17 @@ def _utcnow() -> datetime:
 
 
 def _budget_low() -> bool:
+    """Below the floor, until that reading is `budget_probe_after_s` old: Books' quota may have reset since, and only
+    a reply refreshes `daily_remaining`, so a call is let through (any reply that changes the value restarts the wait)."""
+    global _low_seen
     remaining = zoho_service.daily_remaining
-    return remaining is not None and remaining < SYNC.daily_budget_floor
+    if remaining is None or remaining >= SYNC.daily_budget_floor:
+        _low_seen = None
+        return False
+    now = time.monotonic()
+    if _low_seen is None or _low_seen[0] != remaining:
+        _low_seen = (remaining, now)
+    return now - _low_seen[1] < SYNC.budget_probe_after_s
 
 
 def _public_error(exc: BaseException) -> str:
@@ -167,7 +178,8 @@ async def _check_month(db, month: str) -> None:
     await store.save_month_check(db, month, zoho_amount, await store.month_line_sum(db, month), _utcnow())
 
 
-def _num(v) -> float | None:
+def _optional_float(v) -> float | None:
+    # None for missing or unparsable; NaN/inf and bool pass, unlike sync_plan._strict_amount.
     try:
         return float(v) if v not in (None, "") else None
     except (TypeError, ValueError):
@@ -182,9 +194,9 @@ def _item_row(it: dict) -> dict:
         "brand": it.get("brand"),
         "nature": it.get("cf_nature_du_produit"),
         "item_type": it.get("item_type"),
-        "tax_percentage": _num(it.get("tax_percentage")),
-        "purchase_rate": _num(it.get("purchase_rate")),
-        "dealer_price": _num(it.get("cf_prix_dealer_usd_unformatted")),
+        "tax_percentage": _optional_float(it.get("tax_percentage")),
+        "purchase_rate": _optional_float(it.get("purchase_rate")),
+        "dealer_price": _optional_float(it.get("cf_prix_dealer_usd_unformatted")),
         "status": it.get("status"),
     }
 
@@ -194,8 +206,8 @@ def _payment_row(p: dict) -> dict:
         "payment_id": str(p["payment_id"]),
         "customer_id": str(p.get("customer_id") or ""),
         "date": p.get("date") or "",
-        "amount": _num(p.get("amount")) or 0.0,
-        "unapplied": _num(p.get("unused_amount")) or 0.0,
+        "amount": _optional_float(p.get("amount")) or 0.0,
+        "unapplied": _optional_float(p.get("unused_amount")) or 0.0,
         "last_modified_time": p.get("last_modified_time") or "",
     }
 
@@ -208,8 +220,8 @@ def _invoice_row(i: dict) -> dict:
         "customer_name": i.get("customer_name") or "",
         "date": i.get("date") or "",
         "due_date": i.get("due_date") or "",
-        "total": _num(i.get("total")) or 0.0,
-        "balance": _num(i.get("balance")) or 0.0,
+        "total": _optional_float(i.get("total")) or 0.0,
+        "balance": _optional_float(i.get("balance")) or 0.0,
     }
 
 
@@ -218,13 +230,20 @@ async def _refresh_cash(db) -> None:
     today = org_today()
     async with store.snapshot() as conn:
         since = await store.get_setting(conn, store.PAYMENTS_SINCE_KEY) or cash.cursor_start(today)
-    for page in range(1, CASH_PAGE_CAP + 1):
+    page = 1
+    for _ in range(CASH_PAGE_CAP):
         rows, more = await _paced(zoho_service.list_customer_payments_page, db, since, page)
         rows = [r for r in rows if r.get("payment_id")]
         cursor = rows[-1].get("last_modified_time") if rows else None
         await store.save_payments(db, [_payment_row(r) for r in rows], cursor, _utcnow())
         if not more:
             break
+        # Keyset paging: a payment edited mid-run moves to the end of the list and would shift offsets. When a
+        # whole page shares one timestamp the cursor cannot advance, so that `since` goes on by page offset.
+        if cursor and cursor != since:
+            since, page = cursor, 1
+        else:
+            page += 1
     unpaid: dict[str, dict] = {}
     truncated = False
     for status in UNPAID_STATUSES:
@@ -245,19 +264,24 @@ async def _refresh_cash(db) -> None:
         payments = await store.read_payments(conn, window_start)
         invoices = await store.read_invoice_shares(conn)
     payment_ids, invoice_ids = cash.detail_queue(payments, invoices, classes, window_start)
-    payment_ids = payment_ids[: SYNC.cash_detail_budget]
+    # A document Zoho refuses is parked (like a refused contact) so it neither stalls the step nor eats the budget.
+    payment_ids = [i for i in payment_ids if _step_ready(f"p:{i}")][: SYNC.cash_detail_budget]
+    invoice_ids = [i for i in invoice_ids if _step_ready(f"i:{i}")]
     for payment_id in payment_ids:
         try:
             p = await _paced(zoho_service.get_customer_payment, db, payment_id)
         except ZohoNotFound:
             await store.delete_payment(db, payment_id)
             continue
+        except (ZohoRequestRejected, ZohoAmbiguous):
+            _step_retry[f"p:{payment_id}"] = time.monotonic() + STEP_RETRY_S
+            continue
         applications = [
-            {"invoiceId": str(a.get("invoice_id") or ""), "amount": _num(a.get("amount_applied")) or 0.0}
+            {"invoiceId": str(a.get("invoice_id") or ""), "amount": _optional_float(a.get("amount_applied")) or 0.0}
             for a in p.get("invoices") or []
         ]
         await store.save_payment_applications(
-            db, payment_id, applications, _num(p.get("unused_amount")) or 0.0, _utcnow()
+            db, payment_id, applications, _optional_float(p.get("unused_amount")) or 0.0, _utcnow()
         )
     for invoice_id in invoice_ids[: SYNC.cash_detail_budget - len(payment_ids)]:
         try:
@@ -268,6 +292,9 @@ async def _refresh_cash(db) -> None:
             }
         except ZohoNotFound:
             row = {**_invoice_row({"invoice_id": invoice_id}), "share": 0.0}  # gone from Books: stop asking
+        except (ZohoRequestRejected, ZohoAmbiguous):
+            _step_retry[f"i:{invoice_id}"] = time.monotonic() + STEP_RETRY_S
+            continue
         await store.save_invoice_detail(db, row, _utcnow())
     await store.save_cash_synced(db, _utcnow())
 
@@ -542,10 +569,11 @@ def reset_revenue_sync_state_for_tests() -> None:
         _loop_task, \
         _lane, \
         _cash_at, \
-        _cash_error
+        _cash_error, \
+        _low_seen
     if _loop_task is not None and not _loop_task.done():
         _loop_task.cancel()
-    _inflight = _last_batch_at = _last_error = _loop_task = _cash_error = None
+    _inflight = _last_batch_at = _last_error = _loop_task = _cash_error = _low_seen = None
     _last_read_at = _last_call_at = _cash_at = float("-inf")
     _lane = asyncio.Lock()
     _day_failures.clear()

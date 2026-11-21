@@ -12,7 +12,7 @@ from zoneinfo import ZoneInfo
 
 from backend.app.services.aito_poll_watermark import format_books_time
 from backend.app.services.revenue.config import ORG_TIME_ZONE
-from backend.app.services.revenue.dates import days_between
+from backend.app.services.revenue.dates import _month_shift, days_between
 from backend.app.services.revenue.scope import RevenueDecision, ScopeItem, classify_revenue_item
 from backend.app.services.revenue.series import RevenueLine, in_scope_lines, js_round, ttc_of
 
@@ -26,11 +26,6 @@ DSO_DAYS = 90
 # The cash forecast: what falls due within FORECAST_DAYS, and overdue money still young enough to expect.
 FORECAST_DAYS = 30
 STALE_OVERDUE_DAYS = 90
-
-
-def _month_shift(month: str, delta: int) -> str:
-    y, m = int(month[:4]), int(month[5:7]) - 1 + delta
-    return f"{y + m // 12:04d}-{m % 12 + 1:02d}"
 
 
 def last_months(today: str, n: int = CASH_MONTHS) -> list[str]:
@@ -63,7 +58,8 @@ def customer_share(kind: str | None) -> float | None:
     return 1.0 if kind == ONLY_3D else 0.0 if kind == NO_3D else None
 
 
-def _amount(v) -> float:
+def _lenient_float(v) -> float:
+    # Lenient on purpose: NaN/inf pass and bool counts (True is 1), unlike sync_plan._strict_amount.
     try:
         return float(v or 0)
     except (TypeError, ValueError):
@@ -75,7 +71,7 @@ def invoice_share(line_items: list[dict], items: dict[str, ScopeItem], decisions
     decision_by_id = {d.item_id: d for d in decisions}
     total = in_scope = 0.0
     for li in line_items:
-        amount = _amount(li.get("item_total"))
+        amount = _lenient_float(li.get("item_total"))
         total += amount
         item_id = li.get("item_id") or ""
         if item_id and classify_revenue_item(items.get(item_id), decision_by_id.get(item_id)).included:

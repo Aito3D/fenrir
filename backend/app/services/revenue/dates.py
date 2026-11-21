@@ -25,8 +25,12 @@ def _parse_or_raise(day: str) -> date:
     return d
 
 
+def _org_day_of(aware: datetime) -> str:
+    return aware.astimezone(ZoneInfo(ORG_TIME_ZONE)).date().isoformat()
+
+
 def org_today(now: datetime | None = None) -> str:
-    return (now or datetime.now(timezone.utc)).astimezone(ZoneInfo(ORG_TIME_ZONE)).date().isoformat()
+    return _org_day_of(now or datetime.now(timezone.utc))
 
 
 def day_to_utc(day: str) -> int:
@@ -60,6 +64,11 @@ def all_days(from_: str, to: str) -> list[str]:
 
 def days_in_month(year: int, month: int) -> int:
     return (date(year + month // 12, month % 12 + 1, 1) - timedelta(days=1)).day
+
+
+def _month_shift(month: str, delta: int) -> str:
+    y, m = int(month[:4]), int(month[5:7]) - 1 + delta
+    return f"{y + m // 12:04d}-{m % 12 + 1:02d}"
 
 
 def iso_week(day: str) -> tuple[int, int]:

@@ -11,8 +11,6 @@ from backend.app.services.revenue.scope import (
 )
 from backend.app.services.revenue.series import LineFilters, js_round
 
-__all__ = ["ITEM_ID_RE"]
-
 MAX_BRAND_LENGTH = 64
 MAX_BRAND_FILTERS = 50
 
