@@ -427,3 +427,13 @@ export interface CohortsResponse {
   ltv: Array<{ segment: string; customers: number; ltv12: number }>;
   atRisk: Array<{ customerName: string; lastDay: string; usualGapDays: number; daysSince: number; revenue12m: number }>;
 }
+
+export type FunnelOutcome = 'accepted' | 'declined' | 'expired' | 'awaiting';
+
+export interface FunnelResponse extends Record<FunnelOutcome | 'sent', { count: number; total: number }> {
+  missingTotal: number;
+  /** Over decided quotes (accepted, declined, expired); null when none is decided. */
+  conversion: { count: number | null; value: number | null; decided: number };
+  medianDaysToAccept: number | null;
+  bands: Array<{ band: 'small' | 'medium' | 'large'; decided: number; accepted: number; conversion: number | null }>;
+}

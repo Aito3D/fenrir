@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import { RevenueCash } from '../../../components/revenue/RevenueCash';
-import type { CashResponse, PipelineResponse } from '../../../components/revenue/lib/types';
+import type { CashResponse, FunnelResponse, PipelineResponse } from '../../../components/revenue/lib/types';
 
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } });
 
@@ -33,8 +33,20 @@ const pipeline = (o: Partial<PipelineResponse> = {}): PipelineResponse => ({
   ...o,
 });
 
-function stub(c: CashResponse | Response, p: PipelineResponse = pipeline()) {
-  vi.stubGlobal('fetch', vi.fn(async (u: string) => (u.endsWith('/cash') ? (c instanceof Response ? c : json(c)) : json(p))));
+const funnel = (o: Partial<FunnelResponse> = {}): FunnelResponse => ({
+  sent: { count: 20, total: 2_400_000 }, accepted: { count: 9, total: 1_300_000 }, declined: { count: 4, total: 610_000 },
+  expired: { count: 2, total: 90_000 }, awaiting: { count: 5, total: 400_000 },
+  missingTotal: 2, conversion: { count: 60, value: 65, decided: 15 }, medianDaysToAccept: 3,
+  bands: [
+    { band: 'small', decided: 6, accepted: 5, conversion: 83.3 },
+    { band: 'medium', decided: 7, accepted: 4, conversion: 57.1 },
+    { band: 'large', decided: 0, accepted: 0, conversion: null },
+  ],
+  ...o,
+});
+
+function stub(c: CashResponse | Response, p: PipelineResponse = pipeline(), f: FunnelResponse = funnel()) {
+  vi.stubGlobal('fetch', vi.fn(async (u: string) => (u.endsWith('/cash') ? (c instanceof Response ? c : json(c)) : json(u.endsWith('/funnel') ? f : p))));
 }
 
 afterEach(() => vi.unstubAllGlobals());
@@ -99,6 +111,30 @@ describe('RevenueCash', () => {
     render(<RevenueCash version={0} />);
     expect((await screen.findByText('Average payment delay')).closest('div')).toHaveTextContent('—');
     expect(screen.queryByText('Bob SARL')).toBeNull();
+  });
+
+  it('shows what became of the quotes sent: rates with their sample, outcomes, delay and amount bands', async () => {
+    stub(cash());
+    render(<RevenueCash version={0} />);
+    const tile = (label: string) => screen.getByText(label).closest('div')!.parentElement!;
+    expect(await screen.findByText('Acceptance rate')).toBeInTheDocument();
+    expect(tile('Acceptance rate')).toHaveTextContent('60 %15 quotes decided');
+    expect(tile('Acceptance by value')).toHaveTextContent('65 %');
+    const bar = screen.getByTestId('revenue-funnel-bar');
+    expect([...bar.children].map((c) => (c as HTMLElement).style.flexGrow)).toEqual(['9', '4', '2', '5']);
+    expect(screen.getByText('Declined').closest('div')).toHaveTextContent('610.000 FCP4 quotes');
+    expect(screen.getByText('Median time to accept').closest('div')).toHaveTextContent('3 d');
+    expect(screen.getByText('Under 10.000 FCP').closest('div')).toHaveTextContent('83 %5 accepted of 6');
+    expect(screen.getByText('10.000 FCP to 50.000 FCP').closest('div')).toHaveTextContent('57 %');
+    expect(screen.getByText('50.000 FCP and more').closest('div')).toHaveTextContent('—');
+    expect(screen.getByText('No amount: 2')).toBeInTheDocument();
+  });
+
+  it('says when no quote was sent', async () => {
+    const none = { count: 0, total: 0 };
+    stub(cash(), pipeline(), funnel({ sent: none, accepted: none, declined: none, expired: none, awaiting: none, conversion: { count: null, value: null, decided: 0 }, bands: [] }));
+    render(<RevenueCash version={0} />);
+    expect(await screen.findByText('No quote sent in the last 12 months')).toBeInTheDocument();
   });
 
   it('says when no cash refresh has run yet', async () => {

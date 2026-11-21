@@ -56,3 +56,79 @@ def test_empty_board():
     out = pipeline.build_pipeline([], NOW)
     assert out["accepted"]["count"] == 0 and out["accepted"]["byColumn"] == []
     assert out["awaiting"] == {"count": 0, "total": 0, "oldestDays": None}
+
+
+def quote(status, total=100.0, sent_days=10, accepted_after=None, deleted=False, before_trash=None):
+    from datetime import timedelta
+
+    sent = NOW - timedelta(days=sent_days)
+    return SimpleNamespace(
+        status="deleted" if deleted else "active",
+        quote_status=status,
+        quote_status_before_trash=before_trash,
+        quote_total=total,
+        quote_sent_at=sent,
+        quote_accepted_at=None if accepted_after is None else sent + timedelta(days=accepted_after),
+    )
+
+
+def test_funnel_counts_each_outcome_and_converts_over_decided_quotes():
+    cards = [
+        quote("accepted", 10_000),
+        quote("accepted", 20_000),
+        quote("accepted", 30_000),
+        quote("declined", 40_000),
+        quote("expired", None),
+        quote("sent", 5_000),
+        quote("draft", 999),
+    ]
+    f = pipeline.build_funnel(cards, NOW)
+    assert f["sent"] == {"count": 6, "total": 105_000}
+    assert f["accepted"] == {"count": 3, "total": 60_000}
+    assert f["declined"] == {"count": 1, "total": 40_000}
+    assert f["expired"] == {"count": 1, "total": 0}
+    assert f["awaiting"] == {"count": 1, "total": 5_000}
+    assert f["missingTotal"] == 1
+    assert f["conversion"] == {"count": 60.0, "value": 60.0, "decided": 5}
+
+
+def test_funnel_reads_a_trashed_card_by_its_status_before_the_trash():
+    f = pipeline.build_funnel([quote(None, 700, deleted=True, before_trash="declined")], NOW)
+    assert f["declined"] == {"count": 1, "total": 700}
+
+
+def test_funnel_counts_an_invoiced_quote_as_accepted_and_a_viewed_one_as_awaiting():
+    f = pipeline.build_funnel([quote("invoiced", 300), quote("viewed", 200)], NOW)
+    assert (f["accepted"]["count"], f["awaiting"]["count"]) == (1, 1)
+
+
+def test_funnel_leaves_out_quotes_sent_more_than_a_year_ago_or_never_sent():
+    never = quote("accepted", 100)
+    never.quote_sent_at = None
+    f = pipeline.build_funnel(
+        [quote("accepted", 100, sent_days=366), never, quote("accepted", 100, sent_days=365)], NOW
+    )
+    assert f["sent"]["count"] == 1
+
+
+def test_funnel_median_days_to_accept():
+    cards = [quote("accepted", 100, accepted_after=d) for d in (2, 4, 9)] + [quote("accepted", 100)]
+    assert pipeline.build_funnel(cards, NOW)["medianDaysToAccept"] == 4
+    assert pipeline.build_funnel([quote("declined", 100)], NOW)["medianDaysToAccept"] is None
+
+
+def test_funnel_bands_by_quote_amount():
+    cards = [quote("accepted", 9_999), quote("declined", 10_000), quote("accepted", 10_000), quote("accepted", 50_000)]
+    assert pipeline.build_funnel(cards, NOW)["bands"] == [
+        {"band": "small", "decided": 1, "accepted": 1, "conversion": 100.0},
+        {"band": "medium", "decided": 2, "accepted": 1, "conversion": 50.0},
+        {"band": "large", "decided": 1, "accepted": 1, "conversion": 100.0},
+    ]
+
+
+def test_funnel_without_any_quote():
+    f = pipeline.build_funnel([], NOW)
+    assert f["sent"] == {"count": 0, "total": 0}
+    assert f["conversion"] == {"count": None, "value": None, "decided": 0}
+    assert f["medianDaysToAccept"] is None
+    assert [b["conversion"] for b in f["bands"]] == [None, None, None]

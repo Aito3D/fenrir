@@ -100,6 +100,7 @@ async def tokens(db_session):
         "/checks",
         "/cash",
         "/pipeline",
+        "/funnel",
         "/movers",
         "/pvm?from=2025-03-01&to=2025-03-31",
         "/analysis?from=2025-03-01&to=2025-03-31",

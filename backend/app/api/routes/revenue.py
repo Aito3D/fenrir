@@ -453,6 +453,17 @@ async def get_pipeline(request: Request, user: User | None = RequirePermissionIf
     return await _respond(request, user, build, now=now, extra_stamp=pipeline.pipeline_stamp)
 
 
+@router.get("/funnel")
+async def get_funnel(request: Request, user: User | None = RequirePermissionIfAuthEnabled(Permission.REVENUE_READ)):
+    """What became of the quotes sent from the Aito board in the last 12 months."""
+    now = datetime.now(timezone.utc)
+
+    async def build(conn, now, _status):
+        return pipeline.build_funnel(await pipeline.read_funnel_cards(conn), now.replace(tzinfo=None))
+
+    return await _respond(request, user, build, now=now, extra_stamp=pipeline.pipeline_stamp)
+
+
 def _breakdown(ctx: dict, lines: list, filters: LineFilters) -> list[dict]:
     return series.item_breakdown(lines, ctx["items"], ctx["decisions"], ctx["customers"], filters)
 
