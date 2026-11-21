@@ -984,6 +984,44 @@ async def test_detail_reads_fill_applications_and_invoice_shares(zoho, engine):
     assert [c for c in zoho.cash_calls if c[0] in ("payment", "invoice")] == []
 
 
+async def test_a_payment_deleted_in_books_is_dropped_and_the_others_still_read(zoho, engine):
+    async def pages(since, page):
+        return [payment("gone", "t1"), payment("kept", "t2")], False
+
+    async def pay_detail(pid):
+        if pid == "gone":
+            raise ZohoNotFound("Not found in Zoho Books")
+        return {"invoices": [{"invoice_id": "i1", "amount_applied": 100}], "unused_amount": 0}
+
+    zoho.payment_pages, zoho.payment_detail = pages, pay_detail
+    await refresh_cash()
+    payments = (await cash_rows(engine))[0]
+    assert [p["paymentId"] for p in payments] == ["kept"]
+    assert payments[0]["applications"] == [{"invoiceId": "i1", "amount": 100}]
+    assert {c[1] for c in zoho.cash_calls if c[0] == "payment"} == {"gone", "kept"}
+
+
+async def test_an_invoice_gone_from_books_is_saved_with_no_share_and_not_asked_again(zoho, engine):
+    async def pages(since, page):
+        return [payment("p1", "t1")], False
+
+    async def pay_detail(pid):
+        return {"invoices": [{"invoice_id": "i1", "amount_applied": 100}], "unused_amount": 0}
+
+    async def inv_detail(iid):
+        raise ZohoNotFound("Not found in Zoho Books")
+
+    zoho.payment_pages, zoho.payment_detail, zoho.invoice_detail = pages, pay_detail, inv_detail
+    await refresh_cash()
+    zoho.cash_calls.clear()
+    await refresh_cash()  # the application's invoice is read on the next run
+    assert [c for c in zoho.cash_calls if c[0] == "invoice"] == [("invoice", "i1")]
+    assert (await cash_rows(engine))[1]["i1"]["share"] == 0.0
+    zoho.cash_calls.clear()
+    await refresh_cash()
+    assert [c for c in zoho.cash_calls if c[0] in ("payment", "invoice")] == []
+
+
 async def test_a_cash_error_leaves_the_batch_and_banner_alone_and_waits_out_the_ttl(zoho, engine, monkeypatch):
     clock = [1000.0]
     monkeypatch.setattr(sync.time, "monotonic", lambda: clock[0])

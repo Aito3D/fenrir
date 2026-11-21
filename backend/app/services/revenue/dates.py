@@ -62,6 +62,11 @@ def days_in_month(year: int, month: int) -> int:
     return (date(year + month // 12, month % 12 + 1, 1) - timedelta(days=1)).day
 
 
+def _month_shift(month: str, delta: int) -> str:
+    y, m = int(month[:4]), int(month[5:7]) - 1 + delta
+    return f"{y + m // 12:04d}-{m % 12 + 1:02d}"
+
+
 def iso_week(day: str) -> tuple[int, int]:
     year, week, _ = _parse_or_raise(day).isocalendar()
     return year, week

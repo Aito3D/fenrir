@@ -1,6 +1,15 @@
-from datetime import datetime
+import json
+from datetime import datetime, timedelta
 
-from backend.app.models.calculator import CalculatorPrinter
+import pytest
+from sqlalchemy.ext.asyncio import create_async_engine
+from sqlalchemy.orm import Session
+
+from backend.app.core.database import Base, load_all_models
+from backend.app.models.calculator import CalculatorDefaults, CalculatorPrinter
+from backend.app.models.print_log import RUN_OPEN, PrintLogEntry
+from backend.app.models.printer import Printer
+from backend.app.models.settings import Settings
 from backend.app.services.revenue.production import (
     FilamentPrices,
     MachineRate,
@@ -9,6 +18,7 @@ from backend.app.services.revenue.production import (
     labor_by_day,
     machine_rate,
     match_rate,
+    read_production_costs,
     run_cost,
 )
 
@@ -88,3 +98,69 @@ def test_filament_prices_take_the_cheapest_sheet_of_the_material_then_a_named_sh
     # Unknown or missing: the median (2400), not the mean the PPS-CF would drag up.
     assert prices.per_g("PA-CF") == prices.per_g(None) == 2.4
     assert FilamentPrices([]).per_g("PLA") is None
+
+
+def _save(sync_conn, rows):
+    with Session(sync_conn) as session:
+        session.add_all(rows)
+        session.flush()
+
+
+@pytest.fixture
+async def engine(tmp_path):
+    load_all_models()
+    eng = create_async_engine(f"sqlite+aiosqlite:///{tmp_path / 'production.db'}")
+    async with eng.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+    yield eng
+    await eng.dispose()
+
+
+async def test_read_production_costs_prices_each_stored_run_on_its_org_day(engine):
+    def log(started, duration=None, completed=None, status="completed", cost=None):
+        return PrintLogEntry(
+            printer_id=1,
+            status=status,
+            started_at=started,
+            duration_seconds=duration,
+            completed_at=completed,
+            cost=cost,
+        )
+
+    d1, d2 = datetime(2026, 9, 1, 20), datetime(2026, 9, 2, 20)
+    async with engine.begin() as conn:
+        await conn.execute(
+            Printer.__table__.insert().values(
+                name="H2S01", model="H2S", serial_number="S1", ip_address="1.1.1.1", access_code="x"
+            )
+        )
+        await conn.execute(
+            CalculatorPrinter.__table__.insert().values(
+                name="H2S",
+                purchase_price=1825,
+                lifetime_years=1,
+                daily_usage_hours=5,
+                power_watts=1000,
+                repair_rate_pct=0,
+            )  # wear 1/h, energy 1 kW × 10 = 10/h
+        )
+        await conn.execute(CalculatorDefaults.__table__.insert().values(electricity_tariff=10))
+        providers = [{"name": "A", "hourlyRate": 10, "hoursPerDay": 2, "daysPerWeek": 7, "since": "2026-09-01"}]
+        await conn.execute(Settings.__table__.insert().values(key="revenue_labor", value=json.dumps(providers)))
+        rows = [
+            log(d1, duration=7200, cost=5),  # stored duration: 2 h
+            log(d1 + timedelta(hours=2), duration=0, completed=d1 + timedelta(hours=3), cost=1),  # a stored 0 wins
+            log(d2, completed=d2 + timedelta(minutes=30), cost=2),  # no duration: completed - started = 0.5 h
+            log(d2 + timedelta(hours=1), cost=4),  # neither: 0 s
+            log(None, duration=3600, cost=50),  # never started
+            log(d1, duration=3600, status=RUN_OPEN, cost=100),  # still running
+        ]
+        await conn.run_sync(lambda sync: _save(sync, rows))
+    async with engine.connect() as conn:
+        out = await read_production_costs(conn, today="2026-09-03")
+    assert out.by_day == {
+        "2026-09-01": {"filament": 6, "energy": 20, "wear": 2, "labor": 20},
+        "2026-09-02": {"filament": 6, "energy": 5, "wear": 0.5, "labor": 20},
+    }
+    assert out.hours_by_day == {"2026-09-01": 2, "2026-09-02": 0.5}
+    assert out.first_day == "2026-09-01"

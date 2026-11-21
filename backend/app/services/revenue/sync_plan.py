@@ -3,7 +3,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Any
 
-from backend.app.services.revenue.dates import add_days, all_days, days_in_month
+from backend.app.services.revenue.dates import _month_shift, add_days, all_days, days_in_month
 
 
 @dataclass(frozen=True)
@@ -50,11 +50,6 @@ def plan_revenue_sync(
 MONTH_RECHECK_AFTER = timedelta(hours=24)
 
 
-def _next_month(month: str) -> str:
-    y, m = int(month[:4]), int(month[5:7])
-    return f"{y + 1:04d}-01" if m == 12 else f"{y:04d}-{m + 1:02d}"
-
-
 def month_window(month: str, history_start: str) -> tuple[str, str]:
     """The days of a month the cache holds: from the month start, or the history start inside it, to the month end."""
     end = f"{month}-{days_in_month(int(month[:4]), int(month[5:7])):02d}"
@@ -80,7 +75,7 @@ def plan_month_check(
         rows = [by_day[d] for d in window if d in by_day and by_day[d].closed]
         if len(rows) == len(window) and month not in skip:  # skip: months whose check Zoho refuses, for now
             complete[month] = rows
-        month = _next_month(month)
+        month = _month_shift(month, 1)
     newest = sorted(complete, reverse=True)
     for m in newest:
         if m not in checks:
@@ -89,8 +84,7 @@ def plan_month_check(
         at = datetime.fromisoformat(checks[m])
         if any(datetime.fromisoformat(r.fetched_at) > at for r in complete[m]):
             return m
-    y, mo = int(today[:4]), int(today[5:7])
-    previous = f"{y - 1:04d}-12" if mo == 1 else f"{y:04d}-{mo - 1:02d}"
+    previous = _month_shift(today[:7], -1)
     if previous in complete and now - datetime.fromisoformat(checks[previous]) > MONTH_RECHECK_AFTER:
         return previous
     return None
