@@ -497,7 +497,7 @@ def _board_event(occurred_at, amount=23000) -> OrderBoardEvent:
 async def test_board_first_then_terminal_settle_annotates_one_event(db_session, monkeypatch, refreshed, no_aito):
     db_session.add(_board_event(NOW - timedelta(minutes=5), amount=999))  # before the charge: another payment
     db_session.add(_order_charge())
-    db_session.add(_board_event(NOW + timedelta(seconds=30), amount=23000.004))  # board rounding noise
+    db_session.add(_board_event(NOW + timedelta(seconds=30), amount=22000))
     await db_session.commit()
 
     async def fake_get(db, payment_id):
@@ -506,8 +506,12 @@ async def test_board_first_then_terminal_settle_annotates_one_event(db_session, 
     monkeypatch.setattr(heimdall_service, "get_payment", fake_get)
     await tpe.poll_open_terminal_payments(db_session, now=NOW + timedelta(minutes=1))
     events = await _order_events(db_session)
-    assert [e.detail.get("method") for e in events] == [None, "terminal"]
-    assert events[1].detail["amount"] == 23000.004  # the board's amount stays
+    # hybrid rule: 22000 < the settled 23000, so it is another payment and the terminal one is recorded anew
+    assert sorted((e.detail["amount"], e.detail.get("method")) for e in events) == [
+        (999, None),
+        (22000, None),
+        (23000, "terminal"),
+    ]
 
 
 @pytest.mark.asyncio
@@ -835,4 +839,32 @@ async def test_other_payment_during_terminal_is_not_labelled_terminal(db_session
     monkeypatch.setattr(heimdall_service, "get_payment", fake_get)
     await tpe.poll_open_terminal_payments(db_session, now=NOW + timedelta(minutes=1))
     events = await _order_events(db_session)
+    assert sorted((e.detail["amount"], e.detail.get("method")) for e in events) == [(5000, None), (23000, "terminal")]
+
+
+async def _settle_terminal(db_session, monkeypatch):
+    async def fake_get(db, payment_id):
+        return _view(amount_confirmed=23000)
+
+    monkeypatch.setattr(heimdall_service, "get_payment", fake_get)
+    await tpe.poll_open_terminal_payments(db_session, now=NOW + timedelta(minutes=1))
+    return await _order_events(db_session)
+
+
+@pytest.mark.asyncio
+async def test_summed_board_event_is_annotated_keeping_the_board_amount(db_session, monkeypatch, refreshed, no_aito):
+    db_session.add(_order_charge())
+    db_session.add(_board_event(NOW + timedelta(seconds=30), amount=28000))  # this payment plus another, one pass
+    await db_session.commit()
+    events = await _settle_terminal(db_session, monkeypatch)
+    assert [(e.detail["amount"], e.detail.get("method")) for e in events] == [(28000, "terminal")]
+
+
+@pytest.mark.asyncio
+async def test_exact_match_older_than_a_newer_event_is_the_one_annotated(db_session, monkeypatch, refreshed, no_aito):
+    db_session.add(_order_charge())
+    db_session.add(_board_event(NOW + timedelta(seconds=30), amount=23000))
+    db_session.add(_board_event(NOW + timedelta(seconds=40), amount=5000))
+    await db_session.commit()
+    events = await _settle_terminal(db_session, monkeypatch)
     assert sorted((e.detail["amount"], e.detail.get("method")) for e in events) == [(5000, None), (23000, "terminal")]
