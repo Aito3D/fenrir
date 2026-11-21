@@ -110,7 +110,15 @@ def test_outstanding_applies_the_share_splits_overdue_and_ranks_the_late():
         inv("6", "only", 200, due="2026-12-01"),
     ]
     owed, top, known = cash.outstanding(invoices, classes, "2026-11-20")
-    assert owed == {"total": 1500, "overdue": 1300, "invoices": 4, "unknown": 400}
+    assert owed == {
+        "total": 1500,
+        "overdue": 1300,
+        "invoices": 4,
+        "unknown": 400,
+        "dueSoon": 200,
+        "lateRecent": 1300,
+        "lateOld": 0,
+    }
     assert top == [
         {"number": "INV-1", "customerName": "A", "dueDate": "2026-11-10", "daysOverdue": 10, "balance": 1000},
         {"number": "INV-3", "customerName": "C", "dueDate": "2026-11-01", "daysOverdue": 19, "balance": 300},
@@ -143,7 +151,12 @@ def test_build_cash_shape_rounds_and_coverage():
         {"month": "2026-10", "invoicedTtc": 0, "collected": 0, "collectedUnknown": 0},
         {"month": "2026-11", "invoicedTtc": 1235, "collected": 50, "collectedUnknown": 0},
     ]
-    assert body["outstanding"] == {"total": 25, "overdue": 25, "invoices": 1, "unknown": 0}
+    assert {k: body["outstanding"][k] for k in ("total", "overdue", "invoices", "unknown")} == {
+        "total": 25,
+        "overdue": 25,
+        "invoices": 1,
+        "unknown": 0,
+    }
     assert body["coverage"] == {"known": 150, "unknown": 0}
     assert [r["number"] for r in body["topOverdue"]] == ["INV-i"]
 
@@ -237,3 +250,16 @@ def test_accepted_open_is_what_accepted_quotes_still_have_to_bring_in():
         C(quote_status="sent", quote_invoiced=False, quote_total=800.0, retainer_paid_total=0.0),
     ]
     assert cash.accepted_open(cards) == 700
+
+
+def test_outstanding_forecast_buckets_due_soon_young_and_stale_overdue():
+    invoices = [
+        inv("1", "only", 100, due="2026-11-20"),  # due today
+        inv("2", "only", 200, due="2026-12-20"),  # 30 days out
+        inv("3", "only", 400, due="2026-12-21"),  # past the window
+        inv("4", "only", 800, due=None),  # due on receipt
+        inv("5", "only", 1600, due="2026-08-22"),  # 90 days late
+        inv("6", "only", 3200, due="2026-08-21"),  # 91 days late
+    ]
+    owed, _top, _known = cash.outstanding(invoices, {"only": "only3d"}, "2026-11-20")
+    assert (owed["dueSoon"], owed["lateRecent"], owed["lateOld"]) == (1100, 1600, 3200)

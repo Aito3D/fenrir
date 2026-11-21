@@ -178,6 +178,10 @@ describe("bannerState", () => {
   it("is 'progress' when backfilling with no error", () => {
     expect(bannerState(st({ backfilling: true })).kind).toBe("progress");
   });
+  it("is 'idle' while a routine sync runs over a complete history", () => {
+    expect(bannerState(st({ running: true, totalDays: 1055, fetchedDays: 1055 })).kind).toBe("idle");
+    expect(bannerState(st({ running: true, totalDays: 1055, fetchedDays: 1054 })).kind).toBe("progress");
+  });
   it("is 'idle' when neither backfilling nor running and no error", () => {
     expect(bannerState(st({})).kind).toBe("idle");
   });

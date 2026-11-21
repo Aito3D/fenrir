@@ -30,6 +30,7 @@ def bucket(**over: Any) -> dict[str, Any]:
         "quantity": 0,
         "evolution": {"ht": None, "ttc": None},
         "yearAgo": None,
+        "previousTotal": None,
         "elapsedDays": None,
         "cumulative": {"ht": 0, "ttc": 0},
         "partial": False,

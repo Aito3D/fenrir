@@ -2,6 +2,7 @@ import type { ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Empty, Facts, Panel, Split, Tile } from '../aito/stats/primitives';
 import { Skeleton } from '../Skeleton';
+import { bucketLabel } from './lib/buckets';
 import { formatFcp } from './lib/format';
 import type { AgingBucket, CashResponse, FunnelOutcome, FunnelResponse, PipelineResponse } from './lib/types';
 import { useRevenueResource } from './useRevenueResource';
@@ -60,13 +61,16 @@ function Cash({ data }: { data: CashResponse }) {
   const month = data.months[data.months.length - 1];
   const { outstanding, topOverdue, coverage } = data;
   const ratio = month && month.invoicedTtc > 0 ? Math.min(1, month.collected / month.invoicedTtc) : null;
+  // Everything owed is late: one amber line instead of the same amount twice.
+  const allLate = outstanding.overdue > 0 && outstanding.overdue >= outstanding.total;
   return (
     <div className="space-y-2">
       {month && (
         <>
           <div className="grid grid-cols-[repeat(auto-fit,minmax(13.5rem,1fr))] gap-2">
-            <Tile label={t('revenue.cash.invoiced')} value={formatFcp(month.invoicedTtc)} />
-            <Tile label={t('revenue.cash.collected')} value={formatFcp(month.collected)}
+            {/* The month is named: what is owed below is today's, not this month's. */}
+            <Tile label={`${t('revenue.cash.invoiced')} · ${bucketLabel(month.month, 'month')}`} value={formatFcp(month.invoicedTtc)} />
+            <Tile label={`${t('revenue.cash.collected')} · ${bucketLabel(month.month, 'month')}`} value={formatFcp(month.collected)}
               hint={month.collectedUnknown > 0 ? t('revenue.cash.toSplit', { amount: formatFcp(month.collectedUnknown) }) : undefined} />
           </div>
           {ratio !== null && (
@@ -80,8 +84,10 @@ function Cash({ data }: { data: CashResponse }) {
       )}
       <Facts
         rows={[
-          { label: t('revenue.cash.owed'), value: formatFcp(outstanding.total), note: t('revenue.cash.invoices', { n: outstanding.invoices }) },
-          ...(outstanding.overdue > 0
+          allLate
+            ? { label: t('revenue.cash.allOverdue'), value: <span className={AMBER}>{formatFcp(outstanding.total)}</span>, note: t('revenue.cash.invoices', { n: outstanding.invoices }) }
+            : { label: t('revenue.cash.owed'), value: formatFcp(outstanding.total), note: t('revenue.cash.invoices', { n: outstanding.invoices }) },
+          ...(outstanding.overdue > 0 && !allLate
             ? [{ label: t('revenue.cash.overdue'), value: <span className={AMBER}>{formatFcp(outstanding.overdue)}</span> }]
             : []),
           ...(topOverdue ?? []).map((r) => ({

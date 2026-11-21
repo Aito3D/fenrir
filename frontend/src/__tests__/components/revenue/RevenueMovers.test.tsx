@@ -43,7 +43,27 @@ describe('RevenueMovers', () => {
     expect(screen.getByText('▲ +412.000 FCP')).toHaveClass('text-status-ok');
     expect(screen.getByText('▼ −61.200 FCP')).toHaveClass('text-status-error');
     expect(screen.getByText('new')).toBeInTheDocument();
+    // One list at a time: brands sit behind their own tab.
+    expect(screen.queryByText('Bambu')).toBeNull();
+    fireEvent.click(screen.getByText('Brands'));
+    expect(screen.getByText('Bambu')).toBeInTheDocument();
     expect(screen.getByText('None')).toBeInTheDocument();
+  });
+
+  it('lists customers first when the server sends them, and no customer section otherwise', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => json(payload({ customerMovers: { up: [mover('SARL Tahiti', 90_000, 1.5)], down: [] } }))));
+    const { unmount } = render(renderMovers());
+    // Customers are the first tab and open by default.
+    expect(await screen.findByText('SARL Tahiti')).toBeInTheDocument();
+    expect(screen.getByText('+150 %')).toBeInTheDocument();
+    const tabs = ['Customers', 'Products', 'Brands'].map((n) => screen.getByText(n));
+    expect(tabs[0].compareDocumentPosition(tabs[1]) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(screen.queryByText('Printer X1')).toBeNull();
+    unmount();
+    stubMovers();
+    render(renderMovers());
+    await screen.findByText('Printer X1');
+    expect(screen.queryByText('Customers')).toBeNull();
   });
 
   it('compares two periods prefilled from the bucket and its previous one', async () => {

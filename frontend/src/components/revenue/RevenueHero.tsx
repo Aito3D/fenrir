@@ -5,6 +5,7 @@ import { DeltaBadge } from '../stats/DeltaBadge';
 import { bucketKeyFor, bucketLabel, isBucketKey, shiftBucketYear, toDateRangeLabel } from './lib/buckets';
 import { addDays, daysBetween } from './lib/dates';
 import { asDelta, findingCase } from './lib/finding';
+import { focusRingCls } from '../formStyles';
 import { formatFcp } from './lib/format';
 import { evolutionFor, insightTiles, kpiTiles, yearOverYear, type KpiTile } from './lib/kpis';
 import type { RevenueBucket, RevenueGranularity, RevenueResponse, TaxMode } from './lib/types';
@@ -24,6 +25,8 @@ const targetOf = (b: RevenueBucket) => (b.target != null && b.target > 0 ? b.tar
 
 /** What the last bucket is compared with: the clipped range of a partial bucket, else the whole previous or year-ago bucket. */
 function comparison(t: TFunction, buckets: RevenueBucket[], g: RevenueGranularity, against: 'previous' | 'year-ago'): string | null {
+  // A year's previous bucket is its year-ago one, and only that label names the year.
+  if (g === 'year') against = 'year-ago';
   const last = buckets[buckets.length - 1];
   const range = toDateRangeLabel(last, g, against);
   if (range) return t('revenue.hero.toDate', { range });
@@ -46,7 +49,6 @@ function tileText(t: TFunction, tile: KpiTile, g: RevenueGranularity, last: Reve
       }),
     };
   }
-  if (tile.label === 'Cumul') return { label: t('revenue.hero.cumulative'), hint: tile.hint };
   if (tile.label === PER_HOUR_LABEL) {
     return { label: t('revenue.table.perHour'), hint: `${new Intl.NumberFormat(i18next.language, { maximumFractionDigits: 1 }).format(last.printHours ?? 0)} h` };
   }
@@ -115,33 +117,44 @@ function Sparkline({ buckets, mode }: { buckets: RevenueBucket[]; mode: TaxMode 
 }
 
 /** The last period in large type with its two comparisons, the target ring (or a sparkline), then the other figures as tiles. */
-export function RevenueHero({ payload, taxMode, canMargin }: { payload: RevenueResponse; taxMode: TaxMode; canMargin: boolean }) {
+export function RevenueHero({ payload, taxMode, canMargin, onSetTarget }: {
+  payload: RevenueResponse;
+  taxMode: TaxMode;
+  canMargin: boolean;
+  /** Opens the targets editor; offered while the period has no target. */
+  onSetTarget?: () => void;
+}) {
   const { t } = useTranslation();
   const { buckets, granularity: g } = payload;
   const last = buckets[buckets.length - 1];
   if (!last) return null;
-  const [, previous, , , cumul] = kpiTiles(buckets, taxMode, g, 0, FR_UNIT[g]);
+  // The running total repeats the hero figure whenever the window is one period, so it is not a tile.
+  const [, previous] = kpiTiles(buckets, taxMode, g, 0, FR_UNIT[g]);
   const insights = insightTiles(buckets, taxMode, FR_UNIT[g]).filter((x) => x.kind !== 'share' && (canMargin || x.label !== MARGIN_LABEL));
-  const tiles = [previous, cumul, ...insights];
+  const tiles = [previous, ...insights];
   const target = targetOf(last);
   const share = target ? last.ht / target : null;
   const projectedShare = target && last.projection ? last.projection.ht / target : null;
-  const projection = last.projection ? pick(last.projection, taxMode) : null;
   const deltas = [
     { value: evolutionFor(last, taxMode), what: comparison(t, buckets, g, 'previous') },
-    { value: yearOverYear(last, taxMode), what: comparison(t, buckets, g, 'year-ago') },
+    // A year's previous period is the year ago: one badge, not the same one twice.
+    ...(g === 'year' ? [] : [{ value: yearOverYear(last, taxMode), what: comparison(t, buckets, g, 'year-ago') }]),
   ].filter((d) => d.value != null && d.what);
   const title =
     last.partial && last.elapsedDays != null
       ? t('revenue.hero.partial', { period: last.label, day: last.elapsedDays, total: daysBetween(last.start, last.end) })
       : last.label;
-  const side = [
-    projection != null ? t('revenue.hero.projection', { amount: formatFcp(projection) }) : null,
-    target ? t('revenue.hero.target', { amount: formatFcp(target) }) : null,
-  ].filter(Boolean).join(' · ');
+  // The projection has its own tile; the corner names the target, or offers to set one.
+  const action = target ? (
+    <span className="text-[11.5px] text-bambu-gray-light tabular-nums">{t('revenue.hero.target', { amount: formatFcp(target) })}</span>
+  ) : onSetTarget && (g === 'month' || g === 'year') ? (
+    <button type="button" onClick={onSetTarget} className={`rounded text-[11.5px] text-bambu-green hover:text-white ${focusRingCls}`}>
+      {t('revenue.hero.setTarget')}
+    </button>
+  ) : undefined;
 
   return (
-    <Panel title={title} action={side ? <span className="text-[11.5px] text-bambu-gray-light tabular-nums">{side}</span> : undefined}>
+    <Panel title={title} action={action}>
       <div className="flex items-center gap-4 rounded-lg bg-bambu-dark px-4 py-3">
         {share != null && (
           <TargetRing
@@ -171,7 +184,8 @@ export function RevenueHero({ payload, taxMode, canMargin }: { payload: RevenueR
         </div>
         {share == null && <Sparkline buckets={buckets} mode={taxMode} />}
       </div>
-      <div className="mt-2 grid grid-cols-[repeat(auto-fit,minmax(13.5rem,1fr))] gap-2">
+      {/* Two per row: the card then matches the pace chart beside it, and a phone shows pairs, not a column. */}
+      <div className="mt-2 grid grid-cols-2 gap-2">
         {tiles.map((tile) => (
           <div key={tile.label} className="grid">
             <Tile

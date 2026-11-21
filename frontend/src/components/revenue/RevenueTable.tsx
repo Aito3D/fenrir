@@ -6,7 +6,7 @@ import { DeltaBadge } from '../stats/DeltaBadge';
 import { focusRingCls } from '../formStyles';
 import { asDelta } from './lib/finding';
 import { evolutionFor, yearOverYear } from './lib/kpis';
-import { formatFcp } from './lib/format';
+import { formatAmount, formatFcp } from './lib/format';
 import { toggleInSet } from './lib/dashboard';
 import type { ItemsResponse, RevenueBucket, RevenueGranularity, RevenueMonthCheck, TaxMode } from './lib/types';
 import { useRevenueResource } from './useRevenueResource';
@@ -70,11 +70,11 @@ function ItemRows({ bucket, filterParams, version, cols, margin }: { bucket: Rev
               {[t(`revenue.filters.${r.kind === 'service' ? 'services' : 'goods'}`), r.nature, r.brand, r.sku].filter(Boolean).join(' · ')}
             </span>
           </span>
-          <span role="cell" className={CELL}>{formatFcp(r.ht)}</span>
-          <span role="cell" className={CELL}>{formatFcp(r.ttc)}</span>
+          <span role="cell" className={CELL}>{formatAmount(r.ht)}</span>
+          <span role="cell" className={CELL}>{formatAmount(r.ttc)}</span>
           <span role="cell" />
           <span role="cell" />
-          {margin && <span role="cell" className={CELL}>{r.cost == null ? '—' : formatFcp(r.ht - r.cost)}</span>}
+          {margin && <span role="cell" className={CELL}>{r.cost == null ? '—' : formatAmount(r.ht - r.cost)}</span>}
           {margin && <span role="cell" />}
           <span role="cell" />
           <span role="cell" className={CELL}>{r.quantity}</span>
@@ -101,7 +101,10 @@ export function RevenueTable({ buckets, granularity, taxMode, canMargin, filterP
   const [open, setOpen] = useState<ReadonlySet<string>>(new Set());
   // Cost fields are stripped by the server without the margin permission.
   const margin = canMargin && buckets.some((b) => b.costedHt !== undefined);
-  const cols = `minmax(0,1.5fr) repeat(${margin ? 8 : 6},minmax(0,1fr))`;
+  // The margin column carries a rate and a coverage line: wider, so neither wraps.
+  const cols = margin
+    ? 'minmax(0,1.5fr) repeat(4,minmax(0,1fr)) minmax(0,1.4fr) repeat(3,minmax(0,1fr))'
+    : 'minmax(0,1.5fr) repeat(6,minmax(0,1fr))';
   const rows = [...buckets].reverse();
   const checkOf = new Map(granularity === 'month' ? (checks ?? []).map((c) => [c.month, c]) : []);
   const heads = [
@@ -116,11 +119,12 @@ export function RevenueTable({ buckets, granularity, taxMode, canMargin, filterP
   ];
 
   return (
-    <Panel title={t('revenue.table.title')}>
+    // Amounts carry no unit in the cells: the corner states it once, so a figure never wraps onto two lines.
+    <Panel title={t('revenue.table.title')} action={<span className="text-[11px] text-bambu-gray">{t('revenue.table.unit')}</span>}>
       <span id={hintId} hidden>{t('revenue.table.marginHint')}</span>
       {/* Eight figures do not fit a phone or the narrow split column: the rows scroll sideways, never wrap. */}
       <div role="region" tabIndex={0} aria-label={t('revenue.table.title')} className={`overflow-x-auto rounded-lg ${focusRingCls}`}>
-      <div role="table" aria-label={t('revenue.table.title')} className="grid min-w-[66rem] gap-1.5 text-[13px]">
+      <div role="table" aria-label={t('revenue.table.title')} className="grid min-w-[56rem] gap-1.5 text-[13px]">
         <div role="row" className={`${ROW} text-[11px] text-bambu-gray`} style={{ gridTemplateColumns: cols }}>
           {heads.map((h, i) => (
             <span key={h.id} role="columnheader" className={i === 0 ? '' : 'text-right'}
@@ -151,16 +155,19 @@ export function RevenueTable({ buckets, granularity, taxMode, canMargin, filterP
                     </span>
                   )}
                 </span>
-                <span role="cell" className={`${CELL} font-medium text-white`}>{formatFcp(b.ht)}</span>
-                <span role="cell" className={`${CELL} text-bambu-gray-light`}>{`${formatFcp(b.ttc)}${b.ttcApprox ? ' ≈' : ''}`}</span>
+                <span role="cell" className={`${CELL} font-medium text-white`}>{formatAmount(b.ht)}</span>
+                <span role="cell" className={`${CELL} text-bambu-gray-light`}>{`${formatAmount(b.ttc)}${b.ttcApprox ? ' ≈' : ''}`}</span>
                 <Evo v={evolutionFor(b, taxMode)} elapsedDays={b.elapsedDays} />
                 <Evo v={yearOverYear(b, taxMode)} elapsedDays={b.elapsedDays} />
                 {margin && (
                   <span role="cell" className={`${CELL} text-bambu-gray-light`} title={coveragePct ? t('revenue.table.coverage', { pct: coveragePct }) : undefined}>
                     {b.costedHt != null && b.costedHt > 0 ? (
                       <>
-                        {formatFcp(b.costedHt - (b.cost ?? 0))} <span className="text-xs text-bambu-gray">{rate(b.costedHt - (b.cost ?? 0), b.costedHt)}</span>
-                        {coveragePct && <span className="block text-[10px] text-bambu-gray">{t('revenue.table.coverageShort', { pct: coveragePct })}</span>}
+                        {formatAmount(b.costedHt - (b.cost ?? 0))}
+                        <span className="block whitespace-nowrap text-[10px] text-bambu-gray">
+                          {rate(b.costedHt - (b.cost ?? 0), b.costedHt)}
+                          {coveragePct && ` · ${t('revenue.table.coverageShort', { pct: coveragePct })}`}
+                        </span>
                       </>
                     ) : (
                       '—'
@@ -169,10 +176,10 @@ export function RevenueTable({ buckets, granularity, taxMode, canMargin, filterP
                 )}
                 {margin && (
                   <span role="cell" className={`${CELL} text-bambu-gray-light`}>
-                    {b.printHours ? `${formatFcp(b.services / b.printHours)} /h` : '—'}
+                    {b.printHours ? `${formatAmount(b.services / b.printHours)} /h` : '—'}
                   </span>
                 )}
-                <span role="cell" className={`${CELL} text-bambu-gray-light`}>{formatFcp(taxMode === 'ttc' ? b.cumulative.ttc : b.cumulative.ht)}</span>
+                <span role="cell" className={`${CELL} text-bambu-gray-light`}>{formatAmount(taxMode === 'ttc' ? b.cumulative.ttc : b.cumulative.ht)}</span>
                 <span role="cell" className={`${CELL} text-bambu-gray-light`}>{b.quantity}</span>
               </div>
               {expanded && margin && b.costParts && (

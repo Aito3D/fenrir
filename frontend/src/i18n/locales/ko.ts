@@ -12407,6 +12407,15 @@ export default {
   },
   revenue: {
     cash: {
+      allOverdue: '연체',
+      forecast: {
+        title: '30일 내 입금 예상',
+        dueSoon: '30일 내 만기 청구서',
+        lateRecent: '연체 90일 미만',
+        toInvoice: '이후 청구 예정',
+        toInvoiceNote: '수주 확정분, 선금 제외',
+        lateOld: '90일 넘게 연체된 {{amount}}은(는) 제외',
+      },
       title: '자금',
       invoiced: '청구액(세금 포함)',
       collected: '수금액',
@@ -12529,8 +12538,8 @@ export default {
       monthReloading: '{{month}}을(를) 지웠습니다. Zoho에서 다시 불러오는 중입니다.',
     },
     hero: {
+      setTarget: '목표 설정',
       partial: '{{period}} · 진행 중, {{total}}일 중 {{day}}일째',
-      projection: '예상 ≈ {{amount}}',
       target: '목표(세전) {{amount}}',
       vs: '{{what}} 대비',
       toDate: '{{range}} (같은 날 기준)',
@@ -12540,7 +12549,6 @@ export default {
       paceLastYear: '작년 페이스 기준',
       paceCurrent: '현재 페이스 기준',
       margin: '매출총이익(세전)',
-      cumulative: '누계',
       previous: {
         day: '전일',
         week: '전주',
@@ -12644,6 +12652,7 @@ export default {
       failed: '메모가 저장되지 않았습니다',
     },
     table: {
+      unit: '금액 단위: FCP',
       title: '기간별 상세',
       period: '기간',
       ht: '매출 HT',
@@ -12662,6 +12671,8 @@ export default {
       empty: '이 기간에 Aito3D 판매가 없습니다.',
     },
     movers: {
+      dimension: '표시할 목록',
+      customers: '고객',
       title: '변동',
       compareTitle: '두 기간 비교',
       compare: '⇄ 두 기간 비교',

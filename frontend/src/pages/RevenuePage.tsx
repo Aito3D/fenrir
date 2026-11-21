@@ -528,7 +528,7 @@ export function RevenuePage() {
             <>
               <RevenueFinding payload={data} taxMode={active.taxMode} />
               <Split stretch>
-                <RevenueHero payload={data} taxMode={active.taxMode} canMargin={can.margin} />
+                <RevenueHero payload={data} taxMode={active.taxMode} canMargin={can.margin} onSetTarget={can.targets && unfiltered && !targetsOpen ? toggleTargets : undefined} />
                 {lastBucket && (
                   <RevenuePace monthKey={(lastBucket.end > today ? today : lastBucket.end).slice(0, 7)} filterParams={filterParams} taxMode={active.taxMode} version={data} />
                 )}

@@ -12810,6 +12810,15 @@ export default {
   },
   revenue: {
     cash: {
+      allOverdue: 'En retard',
+      forecast: {
+        title: 'Prévu sous 30 jours',
+        dueSoon: 'Échéances sous 30 j',
+        lateRecent: 'Retards de moins de 90 j',
+        toInvoice: 'Ensuite, à facturer',
+        toInvoiceNote: 'carnet accepté, hors acomptes',
+        lateOld: '{{amount}} en retard de plus de 90 j non comptés',
+      },
       title: 'Trésorerie',
       invoiced: 'Facturé TTC',
       collected: 'Encaissé',
@@ -12932,8 +12941,8 @@ export default {
       monthReloading: '{{month}} effacé, rechargement depuis Zoho en cours.',
     },
     hero: {
+      setTarget: 'Définir un objectif',
       partial: '{{period}} · en cours, jour {{day}} sur {{total}}',
-      projection: 'Projection ≈ {{amount}}',
       target: 'Objectif HT {{amount}}',
       vs: 'vs {{what}}',
       toDate: '{{range}} (à date)',
@@ -12943,7 +12952,6 @@ export default {
       paceLastYear: 'au rythme de l\'an dernier',
       paceCurrent: 'au rythme actuel',
       margin: 'Marge brute HT',
-      cumulative: 'Cumul',
       previous: {
         day: 'Jour précédent',
         week: 'Semaine précédente',
@@ -13047,6 +13055,7 @@ export default {
       failed: 'Note non enregistrée',
     },
     table: {
+      unit: 'Montants en FCP',
       title: 'Détail par période',
       period: 'Période',
       ht: 'CA HT',
@@ -13065,6 +13074,8 @@ export default {
       empty: 'Aucune vente Aito3D sur cette période.',
     },
     movers: {
+      dimension: 'Liste affichée',
+      customers: 'Clients',
       title: 'Mouvements',
       compareTitle: 'Comparer deux périodes',
       compare: '⇄ Comparer deux périodes',
@@ -13131,7 +13142,7 @@ export default {
       marginNote: 'Au coût d\'aujourd\'hui (Prix Dealer, sinon prix d\'achat), sur les articles qui ont un coût.',
       coverage: 'coût connu sur {{pct}} de {{amount}}',
       noData: 'Aucune donnée.',
-      dormantTitle: 'Plus vendus depuis 90 jours',
+      dormantTitle: 'Sans vente depuis 90 jours',
       dormantHint: 'Vendus dans l\'année, aucune vente depuis 90 jours — à vérifier avant de les recommander. CA HT sur la période d\'avant.',
       lastSale: 'dernière vente {{date}}',
       none: 'Aucun.',

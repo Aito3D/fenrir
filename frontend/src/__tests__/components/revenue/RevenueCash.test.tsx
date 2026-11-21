@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
 import { RevenueCash } from '../../../components/revenue/RevenueCash';
 import type { CashResponse, FunnelResponse, PipelineResponse } from '../../../components/revenue/lib/types';
 
@@ -135,6 +135,17 @@ describe('RevenueCash', () => {
     stub(cash(), pipeline(), funnel({ sent: none, accepted: none, declined: none, expired: none, awaiting: none, conversion: { count: null, value: null, decided: 0 }, bands: [] }));
     render(<RevenueCash version={0} />);
     expect(await screen.findByText('No quote sent in the last 12 months')).toBeInTheDocument();
+  });
+
+  it('names the month on the monthly tiles and merges owed and overdue when everything is late', async () => {
+    stub(cash({ outstanding: { total: 712_270, overdue: 712_270, invoices: 31, unknown: 0, dueSoon: 0, lateRecent: 469_470, lateOld: 242_800 } }));
+    render(<RevenueCash version={0} />);
+    expect(await screen.findByText('Invoiced incl. tax · nov. 2026')).toBeInTheDocument();
+    expect(screen.getByText('Collected · nov. 2026')).toBeInTheDocument();
+    expect(screen.getByText('Overdue')).toBeInTheDocument();
+    expect(screen.getByText('712.270 FCP')).toHaveClass('text-amber-700');
+    expect(screen.queryByText('To collect')).toBeNull();
+    expect(screen.queryByText('of which overdue')).toBeNull();
   });
 
   it('says when no cash refresh has run yet', async () => {

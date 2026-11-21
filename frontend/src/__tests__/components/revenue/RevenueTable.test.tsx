@@ -62,7 +62,7 @@ describe('RevenueTable', () => {
     const rows = bodyRows();
     expect(rows[0]).toHaveTextContent('oct. 2026');
     expect(rows[1]).toHaveTextContent('sept. 2026');
-    expect(within(rows[0]).getByText('620.000 FCP')).toBeInTheDocument();
+    expect(within(rows[0]).getByText('620.000')).toBeInTheDocument();
     expect(within(rows[0]).getByText('▲ 24%')).toBeInTheDocument();
     expect(within(rows[0]).getByText('52')).toBeInTheDocument();
   });
@@ -72,7 +72,7 @@ describe('RevenueTable', () => {
     const noLog = { ...oct, services: 0, printHours: null };
     const { unmount } = render(renderTable({ buckets: [withHours, noLog] }));
     const [octRow, septRow] = bodyRows();
-    expect(within(septRow).getByText('5.000 FCP /h')).toBeInTheDocument();
+    expect(within(septRow).getByText('5.000 /h')).toBeInTheDocument();
     expect(octRow).not.toHaveTextContent('/h');
     unmount();
     render(renderTable({ buckets: [withHours], canMargin: false }));
@@ -82,8 +82,8 @@ describe('RevenueTable', () => {
   it('marks an approximate TTC with ≈', () => {
     render(renderTable());
     const [octRow, septRow] = bodyRows();
-    expect(within(octRow).getByText('700.600 FCP ≈')).toBeInTheDocument();
-    expect(within(septRow).getByText('565.000 FCP')).toBeInTheDocument();
+    expect(within(octRow).getByText('700.600 ≈')).toBeInTheDocument();
+    expect(within(septRow).getByText('565.000')).toBeInTheDocument();
   });
 
   it('badges the bucket in progress and its missing days', () => {
@@ -102,7 +102,7 @@ describe('RevenueTable', () => {
     expect(within(cells[4]).getByText('▲ 55%')).toBeInTheDocument();
     expect(within(cells[3]).getByText('to date')).toBeInTheDocument();
     expect(within(cells[4]).getByText('to date')).toBeInTheDocument();
-    expect(within(cells[7]).getByText('1.120.000 FCP')).toBeInTheDocument();
+    expect(within(cells[7]).getByText('1.120.000')).toBeInTheDocument();
     expect(within(septRow).getAllByRole('cell')[4]).toHaveTextContent('—');
     expect(within(septRow).queryByText('to date')).toBeNull();
   });
@@ -111,7 +111,7 @@ describe('RevenueTable', () => {
     const credit = bucket({ ht: -50_000, ttc: -56_500, cost: 10_000, costedHt: -50_000, evolution: { ht: 0, ttc: 0 } });
     render(renderTable({ buckets: [credit] }));
     const cells = within(bodyRows()[0]).getAllByRole('cell');
-    expect(within(cells[1]).getByText('−50.000 FCP')).toBeInTheDocument();
+    expect(within(cells[1]).getByText('−50.000')).toBeInTheDocument();
     expect(cells[3]).toHaveTextContent(/^—$/);
     // Flat is a badge; a missing comparison is the empty marker (the year-ago cell here).
     expect(cells[3].querySelector('[data-missing]')).toBeNull();
@@ -132,7 +132,7 @@ describe('RevenueTable', () => {
     const nearly = bucket({ key: '2026-07', label: 'juil. 2026', start: '2026-07-01', end: '2026-07-31', ht: 400_000, cost: 100_000, costedHt: 399_999 });
     const { unmount } = render(renderTable({ buckets: [nearly, partial, sept] }));
     const [septRow, augRow, julRow] = bodyRows();
-    const marker = within(augRow).getByText('cost known: 75 %');
+    const marker = within(augRow).getByText('50 % · cost known: 75 %');
     expect(marker.closest('[role="cell"]')).toHaveAttribute('title', 'cost known on 75 % of revenue HT');
     expect(within(septRow).queryByText(/cost known/)).toBeNull();
     expect(within(julRow).queryByText(/cost known/)).toBeNull();
@@ -147,13 +147,13 @@ describe('RevenueTable', () => {
     render(renderTable({ buckets: [parts] }));
     fireEvent.click(screen.getByRole('button', { name: 'sept. 2026' }));
     const breakdown = await screen.findByRole('group', { name: 'Gross margin breakdown' });
-    expect(breakdown).toHaveTextContent('Costed revenue HT500.000 FCP');
-    expect(breakdown).toHaveTextContent('Item costs−100.000 FCP');
-    expect(breakdown).toHaveTextContent('Printer wear−120.000 FCP');
-    expect(breakdown).toHaveTextContent('Labour−30.000 FCP');
+    expect(breakdown).toHaveTextContent('Costed revenue HT500.000');
+    expect(breakdown).toHaveTextContent('Item costs−100.000');
+    expect(breakdown).toHaveTextContent('Printer wear−120.000');
+    expect(breakdown).toHaveTextContent('Labour−30.000');
     // A zero part is left out.
     expect(within(breakdown).queryByText('Energy')).toBeNull();
-    expect(breakdown).toHaveTextContent('Gross margin HT200.000 FCP');
+    expect(breakdown).toHaveTextContent('Gross margin HT200.000');
   });
 
   it('shows no breakdown without the margin right', () => {
@@ -166,7 +166,7 @@ describe('RevenueTable', () => {
   it('shows the margin amount with its rate and explains the column', () => {
     render(renderTable());
     const cells = within(bodyRows()[0]).getAllByRole('cell');
-    expect(cells[5]).toHaveTextContent('186.000 FCP 30 %');
+    expect(cells[5]).toHaveTextContent('186.00030 %');
     expect(screen.getByRole('columnheader', { name: 'Margin' })).toHaveAccessibleDescription('Gross margin HT, at current cost (dealer price, else purchase price); services at their print costs (filament, energy, printer wear) and labour since July 2026');
   });
 
@@ -175,12 +175,12 @@ describe('RevenueTable', () => {
     const { unmount } = render(renderTable({ canMargin: false }));
     expect(screen.queryByRole('columnheader', { name: 'Margin' })).toBeNull();
     expect(within(bodyRows()[0]).getAllByRole('cell')).toHaveLength(7);
-    expect(screen.queryByText('186.000 FCP')).toBeNull();
+    expect(screen.queryByText('186.000')).toBeNull();
     fireEvent.click(screen.getByRole('button', { name: /oct\. 2026/ }));
     await screen.findByText('PLA Basic 1 kg');
     const itemRow = screen.getByText('PLA Basic 1 kg').closest('[role="row"]') as HTMLElement;
     expect(within(itemRow).getAllByRole('cell')).toHaveLength(7);
-    expect(screen.queryByText('14.000 FCP')).toBeNull();
+    expect(screen.queryByText('14.000')).toBeNull();
     unmount();
     const { unmount: u1 } = render(renderTable());
     expect(within(bodyRows()[0]).getAllByRole('cell')).toHaveLength(9);
@@ -201,8 +201,8 @@ describe('RevenueTable', () => {
     expect(screen.getByText('Loading…')).toBeInTheDocument();
     expect(await screen.findByText('PLA Basic 1 kg')).toBeInTheDocument();
     expect(fetchMock.mock.calls[0][0]).toBe('/api/v1/revenue/items?from=2026-10-01&to=2026-10-31&brand=bambu&kind=goods');
-    expect(screen.getByText('40.000 FCP')).toBeInTheDocument();
-    expect(screen.getByText('14.000 FCP')).toBeInTheDocument();
+    expect(screen.getByText('40.000')).toBeInTheDocument();
+    expect(screen.getByText('14.000')).toBeInTheDocument();
     expect(screen.getByText('Printing service')).toBeInTheDocument();
     fireEvent.click(toggle);
     expect(toggle).toHaveAttribute('aria-expanded', 'false');

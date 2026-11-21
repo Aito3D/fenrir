@@ -12808,6 +12808,15 @@ export default {
   },
   revenue: {
     cash: {
+      allOverdue: '已逾期',
+      forecast: {
+        title: '30 天內預計入帳',
+        dueSoon: '30 天內到期的發票',
+        lateRecent: '逾期未滿 90 天',
+        toInvoice: '之後待開票',
+        toInvoiceNote: '已接受訂單，扣除訂金',
+        lateOld: '逾期超過 90 天的 {{amount}} 未計入',
+      },
       title: '資金',
       invoiced: '已開票（含稅）',
       collected: '已收款',
@@ -12930,8 +12939,8 @@ export default {
       monthReloading: '已清除 {{month}}，正在從 Zoho 重新載入。',
     },
     hero: {
+      setTarget: '設定目標',
       partial: '{{period}} · 進行中，第 {{day}} 天，共 {{total}} 天',
-      projection: '預測 ≈ {{amount}}',
       target: '目標（未稅） {{amount}}',
       vs: '較{{what}}',
       toDate: '{{range}}（截至同日）',
@@ -12941,7 +12950,6 @@ export default {
       paceLastYear: '按去年的節奏',
       paceCurrent: '按目前節奏',
       margin: '毛利（未稅）',
-      cumulative: '累計',
       previous: {
         day: '前一天',
         week: '前一週',
@@ -13045,6 +13053,7 @@ export default {
       failed: '備註未儲存',
     },
     table: {
+      unit: '金額單位：FCP',
       title: '按期間明細',
       period: '期間',
       ht: '營業額 HT',
@@ -13063,6 +13072,8 @@ export default {
       empty: '此期間沒有 Aito3D 銷售。',
     },
     movers: {
+      dimension: '顯示的清單',
+      customers: '客戶',
       title: '變動',
       compareTitle: '比較兩個期間',
       compare: '⇄ 比較兩個期間',

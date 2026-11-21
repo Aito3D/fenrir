@@ -12882,6 +12882,15 @@ errors: {
   },
   revenue: {
     cash: {
+      allOverdue: 'Förfallet',
+      forecast: {
+        title: 'Väntas inom 30 dagar',
+        dueSoon: 'Fakturor som förfaller inom 30 d',
+        lateRecent: 'Förfallet mindre än 90 d',
+        toInvoice: 'Därefter att fakturera',
+        toInvoiceNote: 'accepterade order, minus förskott',
+        lateOld: '{{amount}} förfallet över 90 d räknas inte',
+      },
       title: 'Likviditet',
       invoiced: 'Fakturerat inkl. moms',
       collected: 'Inbetalt',
@@ -13004,8 +13013,8 @@ errors: {
       monthReloading: '{{month}} rensad, laddas om från Zoho.',
     },
     hero: {
+      setTarget: 'Ange ett mål',
       partial: '{{period}} · pågår, dag {{day}} av {{total}}',
-      projection: 'Prognos ≈ {{amount}}',
       target: 'Mål exkl. moms {{amount}}',
       vs: 'mot {{what}}',
       toDate: '{{range}} (hittills)',
@@ -13015,7 +13024,6 @@ errors: {
       paceLastYear: 'i fjolårets takt',
       paceCurrent: 'i nuvarande takt',
       margin: 'Bruttomarginal exkl. moms',
-      cumulative: 'Ackumulerat',
       previous: {
         day: 'Föregående dag',
         week: 'Föregående vecka',
@@ -13119,6 +13127,7 @@ errors: {
       failed: 'Anteckningen sparades inte',
     },
     table: {
+      unit: 'Belopp i FCP',
       title: 'Detalj per period',
       period: 'Period',
       ht: 'Omsättning HT',
@@ -13137,6 +13146,8 @@ errors: {
       empty: 'Ingen Aito3D-försäljning under perioden.',
     },
     movers: {
+      dimension: 'Visad lista',
+      customers: 'Kunder',
       title: 'Rörelser',
       compareTitle: 'Jämför två perioder',
       compare: '⇄ Jämför två perioder',
