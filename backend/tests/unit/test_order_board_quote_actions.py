@@ -151,6 +151,16 @@ async def test_edit_keeps_books_price_and_name_on_kept_lines(db_session, books, 
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(("asked", "sent"), [({}, 0), ({"discount": "5%"}, "5%")])
+async def test_edit_kept_line_always_states_its_discount(db_session, books, asked, sent):
+    await _stored(db_session, books, _with_line(1, discount="10%"))
+    await actions.edit_quote(
+        db_session, "e1", "c1", [{"line_id": "ql1", "item_id": "A", "quantity": 1, **asked}], by=None
+    )
+    assert books.sent[0][2][0]["discount"] == sent
+
+
+@pytest.mark.asyncio
 async def test_edit_new_line_takes_the_item_rate(db_session, books):
     await _stored(db_session, books, _with_line(1, rate=99.5))
     lines = [{"line_id": "ql1", "item_id": "A", "quantity": 1}, {"item_id": "B", "quantity": 2}]

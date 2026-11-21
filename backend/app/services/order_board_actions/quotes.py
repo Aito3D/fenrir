@@ -85,7 +85,7 @@ async def edit_quote(
                 {
                     **{k: raw[k] for k in _KEPT_FIELDS if k in raw},
                     "quantity": q,
-                    **({"discount": entry["discount"]} if discount else {}),
+                    "discount": entry["discount"] if discount else 0,  # always stated: a removed discount is cleared
                 }
             )
         body_lines = kept + (await priced_lines(db, estimate_id, new) if new else [])
