@@ -19,6 +19,7 @@ from backend.app.models.user import User
 from backend.app.services.revenue import (
     analysis,
     cash,
+    cohorts,
     insights,
     memo,
     pipeline,
@@ -30,6 +31,7 @@ from backend.app.services.revenue import (
     sync,
 )
 from backend.app.services.revenue.config import REVENUE_GRANULARITIES, REVENUE_HISTORY_START
+from backend.app.services.revenue.customers import customer_display_name
 from backend.app.services.revenue.dates import add_days, days_between, is_valid_day, org_today
 from backend.app.services.revenue.insights import attach_targets, calendar_days, yoy_pivot
 from backend.app.services.revenue.scope import ITEM_ID_RE, build_review_list
@@ -380,6 +382,33 @@ async def get_customers(
         return {"from": from_, "to": to, **result, "retention": retention}
 
     return await _respond(request, user, build, flags=flags, now=now)
+
+
+@router.get("/cohorts")
+async def get_cohorts(
+    request: Request,
+    user: User | None = RequirePermissionIfAuthEnabled(Permission.REVENUE_READ, Permission.REVENUE_VIEW_CUSTOMERS),
+):
+    """Cohorts by first purchase, 12-month value by segment and customers gone quiet: identified customers only."""
+    now = datetime.now(timezone.utc)
+    today = org_today(now)
+
+    async def build(conn, _now, _status):
+        ctx = await _context(conn, REVENUE_HISTORY_START, today)
+        purchases, segments, names = [], {}, {}
+        matched = series.matching_lines(ctx["lines"], ctx["items"], ctx["decisions"], ctx["customers"], LineFilters())
+        for m in matched:
+            customer = m.line.customer_id
+            # The walk-in account is many people: nobody to follow.
+            if not customer or m.segment == "passage":
+                continue
+            purchases.append((customer, m.line.day, m.line.amount))
+            if customer not in segments:
+                segments[customer] = m.segment
+                names[customer] = customer_display_name(customer, ctx["customers"].get(customer))
+        return cohorts.build_cohorts(purchases, segments, names, today)
+
+    return await _respond(request, user, build, now=now)
 
 
 @router.get("/cash")

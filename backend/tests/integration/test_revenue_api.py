@@ -743,3 +743,14 @@ async def test_pvm_compares_with_the_period_just_before(async_client, revenue_db
     assert body["current"] == 1000 and body["previous"] == 0 and body["new"] == 1000
     assert body["previousTo"] < month
     assert (await async_client.get(f"{URL}/pvm?from={DAY}&to={month}", headers=tokens["read"])).status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_cohorts_need_view_customers(async_client, revenue_db, tokens):
+    url = f"{URL}/cohorts"
+    assert (await async_client.get(url, headers=tokens["read"])).status_code == 403
+    body = (await async_client.get(url, headers=tokens["read_customers"])).json()
+    assert set(body) == {"cohorts", "ltv", "atRisk"}
+    assert len(body["cohorts"]) == 12
+    # c1 bought once, on 2025-03-10: older than a year, so it counts in the 12-month value.
+    assert body["ltv"] == [{"segment": "inconnu", "customers": 1, "ltv12": 1000}]

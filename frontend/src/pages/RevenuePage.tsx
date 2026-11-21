@@ -21,6 +21,7 @@ import { RevenueMenu } from '../components/revenue/RevenueMenu';
 import { RevenueReview } from '../components/revenue/RevenueReview';
 import { RevenueResult } from '../components/revenue/RevenueResult';
 import { RevenueBridge } from '../components/revenue/RevenueBridge';
+import { RevenueCohorts } from '../components/revenue/RevenueCohorts';
 import { RevenueLabor } from '../components/revenue/RevenueLabor';
 import { RevenueFixedCosts } from '../components/revenue/RevenueFixedCosts';
 import { RevenueTargets } from '../components/revenue/RevenueTargets';
@@ -544,8 +545,12 @@ export function RevenuePage() {
             </>
           )}
           {view === 'clients' && can.customers && data && (
-            <RevenueCustomers from={data.from} to={data.to} granularity={data.granularity} filterParams={filterParams} taxMode={active.taxMode}
-              segment={active.segment} onSegment={(segment) => setControls({ segment })} version={data} />
+            <>
+              <RevenueCustomers from={data.from} to={data.to} granularity={data.granularity} filterParams={filterParams} taxMode={active.taxMode}
+                segment={active.segment} onSegment={(segment) => setControls({ segment })} version={data} />
+              {/* Whole-history figures: they ignore the page's filters and period. */}
+              {unfiltered && <RevenueCohorts version={data} />}
+            </>
           )}
           {view === 'produits' && data && (
             <>

@@ -420,3 +420,10 @@ export interface PvmResponse {
   current: number;
   items: Array<{ name: string; effect: number; volume: number; price: number; kind: 'both' | 'new' | 'lost' }>;
 }
+
+export interface CohortsResponse {
+  /** The last 12 months of first purchases, oldest first; `retention[k]` is month +k+1, null while that month is still ahead. */
+  cohorts: Array<{ month: string; size: number; retention: Array<number | null>; revenuePerCustomer: number }>;
+  ltv: Array<{ segment: string; customers: number; ltv12: number }>;
+  atRisk: Array<{ customerName: string; lastDay: string; usualGapDays: number; daysSince: number; revenue12m: number }>;
+}
