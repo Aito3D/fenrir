@@ -497,7 +497,7 @@ def _board_event(occurred_at, amount=23000) -> OrderBoardEvent:
 async def test_board_first_then_terminal_settle_annotates_one_event(db_session, monkeypatch, refreshed, no_aito):
     db_session.add(_board_event(NOW - timedelta(minutes=5), amount=999))  # before the charge: another payment
     db_session.add(_order_charge())
-    db_session.add(_board_event(NOW + timedelta(seconds=30), amount=22000))
+    db_session.add(_board_event(NOW + timedelta(seconds=30), amount=23000.004))  # board rounding noise
     await db_session.commit()
 
     async def fake_get(db, payment_id):
@@ -507,7 +507,7 @@ async def test_board_first_then_terminal_settle_annotates_one_event(db_session, 
     await tpe.poll_open_terminal_payments(db_session, now=NOW + timedelta(minutes=1))
     events = await _order_events(db_session)
     assert [e.detail.get("method") for e in events] == [None, "terminal"]
-    assert events[1].detail["amount"] == 22000  # the board's amount stays
+    assert events[1].detail["amount"] == 23000.004  # the board's amount stays
 
 
 @pytest.mark.asyncio
@@ -792,3 +792,47 @@ async def test_concurrent_order_link_create_collision_without_a_pending_winner_r
     await _race_lost_on_first_read(db_session, monkeypatch, "paid")
     with pytest.raises(IntegrityError):
         await links.create_order_invoice_link(db_session, SO, document=INVOICE, amount=23000, actor_name=None, now=NOW)
+
+
+@pytest.mark.asyncio
+async def test_other_payment_during_link_is_not_labelled_link(db_session, monkeypatch, refreshed, no_aito):
+    """A different payment reached the order while the link was open: both stay, each with its own amount."""
+    db_session.add(
+        AitoPaymentLink(
+            project_id=0,
+            salesorder_id=SO,
+            idempotency_key=f"order:{SO}:2",
+            heimdall_id="h-1",
+            reference="FA-26-0900",
+            document_kind="invoice",
+            amount=23000,
+            expires_on="2026-12-11",
+            status="pending",
+            created_at=NOW,
+        )
+    )
+    db_session.add(_board_event(NOW + timedelta(seconds=30), amount=5000))
+    await db_session.commit()
+
+    async def fake_get(db, payment_id):
+        return _view()
+
+    monkeypatch.setattr(heimdall_service, "get_payment", fake_get)
+    await links.reconcile_payment_links(db_session, now=NOW + timedelta(minutes=1))
+    events = await _order_events(db_session)
+    assert sorted((e.detail["amount"], e.detail.get("method")) for e in events) == [(5000, None), (23000, "link")]
+
+
+@pytest.mark.asyncio
+async def test_other_payment_during_terminal_is_not_labelled_terminal(db_session, monkeypatch, refreshed, no_aito):
+    db_session.add(_order_charge())
+    db_session.add(_board_event(NOW + timedelta(seconds=30), amount=5000))
+    await db_session.commit()
+
+    async def fake_get(db, payment_id):
+        return _view(amount_confirmed=23000)
+
+    monkeypatch.setattr(heimdall_service, "get_payment", fake_get)
+    await tpe.poll_open_terminal_payments(db_session, now=NOW + timedelta(minutes=1))
+    events = await _order_events(db_session)
+    assert sorted((e.detail["amount"], e.detail.get("method")) for e in events) == [(5000, None), (23000, "terminal")]
