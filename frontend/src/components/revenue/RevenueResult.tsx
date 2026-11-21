@@ -1,0 +1,61 @@
+import { useTranslation } from 'react-i18next';
+import { Empty, Panel, Tile } from '../aito/stats/primitives';
+import { Skeleton } from '../Skeleton';
+import { bucketLabel } from './lib/buckets';
+import { formatFcp } from './lib/format';
+import type { ResultResponse } from './lib/types';
+import { useRevenueResource } from './useRevenueResource';
+
+const NOTE = 'text-[11px] text-bambu-gray';
+const dayMonth = (day: string) => `${day.slice(8, 10)}/${day.slice(5, 7)}`;
+
+/** « Do I make money? »: revenue minus every cost per month, and the sales the month needs to cover its charges. */
+export function RevenueResult({ version }: { version: unknown }) {
+  const { t } = useTranslation();
+  const { data, error } = useRevenueResource<ResultResponse>('/api/v1/revenue/result', version);
+  const month = data?.months[data.months.length - 1];
+  const be = data?.breakEven ?? null;
+  return (
+    <Panel title={t('revenue.result.title')}>
+      {error ? <p role="alert" className="text-sm text-status-error">{error}</p> : !data ? <Skeleton className="h-32 w-full" /> : (
+        <div className="space-y-2">
+          {be && month ? (
+            <div className="grid grid-cols-[repeat(auto-fit,minmax(13.5rem,1fr))] gap-2">
+              <Tile label={t('revenue.result.month')} value={formatFcp(month.result)} tone={month.result < 0 ? 'alert' : undefined} />
+              <Tile label={t('revenue.result.breakEven')} value={formatFcp(be.amount)} />
+              <Tile label={t('revenue.result.reached')} value={`${Math.round(be.reached * 100)} %`}
+                hint={be.day === null ? t('revenue.result.notThisMonth') : t(be.projected ? 'revenue.result.expectedOn' : 'revenue.result.reachedOn', { day: dayMonth(be.day) })} />
+            </div>
+          ) : (
+            <Empty>{t('revenue.result.noRate')}</Empty>
+          )}
+          {data.fixedMonthly === 0 && <p className={NOTE}>{t('revenue.result.noFixed')}</p>}
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[560px] text-[13px] tabular-nums">
+              <thead className="text-xs text-bambu-gray">
+                <tr>
+                  <th className="px-2 py-1 text-left font-normal">{t('revenue.result.colMonth')}</th>
+                  {(['colRevenue', 'colVariable', 'colLabor', 'colFixed', 'colResult'] as const).map((k) => (
+                    <th key={k} className="px-2 py-1 text-right font-normal">{t(`revenue.result.${k}`)}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {[...data.months].reverse().map((m) => (
+                  <tr key={m.month} className="border-t border-bambu-dark-tertiary">
+                    <td className="px-2 py-1 text-left text-bambu-gray-light">{bucketLabel(m.month, 'month')}</td>
+                    <td className="px-2 py-1 text-right text-white">{formatFcp(m.ht)}</td>
+                    <td className="px-2 py-1 text-right text-bambu-gray-light">{formatFcp(m.variable)}</td>
+                    <td className="px-2 py-1 text-right text-bambu-gray-light">{formatFcp(m.labor)}</td>
+                    <td className="px-2 py-1 text-right text-bambu-gray-light">{formatFcp(m.fixed)}</td>
+                    <td className={`px-2 py-1 text-right font-medium ${m.result < 0 ? 'text-status-error' : 'text-white'}`}>{formatFcp(m.result)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+    </Panel>
+  );
+}

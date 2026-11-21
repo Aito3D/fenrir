@@ -710,3 +710,13 @@ async def test_fixed_costs_need_margin_to_read_and_targets_too_to_write(async_cl
         [{"label": "a", "monthly": 1}] * 51,
     ):
         assert (await async_client.put(url, json={"costs": bad}, headers=tokens["labor"])).status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_result_needs_margin_and_carries_twelve_months(async_client, revenue_db, tokens):
+    url = f"{URL}/result"
+    assert (await async_client.get(url, headers=tokens["read"])).status_code == 403
+    body = (await async_client.get(url, headers=tokens["read_margin"])).json()
+    assert set(body) == {"fixedMonthly", "months", "breakEven"}
+    assert len(body["months"]) == 12
+    assert set(body["months"][0]) == {"month", "ht", "variable", "labor", "fixed", "result"}

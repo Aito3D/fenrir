@@ -379,3 +379,19 @@ export interface FixedCost {
   label: string;
   monthly: number;
 }
+
+export interface ResultMonth {
+  month: string;
+  ht: number;
+  variable: number;
+  labor: number;
+  fixed: number;
+  result: number;
+}
+
+export interface ResultResponse {
+  fixedMonthly: number;
+  months: ResultMonth[];
+  /** Null when no contribution rate can be computed (no sales, costs above sales, or no charges). */
+  breakEven: { amount: number; reached: number; day: string | null; projected: boolean } | null;
+}

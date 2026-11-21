@@ -19,6 +19,7 @@ import { RevenueYoy } from '../components/revenue/RevenueYoy';
 import { RevenueCalendar } from '../components/revenue/RevenueCalendar';
 import { RevenueMenu } from '../components/revenue/RevenueMenu';
 import { RevenueReview } from '../components/revenue/RevenueReview';
+import { RevenueResult } from '../components/revenue/RevenueResult';
 import { RevenueLabor } from '../components/revenue/RevenueLabor';
 import { RevenueFixedCosts } from '../components/revenue/RevenueFixedCosts';
 import { RevenueTargets } from '../components/revenue/RevenueTargets';
@@ -530,6 +531,7 @@ export function RevenuePage() {
                 )}
               </Split>
               {/* Whole-business figures: a filtered page would show numbers that ignore its filter. */}
+              {unfiltered && can.margin && <RevenueResult version={data} />}
               {unfiltered && <RevenueCash version={data} />}
               <RevenueChart payload={data} controls={active} can={can} onStack={(stack) => setControls({ stack })}
                 onDrill={data.granularity !== 'day' ? drill : undefined} drillDepth={drillStack.length} onBack={drillBack} today={today} />

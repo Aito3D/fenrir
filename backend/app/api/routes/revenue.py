@@ -24,6 +24,7 @@ from backend.app.services.revenue import (
     pipeline,
     production,
     products,
+    result,
     series,
     store,
     sync,
@@ -656,6 +657,41 @@ async def put_labor(
         p["name"] = p["name"].strip()
     async with _writer()() as db:
         return {"providers": await production.save_labor(db, providers)}
+
+
+@router.get("/result")
+async def get_result(
+    request: Request,
+    user: User | None = RequirePermissionIfAuthEnabled(Permission.REVENUE_READ, Permission.REVENUE_VIEW_MARGIN),
+):
+    """Operating result of the last 12 months and the current month's break-even."""
+    now = datetime.now(timezone.utc)
+    today = org_today(now)
+    start = max(f"{cash.last_months(today, 12)[0]}-01", REVENUE_HISTORY_START)
+
+    async def stamp(conn) -> str:
+        keys = (production.FIXED_COSTS_KEY, production.LABOR_KEY)
+        return "|".join([str(await store.get_setting(conn, k)) for k in keys])
+
+    async def build(conn, _now, _status):
+        ctx = await _context(conn, start, today)
+        costs = await production.read_production_costs(conn, today)
+
+        def buckets(granularity: str, from_: str) -> list[dict]:
+            return series.build_revenue_series(
+                **ctx,
+                granularity=cast(series.Granularity, granularity),
+                from_=from_,
+                to=today,
+                today=today,
+                history_start=REVENUE_HISTORY_START,
+                production=costs,
+            )
+
+        fixed = production.fixed_monthly(await production.read_fixed_costs(conn))
+        return result.build_result(buckets("month", start), buckets("day", f"{today[:7]}-01"), fixed, today)
+
+    return await _respond(request, user, build, now=now, extra_stamp=stamp)
 
 
 @router.get("/fixed-costs")
