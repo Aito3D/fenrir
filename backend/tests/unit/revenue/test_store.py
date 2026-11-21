@@ -432,3 +432,15 @@ async def test_a_scope_decision_forgets_every_invoice_share_so_the_cash_step_re_
     async with store.snapshot(engine) as conn:
         [inv] = await store.read_invoice_shares(conn)
     assert inv["share"] is None
+
+
+async def test_the_shops_own_production_line_is_a_transfer_not_a_sale(engine, db):
+    from backend.app.models.revenue import RevenueCustomer
+
+    for cid, name in (("c-farm", "O'SEA - Aito 3D"), ("c-real", "SARL THT")):
+        db.add(RevenueCustomer(customer_id=cid, name=name, company_name="", found=True, fetched_at=NOW.isoformat()))
+    await db.commit()
+    await write(db, "2026-05-15", [line("2026-05-15", L2, "c-farm"), line("2026-05-15", L2, "c-real")])
+    assert [x.customer_id for x in await read_lines(engine, "2026-05-15", "2026-05-15")] == ["c-real"]
+    async with store.snapshot(engine) as conn:
+        assert [x.customer_id for x in await store.customer_item_first_lines(conn)] == ["c-real"]

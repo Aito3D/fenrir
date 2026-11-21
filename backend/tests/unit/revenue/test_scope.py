@@ -8,6 +8,7 @@ from backend.app.services.revenue.scope import (
     fold,
     is_service_item,
     item_display_name,
+    service_nature,
     unit_cost_of,
 )
 
@@ -165,3 +166,14 @@ def test_customer_display_name_falls_back_name_company_id():
     assert customer_display_name("", None) == "Non identifié"
     assert customer_display_name("c1", facts(name=" ", company_name="Acme")) == "Acme"
     assert customer_display_name("c1", None) == "c1"
+
+
+def test_service_nature_from_aito_service_name():
+    assert service_nature('Impression3D - Prestation "AITO 3D"', "sales", None) == "Impression3D"
+    assert (
+        service_nature('Découpe et Gravure Laser - Prestation "AITO 3D"', "sales", None) == "Découpe et Gravure Laser"
+    )
+    # A Zoho category wins; goods, and other services, are left alone.
+    assert service_nature('Scan3D - Prestation "AITO 3D"', "sales", "Scan") == "Scan"
+    assert service_nature('Scan3D - Prestation "AITO 3D"', "inventory", None) is None
+    assert service_nature('Prestation "AITO 3D"', "sales", None) is None
