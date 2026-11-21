@@ -12365,6 +12365,11 @@ export default {
       saving: "正在保存…",
       redated: "此报价已过期：保存后日期将改为今天。",
       failed: "报价未保存：{{reason}}",
+      err: {
+        create_failed: "Zoho Books 未确认该报价，未保存任何内容",
+        unknown_line: "某一行已不在报价中，请重新查看",
+        ref_reused: "第一次尝试已创建报价，开始新报价前请先查看报价列表",
+      },
     },
     newOrder: {
       button: '新订单',

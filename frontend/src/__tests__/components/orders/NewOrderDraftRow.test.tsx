@@ -474,6 +474,16 @@ describe('NewOrderDraftRow', () => {
       expect(localStorage.getItem(DRAFT_KEY)).toContain('Other');
     });
 
+    it('a refused quote save speaks of the quote, not of an order', async () => {
+      const user = userEvent.setup();
+      server.use(http.post('/api/v1/order-board/quotes', () => HttpResponse.json({ detail: 'create_failed' }, { status: 400 })));
+      localStorage.setItem(QUOTE_KEY, JSON.stringify({ lines: [{ item: item(), quantity: 1, discount: '' }], client: null, clientRef: REF }));
+      render(<NewOrderDraftRow mode="quote" currency="XPF" open={[]} finished={[]} onCreated={vi.fn()} onClose={vi.fn()} />);
+      await screen.findByDisplayValue('Client de passage');
+      await user.click(screen.getByRole('button', { name: 'Create quote' }));
+      expect(await screen.findByText('Quote not saved: Zoho Books did not confirm the quote, nothing was saved')).toBeInTheDocument();
+    });
+
     it('an expired quote says saving re-dates it to today', () => {
       render(<NewOrderDraftRow mode="quote" quote={quote({ state: 'expired' })} currency="XPF" open={[]} finished={[]} onCreated={vi.fn()} onClose={vi.fn()} />);
       expect(screen.getByText('This quote has expired: saving re-dates it to today.')).toBeInTheDocument();

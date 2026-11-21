@@ -12439,6 +12439,11 @@ errors: {
       saving: "Sparar…",
       redated: "Offerten har gått ut: när den sparas dateras den om till i dag.",
       failed: "Offerten sparades inte: {{reason}}",
+      err: {
+        create_failed: "Zoho Books bekräftade inte offerten, inget sparades",
+        unknown_line: "en rad finns inte längre i offerten, titta igen",
+        ref_reused: "första försöket skapade redan en offert, kontrollera offerterna innan du börjar en ny",
+      },
     },
     newOrder: {
       button: 'Ny order',

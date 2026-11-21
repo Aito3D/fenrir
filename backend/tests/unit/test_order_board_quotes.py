@@ -75,6 +75,10 @@ def test_editable_here():
     assert not editable_here(detail(line_items=[{"item_id": "i1"}, {"item_id": ""}]))
 
 
+def test_editable_here_refuses_an_item_on_two_lines():
+    assert not editable_here(detail(line_items=[{"item_id": "i1"}, {"item_id": "i1"}]))
+
+
 def test_editable_here_needs_inclusive_tax_and_item_level_discount():
     assert not editable_here(detail(is_inclusive_tax=False))
     assert not editable_here(detail(is_inclusive_tax=None))

@@ -12381,6 +12381,11 @@ export default {
       saving: "保存中…",
       redated: "この見積は期限切れです。保存すると今日の日付になります。",
       failed: "見積を保存できませんでした：{{reason}}",
+      err: {
+        create_failed: "Zoho Books が見積を確認しなかったため、何も保存されていません",
+        unknown_line: "見積にない明細があります。もう一度確認してください",
+        ref_reused: "最初の試行ですでに見積が作成されています。新しく始める前に見積一覧を確認してください",
+      },
     },
     newOrder: {
       button: '新規注文',

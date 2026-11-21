@@ -12406,6 +12406,11 @@ export default {
       saving: "Opslaan…",
       redated: "Deze offerte is verlopen: opslaan zet de datum op vandaag.",
       failed: "Offerte niet opgeslagen: {{reason}}",
+      err: {
+        create_failed: "Zoho Books heeft de offerte niet bevestigd, er is niets opgeslagen",
+        unknown_line: "een regel staat niet meer op de offerte, kijk opnieuw",
+        ref_reused: "de eerste poging heeft al een offerte aangemaakt, controleer de offertes voordat je een nieuwe begint",
+      },
     },
     newOrder: {
       button: 'Nieuwe bestelling',

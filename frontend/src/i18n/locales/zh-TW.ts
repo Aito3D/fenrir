@@ -12365,6 +12365,11 @@ export default {
       saving: "正在儲存…",
       redated: "此報價已過期：儲存後日期將改為今天。",
       failed: "報價未儲存：{{reason}}",
+      err: {
+        create_failed: "Zoho Books 未確認此報價，未儲存任何內容",
+        unknown_line: "某一行已不在報價中，請重新查看",
+        ref_reused: "第一次嘗試已建立報價，開始新報價前請先查看報價列表",
+      },
     },
     newOrder: {
       button: '新訂單',

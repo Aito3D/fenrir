@@ -12390,6 +12390,11 @@ export default {
       saving: "Guardando…",
       redated: "Este presupuesto ha caducado: al guardarlo se fecha a hoy.",
       failed: "Presupuesto no guardado: {{reason}}",
+      err: {
+        create_failed: "Zoho Books no confirmó el presupuesto, no se guardó nada",
+        unknown_line: "una línea ya no está en el presupuesto, vuelve a mirar",
+        ref_reused: "el primer intento ya creó un presupuesto, revisa los presupuestos antes de empezar uno nuevo",
+      },
     },
     newOrder: {
       button: 'Nuevo pedido',

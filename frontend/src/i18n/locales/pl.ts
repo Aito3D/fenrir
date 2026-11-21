@@ -12587,6 +12587,11 @@ export default {
       saving: "Zapisywanie…",
       redated: "Ta oferta wygasła: zapisanie zmieni jej datę na dzisiejszą.",
       failed: "Oferta nie została zapisana: {{reason}}",
+      err: {
+        create_failed: "Zoho Books nie potwierdził oferty, nic nie zostało zapisane",
+        unknown_line: "pozycji nie ma już w ofercie, sprawdź ponownie",
+        ref_reused: "pierwsza próba już utworzyła ofertę, sprawdź oferty, zanim zaczniesz nową",
+      },
     },
     newOrder: {
       button: 'Nowe zamówienie',

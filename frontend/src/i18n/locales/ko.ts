@@ -11964,6 +11964,11 @@ export default {
       saving: "저장 중…",
       redated: "만료된 견적입니다. 저장하면 오늘 날짜로 변경됩니다.",
       failed: "견적이 저장되지 않음: {{reason}}",
+      err: {
+        create_failed: "Zoho Books가 견적을 확인하지 않아 아무것도 저장되지 않았습니다",
+        unknown_line: "견적에 더 이상 없는 항목이 있습니다. 다시 확인하세요",
+        ref_reused: "첫 번째 시도에서 이미 견적이 생성되었습니다. 새로 시작하기 전에 견적을 확인하세요",
+      },
     },
     newOrder: {
       button: '새 주문',

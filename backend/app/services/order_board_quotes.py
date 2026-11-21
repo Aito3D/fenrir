@@ -39,11 +39,14 @@ def is_quote_candidate(header: dict, today: date, max_age_days: int, aito_quote_
 
 
 def editable_here(detail: dict) -> bool:
-    """Tax-inclusive with item-level discounts (what the board sends) and every line a stocked item."""
+    """Tax-inclusive with item-level discounts (what the board sends), every line a stocked item, no item on two lines
+    (the board's draft holds one line per item)."""
+    ids = [line.get("item_id") for line in detail.get("line_items") or []]
     return (
         detail.get("is_inclusive_tax") is True
         and detail.get("discount_type") == "item_level"
-        and all(line.get("item_id") for line in detail.get("line_items") or [])
+        and all(ids)
+        and len(set(ids)) == len(ids)
     )
 
 

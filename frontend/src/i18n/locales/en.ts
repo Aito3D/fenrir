@@ -12438,6 +12438,11 @@ export default {
       saving: "Saving…",
       redated: "This quote has expired: saving re-dates it to today.",
       failed: "Quote not saved: {{reason}}",
+      err: {
+        create_failed: "Zoho Books did not confirm the quote, nothing was saved",
+        unknown_line: "a line is no longer on the quote, look again",
+        ref_reused: "the first attempt already created a quote, check the quotes before starting a new one",
+      },
     },
     newOrder: {
       button: 'New order',

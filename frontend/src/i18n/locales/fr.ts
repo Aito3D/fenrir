@@ -12367,6 +12367,11 @@ export default {
       saving: "Enregistrement…",
       redated: "Ce devis a expiré : l'enregistrer le redate à aujourd'hui.",
       failed: "Devis non enregistré : {{reason}}",
+      err: {
+        create_failed: "Zoho Books n'a pas confirmé le devis, rien n'a été enregistré",
+        unknown_line: "une ligne n'est plus sur le devis, regardez à nouveau",
+        ref_reused: "la première tentative a déjà créé un devis, vérifiez les devis avant d'en commencer un nouveau",
+      },
     },
     newOrder: {
       button: 'Nouvelle commande',

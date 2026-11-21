@@ -12309,6 +12309,11 @@ export default {
       saving: "Kaydediliyor…",
       redated: "Bu teklifin süresi doldu: kaydetmek tarihini bugüne çeker.",
       failed: "Teklif kaydedilmedi: {{reason}}",
+      err: {
+        create_failed: "Zoho Books teklifi onaylamadı, hiçbir şey kaydedilmedi",
+        unknown_line: "bir satır artık teklifte yok, tekrar bakın",
+        ref_reused: "ilk deneme zaten bir teklif oluşturdu, yenisine başlamadan önce teklifleri kontrol edin",
+      },
     },
     newOrder: {
       button: 'Yeni sipariş',

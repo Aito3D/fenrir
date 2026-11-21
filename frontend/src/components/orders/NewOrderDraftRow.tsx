@@ -100,7 +100,7 @@ export function NewOrderDraftRow({ currency, open, finished, mode = 'order', quo
       if (!quote) reset();
       onCreated(result);
     },
-    onError: e => showToast(t(isQuote ? 'orders.newQuote.failed' : 'orders.newOrder.failed', { reason: errorReason(t, e) }), 'error'),
+    onError: e => showToast(t(isQuote ? 'orders.newQuote.failed' : 'orders.newOrder.failed', { reason: errorReason(t, e, isQuote ? 'orders.newQuote.err' : undefined) }), 'error'),
   });
   const busy = create.isPending;
   const canCreate = !why && !busy;

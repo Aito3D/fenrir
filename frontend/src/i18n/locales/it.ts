@@ -12367,6 +12367,11 @@ export default {
       saving: "Salvataggio…",
       redated: "Questo preventivo è scaduto: salvandolo viene datato a oggi.",
       failed: "Preventivo non salvato: {{reason}}",
+      err: {
+        create_failed: "Zoho Books non ha confermato il preventivo, non è stato salvato nulla",
+        unknown_line: "una riga non è più nel preventivo, ricontrolla",
+        ref_reused: "il primo tentativo ha già creato un preventivo, controlla i preventivi prima di iniziarne uno nuovo",
+      },
     },
     newOrder: {
       button: 'Nuovo ordine',

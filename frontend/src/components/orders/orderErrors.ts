@@ -15,9 +15,11 @@ const reasonCode = (e: ApiError): string | null => {
   return REASON_CODES.includes(code) ? code : null;
 };
 
-/** Zoho busy, a refusal, or the message Books answered a 502 with. */
-export const errorReason = (t: TFunction, e: unknown): string =>
+/** Zoho busy, a refusal, or the message Books answered a 502 with. `scope` holds wordings that override
+ *  `orders.err` for some reasons (the quote dialog's). */
+export const errorReason = (t: TFunction, e: unknown, scope = 'orders.err'): string =>
   e instanceof ApiError && e.status === 503 ? t('orders.busy')
-  : e instanceof ApiError && e.status === 400 && reasonCode(e) ? t(`orders.err.${reasonCode(e)}`, { defaultValue: t('orders.parcel.stale') })
+  : e instanceof ApiError && e.status === 400 && reasonCode(e)
+    ? t(`${scope}.${reasonCode(e)}`, { defaultValue: t(`orders.err.${reasonCode(e)}`, { defaultValue: t('orders.parcel.stale') }) })
   : isRefused(e) ? t('orders.parcel.stale')
   : e instanceof Error ? e.message : '';

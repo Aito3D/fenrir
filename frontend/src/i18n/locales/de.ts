@@ -12382,6 +12382,11 @@ export default {
       saving: "Wird gespeichert…",
       redated: "Dieses Angebot ist abgelaufen: Beim Speichern wird es auf heute datiert.",
       failed: "Angebot nicht gespeichert: {{reason}}",
+      err: {
+        create_failed: "Zoho Books hat das Angebot nicht bestätigt, nichts wurde gespeichert",
+        unknown_line: "eine Zeile ist nicht mehr im Angebot, sieh noch einmal nach",
+        ref_reused: "der erste Versuch hat bereits ein Angebot angelegt, prüfe die Angebote, bevor du ein neues beginnst",
+      },
     },
     newOrder: {
       button: 'Neue Bestellung',

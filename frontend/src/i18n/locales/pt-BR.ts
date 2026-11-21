@@ -12367,6 +12367,11 @@ export default {
       saving: "Salvando…",
       redated: "Este orçamento expirou: ao salvar, ele recebe a data de hoje.",
       failed: "Orçamento não salvo: {{reason}}",
+      err: {
+        create_failed: "O Zoho Books não confirmou o orçamento, nada foi salvo",
+        unknown_line: "uma linha não está mais no orçamento, verifique de novo",
+        ref_reused: "a primeira tentativa já criou um orçamento, confira os orçamentos antes de começar um novo",
+      },
     },
     newOrder: {
       button: 'Novo pedido',
