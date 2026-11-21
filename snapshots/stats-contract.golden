@@ -46,7 +46,8 @@
         "created": "integer",
         "day": "string",
         "declined": "integer",
-        "done": "integer"
+        "done": "integer",
+        "tracking_views": "integer"
       },
       "required": [
         "accepted",
@@ -110,7 +111,8 @@
         "created": "integer",
         "declined": "integer",
         "done": "integer",
-        "lead_days": "number | null"
+        "lead_days": "number | null",
+        "tracking_views": "integer"
       },
       "required": [
         "accepted",
@@ -264,6 +266,8 @@
         "done": "integer",
         "lead_days": "number | null",
         "lead_days_median": "number | null",
+        "make_days": "number | null",
+        "make_days_median": "number | null",
         "per_day": "number | null",
         "production_days": "number | null"
       },

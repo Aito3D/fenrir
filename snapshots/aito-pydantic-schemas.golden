@@ -7177,6 +7177,11 @@
    "done": {
     "title": "Done",
     "type": "integer"
+   },
+   "tracking_views": {
+    "default": 0,
+    "title": "Tracking Views",
+    "type": "integer"
    }
   },
   "required": [
@@ -7363,6 +7368,11 @@
      }
     ],
     "title": "Lead Days"
+   },
+   "tracking_views": {
+    "default": 0,
+    "title": "Tracking Views",
+    "type": "integer"
    }
   },
   "required": [
@@ -7507,6 +7517,11 @@
      },
      "done": {
       "title": "Done",
+      "type": "integer"
+     },
+     "tracking_views": {
+      "default": 0,
+      "title": "Tracking Views",
       "type": "integer"
      }
     },
@@ -7664,6 +7679,11 @@
        }
       ],
       "title": "Lead Days"
+     },
+     "tracking_views": {
+      "default": 0,
+      "title": "Tracking Views",
+      "type": "integer"
      }
     },
     "required": [
@@ -7956,6 +7976,30 @@
        }
       ],
       "title": "Lead Days Median"
+     },
+     "make_days": {
+      "anyOf": [
+       {
+        "type": "number"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "title": "Make Days"
+     },
+     "make_days_median": {
+      "anyOf": [
+       {
+        "type": "number"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "title": "Make Days Median"
      },
      "per_day": {
       "anyOf": [
@@ -8415,6 +8459,30 @@
      }
     ],
     "title": "Lead Days Median"
+   },
+   "make_days": {
+    "anyOf": [
+     {
+      "type": "number"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Make Days"
+   },
+   "make_days_median": {
+    "anyOf": [
+     {
+      "type": "number"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Make Days Median"
    },
    "per_day": {
     "anyOf": [
