@@ -391,16 +391,19 @@ async def get_cash(request: Request, user: User | None = RequirePermissionIfAuth
     start = f"{months[0]}-01"
 
     async def stamp(conn) -> str:
-        return f"{await store.cash_stamp(conn)}|{sync.cash_error()}"
+        return f"{await store.cash_stamp(conn)}|{sync.cash_error()}|{await pipeline.pipeline_stamp(conn)}"
 
     async def build(conn, _now, _status):
         items = await store.read_scope_items(conn)
         decisions = await store.read_decisions(conn)
+        lines = await store.read_lines(conn, start, today)
         return cash.build_cash(
+            invoiced_ttc_90d=cash.invoiced_ttc_since(lines, items, decisions, add_days(today, -cash.DSO_DAYS)),
+            orders=cash.accepted_open(await pipeline.read_cards(conn)),
             payments=await store.read_payments(conn, start),
             invoices=await store.read_invoice_shares(conn),
             classes=cash.classify_customers(await store.customer_item_pairs(conn), items, decisions),
-            invoiced_ttc=cash.invoiced_ttc_by_month(await store.read_lines(conn, start, today), items, decisions),
+            invoiced_ttc=cash.invoiced_ttc_by_month(lines, items, decisions),
             months=months,
             today=today,
             synced_at=await store.get_setting(conn, store.CASH_SYNCED_KEY),

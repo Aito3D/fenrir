@@ -268,11 +268,21 @@ export interface CashMonth {
   collectedUnknown: number;
 }
 
+export type AgingBucket = 'notDue' | 'd30' | 'd60' | 'd90' | 'over';
+
 export interface CashResponse {
   months: CashMonth[];
   outstanding: { total: number; overdue: number; invoices: number; unknown: number };
   /** Absent without revenue:view_customers. */
   topOverdue?: Array<{ number: string; customerName: string; dueDate: string; daysOverdue: number; balance: number }>;
+  /** What is owed by how late it is; `byCustomer` is absent without revenue:view_customers. */
+  aging: {
+    buckets: Record<AgingBucket, number>;
+    byCustomer?: Array<{ customerName: string; balance: number; overdue: number; oldestDays: number }>;
+  };
+  /** Days of sales still unpaid; null when nothing was invoiced in the last 90 days. */
+  dso: number | null;
+  forecast: Array<{ window: 'd30' | 'd60' | 'd90'; invoices: number; orders: number }>;
   coverage: { known: number; unknown: number };
   syncedAt: string | null;
   error: string | null;

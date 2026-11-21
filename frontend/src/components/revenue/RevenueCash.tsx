@@ -3,11 +3,55 @@ import { useTranslation } from 'react-i18next';
 import { Empty, Facts, Panel, Split, Tile } from '../aito/stats/primitives';
 import { Skeleton } from '../Skeleton';
 import { formatFcp } from './lib/format';
-import type { CashResponse, PipelineResponse } from './lib/types';
+import type { AgingBucket, CashResponse, PipelineResponse } from './lib/types';
 import { useRevenueResource } from './useRevenueResource';
 
 const AMBER = 'text-amber-700 dark:text-amber-400';
 const NOTE = 'text-[11px] text-bambu-gray';
+
+const AGING: Array<[AgingBucket, string]> = [
+  ['notDue', 'bg-bambu-green'], ['d30', 'bg-amber-300'], ['d60', 'bg-amber-500'], ['d90', 'bg-orange-600'], ['over', 'bg-red-600'],
+];
+
+/** What is owed by how late it is, the payment delay, who is late, and the cash the next 90 days should bring. */
+function Aging({ data }: { data: CashResponse }) {
+  const { t } = useTranslation();
+  const { aging, dso, forecast } = data;
+  const shown = AGING.filter(([k]) => aging.buckets[k] > 0);
+  return (
+    <>
+      {shown.length > 0 && (
+        <>
+          <h3 className="pt-1 text-[13px] font-medium text-white">{t('revenue.aging.title')}</h3>
+          <div className="flex h-1.5 gap-px overflow-hidden rounded-full" aria-hidden="true" data-testid="revenue-aging-bar">
+            {AGING.map(([k, cls]) => <div key={k} className={cls} style={{ flexGrow: aging.buckets[k] }} />)}
+          </div>
+        </>
+      )}
+      <Facts
+        rows={[
+          ...shown.map(([k, cls]) => ({
+            label: <span className="inline-flex items-center gap-2"><span aria-hidden="true" className={`h-2 w-2 rounded-full ${cls}`} />{t(`revenue.aging.${k}`)}</span>,
+            value: formatFcp(aging.buckets[k]),
+          })),
+          { label: t('revenue.aging.dso'), value: dso === null ? '—' : t('revenue.aging.days', { n: dso }) },
+          ...(aging.byCustomer ?? []).filter((r) => r.overdue > 0).map((r) => ({
+            label: <span className="block truncate" title={r.customerName}>{r.customerName}</span>,
+            value: formatFcp(r.balance),
+            note: <span className={AMBER}>{`${t('revenue.aging.ofWhichLate', { amount: formatFcp(r.overdue) })} · ${t('revenue.cash.daysLate', { n: r.oldestDays })}`}</span>,
+          })),
+        ]}
+      />
+      <h3 className="pt-1 text-[13px] font-medium text-white">{t('revenue.forecast.title')}</h3>
+      <div className="grid grid-cols-[repeat(auto-fit,minmax(9rem,1fr))] gap-2">
+        {forecast.map((w, i) => (
+          <Tile key={w.window} label={t(`revenue.forecast.${w.window}`)} value={formatFcp(w.invoices + w.orders)}
+            hint={i === 0 && w.orders > 0 ? t('revenue.forecast.split', { invoices: formatFcp(w.invoices), orders: formatFcp(w.orders) }) : undefined} />
+        ))}
+      </div>
+    </>
+  );
+}
 
 function Cash({ data }: { data: CashResponse }) {
   const { t } = useTranslation();
@@ -45,6 +89,7 @@ function Cash({ data }: { data: CashResponse }) {
           })),
         ]}
       />
+      <Aging data={data} />
       {coverage.unknown > 0 && <p className={NOTE}>{t('revenue.cash.coverage', { amount: formatFcp(coverage.unknown) })}</p>}
       {data.error && <p className={`text-[11px] ${AMBER}`}>{t('revenue.cash.error', { error: data.error })}</p>}
     </div>

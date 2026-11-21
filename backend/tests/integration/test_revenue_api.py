@@ -646,7 +646,19 @@ async def _seed_cash(engine):
 async def test_cash_shape_and_customer_names_need_view_customers(async_client, revenue_db, tokens):
     today = await _seed_cash(revenue_db)
     body = (await async_client.get(f"{URL}/cash", headers=tokens["read_customers"])).json()
-    assert set(body) == {"months", "outstanding", "topOverdue", "coverage", "syncedAt", "error"}
+    assert set(body) == {
+        "months",
+        "outstanding",
+        "topOverdue",
+        "aging",
+        "dso",
+        "forecast",
+        "coverage",
+        "syncedAt",
+        "error",
+    }
+    assert body["aging"]["byCustomer"][0]["customerName"] == "Alice"
+    assert [w["window"] for w in body["forecast"]] == ["d30", "d60", "d90"]
     assert len(body["months"]) == 12 and body["months"][-1]["month"] == today[:7]
     assert body["months"][-1]["collected"] == 500  # c1 bought only 3D items in the cache
     assert body["outstanding"] == {"total": 300, "overdue": 300, "invoices": 1, "unknown": 0}
@@ -654,6 +666,7 @@ async def test_cash_shape_and_customer_names_need_view_customers(async_client, r
     assert body["coverage"] == {"known": 800, "unknown": 0}
     plain = (await async_client.get(f"{URL}/cash", headers=tokens["read"])).json()
     assert "topOverdue" not in plain and plain["outstanding"] == body["outstanding"]
+    assert "byCustomer" not in plain["aging"] and plain["aging"]["buckets"] == body["aging"]["buckets"]
 
 
 @pytest.mark.asyncio

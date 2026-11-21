@@ -146,3 +146,88 @@ def test_build_cash_shape_rounds_and_coverage():
     assert body["outstanding"] == {"total": 25, "overdue": 25, "invoices": 1, "unknown": 0}
     assert body["coverage"] == {"known": 150, "unknown": 0}
     assert [r["number"] for r in body["topOverdue"]] == ["INV-i"]
+
+
+TODAY = "2026-11-20"
+ALL_3D = {"c1": cash.ONLY_3D, "c2": cash.ONLY_3D}
+
+
+def _aged():
+    return [
+        inv("a", "c1", 100, due="2026-12-01"),
+        inv("b", "c1", 200, due="2026-11-05"),
+        inv("c", "c1", 300, due="2026-10-01"),
+        inv("d", "c1", 400, due="2026-09-01"),
+        inv("e", "c1", 500, due="2026-06-01"),
+        inv("f", "c1", 50, due=""),
+    ]
+
+
+def test_aging_puts_each_balance_in_its_overdue_bucket():
+    assert cash.aging(_aged(), ALL_3D, TODAY)["buckets"] == {"notDue": 150, "d30": 200, "d60": 300, "d90": 400, "over": 500}
+
+
+def test_aging_applies_the_share_and_leaves_unknown_and_non_3d_out():
+    invoices = [
+        inv("a", "mixed", 1000, share=0.5, due="2026-11-05"),
+        inv("b", "mixed", 700, share=None, due="2026-11-05"),
+        inv("c", "sail", 900, due="2026-11-05"),
+    ]
+    out = cash.aging(invoices, {"mixed": cash.MIXED, "sail": cash.NO_3D}, TODAY)
+    assert out["buckets"] == {"notDue": 0, "d30": 500, "d60": 0, "d90": 0, "over": 0}
+    assert [r["balance"] for r in out["byCustomer"]] == [500]
+
+
+def test_aging_buckets_sum_to_the_outstanding_total():
+    owed, _top, _known = cash.outstanding(_aged(), ALL_3D, TODAY)
+    assert sum(cash.aging(_aged(), ALL_3D, TODAY)["buckets"].values()) == owed["total"]
+
+
+def test_aging_by_customer_ranks_by_overdue_and_keeps_ten():
+    invoices = [
+        inv("a", "c1", 100, due="2026-11-10", name="Alice"),
+        inv("b", "c1", 300, due="2026-10-01", name="Alice"),
+        inv("c", "c2", 900, due="2026-11-15", name="Bob"),
+        inv("d", "c2", 5000, due="2026-12-15", name="Bob"),
+    ]
+    rows = cash.aging(invoices, ALL_3D, TODAY)["byCustomer"]
+    assert rows == [
+        {"customerName": "Bob", "balance": 5900, "overdue": 900, "oldestDays": 5},
+        {"customerName": "Alice", "balance": 400, "overdue": 400, "oldestDays": 50},
+    ]
+    many = [inv(f"i{n}", f"k{n}", 10 + n, due="2026-11-01") for n in range(12)]
+    assert len(cash.aging(many, {f"k{n}": cash.ONLY_3D for n in range(12)}, TODAY)["byCustomer"]) == 10
+
+
+def test_dso_is_outstanding_over_ninety_days_of_invoicing():
+    assert cash.dso(300_000, 900_000) == 30
+    assert cash.dso(100, 0) is None
+
+
+def test_forecast_spreads_open_balances_by_due_date_and_adds_the_order_book_to_the_first_window():
+    invoices = [
+        inv("a", "c1", 100, due="2026-11-30"),
+        inv("b", "c1", 200, due="2026-11-05"),
+        inv("c", "c1", 300, due="2027-01-04"),
+        inv("d", "c1", 400, due="2027-02-08"),
+        inv("e", "c1", 500, due="2027-03-20"),
+        inv("f", "c1", 60, due=""),
+    ]
+    assert cash.forecast(invoices, ALL_3D, TODAY, 1000) == [
+        {"window": "d30", "invoices": 360, "orders": 1000},
+        {"window": "d60", "invoices": 300, "orders": 0},
+        {"window": "d90", "invoices": 400, "orders": 0},
+    ]
+
+
+def test_accepted_open_is_what_accepted_quotes_still_have_to_bring_in():
+    from types import SimpleNamespace as C
+
+    cards = [
+        C(quote_status="accepted", quote_invoiced=False, quote_total=1000.0, retainer_paid_total=300.0),
+        C(quote_status="accepted", quote_invoiced=False, quote_total=200.0, retainer_paid_total=500.0),
+        C(quote_status="accepted", quote_invoiced=False, quote_total=None, retainer_paid_total=None),
+        C(quote_status="accepted", quote_invoiced=True, quote_total=900.0, retainer_paid_total=0.0),
+        C(quote_status="sent", quote_invoiced=False, quote_total=800.0, retainer_paid_total=0.0),
+    ]
+    assert cash.accepted_open(cards) == 700

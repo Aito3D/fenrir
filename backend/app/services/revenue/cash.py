@@ -19,6 +19,10 @@ from backend.app.services.revenue.series import RevenueLine, in_scope_lines, js_
 ONLY_3D, NO_3D, MIXED = "only3d", "none", "mixed"
 CASH_MONTHS = 12
 TOP_OVERDUE = 5
+AGING_BUCKETS = ("notDue", "d30", "d60", "d90", "over")  # not due, then 1-30 / 31-60 / 61-90 / 90+ days overdue
+AGING_CUSTOMERS = 10
+FORECAST_WINDOWS = ("d30", "d60", "d90")
+DSO_DAYS = 90
 
 
 def _month_shift(month: str, delta: int) -> str:
@@ -142,6 +146,78 @@ def collected_by_month(
     return out, known, unknown
 
 
+def _share_of(inv: dict, classes: dict[str, str]) -> float | None:
+    """The 3D share of an invoice: its customer's when settled, else its own (None while not read yet)."""
+    share = customer_share(classes.get(inv["customerId"]))
+    return inv["share"] if share is None else share
+
+
+def _open_parts(invoices: list[dict], classes: dict[str, str]) -> list[tuple[dict, float]]:
+    """Open invoices with their 3D part; unknown shares stay in `outstanding.unknown`, not here."""
+    out = []
+    for inv in invoices:
+        share = _share_of(inv, classes) if inv["balance"] > 0 else None
+        if share:
+            out.append((inv, inv["balance"] * share))
+    return out
+
+
+def aging(invoices: list[dict], classes: dict[str, str], today: str) -> dict:
+    """What is owed by how late it is, and the customers who owe the most overdue. No due date counts as not due."""
+    buckets = dict.fromkeys(AGING_BUCKETS, 0.0)
+    customers: dict[str, dict] = {}
+    for inv, part in _open_parts(invoices, classes):
+        late = days_between(inv["dueDate"], today) - 1 if inv["dueDate"] else 0
+        buckets[AGING_BUCKETS[0 if late <= 0 else min((late - 1) // 30 + 1, 4)]] += part
+        row = customers.setdefault(
+            inv["customerId"], {"customerName": inv["customerName"], "balance": 0.0, "overdue": 0.0, "oldestDays": 0}
+        )
+        row["balance"] += part
+        if late > 0:
+            row["overdue"] += part
+            row["oldestDays"] = max(row["oldestDays"], late)
+    ranked = sorted(customers.values(), key=lambda r: (-r["overdue"], -r["balance"]))[:AGING_CUSTOMERS]
+    return {
+        "buckets": {k: js_round(v) for k, v in buckets.items()},
+        "byCustomer": [{**r, "balance": js_round(r["balance"]), "overdue": js_round(r["overdue"])} for r in ranked],
+    }
+
+
+def dso(outstanding_total: float, invoiced_ttc: float) -> int | None:
+    """Days of sales still unpaid: outstanding over the TTC invoiced in the last DSO_DAYS days."""
+    return js_round(outstanding_total / invoiced_ttc * DSO_DAYS) if invoiced_ttc > 0 else None
+
+
+def accepted_open(cards: Iterable) -> float:
+    """What accepted, not yet invoiced quotes still have to bring in: their total less the deposits already paid."""
+    return sum(
+        max(0.0, (c.quote_total or 0.0) - (c.retainer_paid_total or 0.0))
+        for c in cards
+        if c.quote_status == "accepted" and not c.quote_invoiced
+    )
+
+
+def forecast(invoices: list[dict], classes: dict[str, str], today: str, orders: float) -> list[dict]:
+    """Cash expected in the next 30 / 60 / 90 days: open balances by due date (overdue and undated ones in the
+    first window) and the accepted order book, which has no date of its own, in the first window too."""
+    due = dict.fromkeys(FORECAST_WINDOWS, 0.0)
+    for inv, part in _open_parts(invoices, classes):
+        ahead = days_between(today, inv["dueDate"]) - 1 if inv["dueDate"] else 0
+        window = max(ahead - 1, 0) // 30
+        if window < len(FORECAST_WINDOWS):
+            due[FORECAST_WINDOWS[window]] += part
+    return [
+        {"window": w, "invoices": js_round(due[w]), "orders": js_round(orders) if i == 0 else 0}
+        for i, w in enumerate(FORECAST_WINDOWS)
+    ]
+
+
+def invoiced_ttc_since(
+    lines: Iterable[RevenueLine], items: dict[str, ScopeItem], decisions: Iterable[RevenueDecision], since: str
+) -> float:
+    return sum(ttc_of(line, item)[0] for line, item, _v in in_scope_lines(lines, items, decisions) if line.day >= since)
+
+
 def outstanding(invoices: list[dict], classes: dict[str, str], today: str) -> tuple[dict, list[dict], float]:
     """{total, overdue, invoices, unknown} (3D share applied), the most overdue invoices, and the raw known balance."""
     total = overdue = unknown = known = 0.0
@@ -151,9 +227,7 @@ def outstanding(invoices: list[dict], classes: dict[str, str], today: str) -> tu
         balance = inv["balance"]
         if balance <= 0:
             continue
-        share = customer_share(classes.get(inv["customerId"]))
-        if share is None:
-            share = inv["share"]
+        share = _share_of(inv, classes)
         if share is None:
             unknown += balance
             count += 1
@@ -200,6 +274,8 @@ def build_cash(
     today: str,
     synced_at: str | None,
     error: str | None,
+    invoiced_ttc_90d: float = 0.0,
+    orders: float = 0.0,
 ) -> dict:
     shares = {i["invoiceId"]: i["share"] for i in invoices}
     collected, paid_known, paid_unknown = collected_by_month(payments, shares, classes, months)
@@ -216,6 +292,9 @@ def build_cash(
         ],
         "outstanding": owed,
         "topOverdue": top,
+        "aging": aging(invoices, classes, today),
+        "dso": dso(owed["total"], invoiced_ttc_90d),
+        "forecast": forecast(invoices, classes, today, orders),
         "coverage": {
             "known": js_round(paid_known + owed_known),
             "unknown": js_round(paid_unknown) + owed["unknown"],
