@@ -11,7 +11,7 @@ import { useOrderActions } from './useOrderActions';
 import { useOrderOutcomeToasts } from './useOrderOutcomeToasts';
 
 /** The reference chips of an opened order with its actions at the right end: watch, sync, cancel. */
-export function OrderRefActions({ row }: { row: OrderPanelRow }) {
+export function OrderRefActions({ row }: { row: OrderPanelRow & { status?: string } }) {
   const { t } = useTranslation();
   const toasts = useOrderOutcomeToasts();
   const { showToast } = useToast();
@@ -22,7 +22,7 @@ export function OrderRefActions({ row }: { row: OrderPanelRow }) {
   return (
     <OrderRefChips row={row}>
       {/* A finished order rings no bell: nothing to watch for. */}
-      {authEnabled && (row as { status?: string }).status !== 'finished' && <OrderWatchButton orderId={row.id} />}
+      {authEnabled && row.status !== 'finished' && <OrderWatchButton orderId={row.id} />}
       {canUpdate && <OrderSyncButton orderId={row.id} currency={row.currency} />}
       {canUpdate && (
         <HoldButton
