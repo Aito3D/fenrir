@@ -46,6 +46,19 @@ describe('RevenueMovers', () => {
     expect(screen.getByText('None')).toBeInTheDocument();
   });
 
+  it('lists customers first when the server sends them, and no customer section otherwise', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => json(payload({ customerMovers: { up: [mover('SARL Tahiti', 90_000, 1.5)], down: [] } }))));
+    const { unmount } = render(renderMovers());
+    expect(await screen.findByText('SARL Tahiti')).toBeInTheDocument();
+    const headings = screen.getAllByRole('heading', { level: 3 }).map((h) => h.textContent);
+    expect(headings).toEqual(['Customers', 'Products', 'Brands']);
+    unmount();
+    stubMovers();
+    render(renderMovers());
+    await screen.findByText('Printer X1');
+    expect(screen.queryByRole('heading', { name: 'Customers' })).toBeNull();
+  });
+
   it('compares two periods prefilled from the bucket and its previous one', async () => {
     const fetchMock = stubMovers();
     render(renderMovers());

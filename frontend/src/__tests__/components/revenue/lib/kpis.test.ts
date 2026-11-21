@@ -80,6 +80,11 @@ describe("kpiTiles", () => {
     expect(t[3].hint).toBe("pas d'historique");
     expect(t[3].tone).toBeUndefined();
   });
+  it("falls back to the server's previous total when the window starts at the last bucket", () => {
+    const t = kpiTiles([bucket({ key: "2026", label: "2026", start: "2026-01-01", end: "2026-12-31", previousTotal: { ht: 800, ttc: 928 } })], "ht", "year", 0, "Année");
+    expect(t[1].value).toBe(800);
+    expect(t[1].hint).toBe("2025");
+  });
   it("labels the comparison ranges of a partial bucket", () => {
     const p = bucket({ partial: true, elapsedDays: 10 });
     const t = kpiTiles([p], "ht", "month", 0, "Mois");

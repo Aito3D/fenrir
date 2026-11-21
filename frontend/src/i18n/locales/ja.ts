@@ -12824,6 +12824,15 @@ export default {
   },
   revenue: {
     cash: {
+      allOverdue: '期限超過',
+      forecast: {
+        title: '30日以内の入金見込み',
+        dueSoon: '30日以内に期日の請求書',
+        lateRecent: '延滞90日未満',
+        toInvoice: 'その後の請求予定',
+        toInvoiceNote: '受注済み・前受金を除く',
+        lateOld: '90日超の延滞 {{amount}} は含めていません',
+      },
       title: '資金',
       invoiced: '請求額（税込）',
       collected: '入金済み',
@@ -12946,8 +12955,8 @@ export default {
       monthReloading: '{{month}} を消去しました。Zoho から再読み込み中です。',
     },
     hero: {
+      setTarget: '目標を設定',
       partial: '{{period}} · 進行中、{{total}}日中{{day}}日目',
-      projection: '予測 ≈ {{amount}}',
       target: '目標（税抜） {{amount}}',
       vs: '{{what}}比',
       toDate: '{{range}}（同日時点）',
@@ -12957,7 +12966,6 @@ export default {
       paceLastYear: '前年のペースで',
       paceCurrent: '現在のペースで',
       margin: '粗利（税抜）',
-      cumulative: '累計',
       previous: {
         day: '前日',
         week: '前週',
@@ -13077,6 +13085,7 @@ export default {
       empty: 'この期間の Aito3D の販売はありません。',
     },
     movers: {
+      customers: '顧客',
       title: '変動',
       compareTitle: '2つの期間を比較',
       compare: '⇄ 2つの期間を比較',

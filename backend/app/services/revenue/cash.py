@@ -19,6 +19,9 @@ from backend.app.services.revenue.series import RevenueLine, in_scope_lines, js_
 ONLY_3D, NO_3D, MIXED = "only3d", "none", "mixed"
 CASH_MONTHS = 12
 TOP_OVERDUE = 5
+# The cash forecast: what falls due within FORECAST_DAYS, and overdue money still young enough to expect.
+FORECAST_DAYS = 30
+STALE_OVERDUE_DAYS = 90
 
 
 def _month_shift(month: str, delta: int) -> str:
@@ -145,6 +148,7 @@ def collected_by_month(
 def outstanding(invoices: list[dict], classes: dict[str, str], today: str) -> tuple[dict, list[dict], float]:
     """{total, overdue, invoices, unknown} (3D share applied), the most overdue invoices, and the raw known balance."""
     total = overdue = unknown = known = 0.0
+    due_soon = late_recent = late_old = 0.0
     count = 0
     late: list[dict] = []
     for inv in invoices:
@@ -164,8 +168,15 @@ def outstanding(invoices: list[dict], classes: dict[str, str], today: str) -> tu
         part = balance * share
         total += part
         count += 1
-        if inv["dueDate"] and inv["dueDate"] < today:
+        due = inv["dueDate"]
+        if not due or (due >= today and days_between(today, due) - 1 <= FORECAST_DAYS):
+            due_soon += part  # no due date reads as due on receipt
+        if due and due < today:
             overdue += part
+            if days_between(due, today) - 1 > STALE_OVERDUE_DAYS:
+                late_old += part
+            else:
+                late_recent += part
             late.append(
                 {
                     "number": inv["number"],
@@ -176,7 +187,15 @@ def outstanding(invoices: list[dict], classes: dict[str, str], today: str) -> tu
                 }
             )
     late.sort(key=lambda r: (-r["balance"], r["dueDate"]))
-    owed = {"total": js_round(total), "overdue": js_round(overdue), "invoices": count, "unknown": js_round(unknown)}
+    owed = {
+        "total": js_round(total),
+        "overdue": js_round(overdue),
+        "invoices": count,
+        "unknown": js_round(unknown),
+        "dueSoon": js_round(due_soon),
+        "lateRecent": js_round(late_recent),
+        "lateOld": js_round(late_old),
+    }
     return owed, late[:TOP_OVERDUE], known
 
 

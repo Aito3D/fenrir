@@ -12849,6 +12849,15 @@ export default {
   },
   revenue: {
     cash: {
+      allOverdue: 'Achterstallig',
+      forecast: {
+        title: 'Verwacht binnen 30 dagen',
+        dueSoon: 'Facturen die binnen 30 d vervallen',
+        lateRecent: 'Minder dan 90 d achterstallig',
+        toInvoice: 'Daarna nog te factureren',
+        toInvoiceNote: 'geaccepteerde orders, min aanbetalingen',
+        lateOld: '{{amount}} meer dan 90 d achterstallig, niet meegeteld',
+      },
       title: 'Liquiditeit',
       invoiced: 'Gefactureerd incl. btw',
       collected: 'Ontvangen',
@@ -12971,8 +12980,8 @@ export default {
       monthReloading: '{{month}} gewist, wordt opnieuw uit Zoho geladen.',
     },
     hero: {
+      setTarget: 'Doel instellen',
       partial: '{{period}} · lopend, dag {{day}} van {{total}}',
-      projection: 'Prognose ≈ {{amount}}',
       target: 'Doel excl. btw {{amount}}',
       vs: 't.o.v. {{what}}',
       toDate: '{{range}} (tot nu toe)',
@@ -12982,7 +12991,6 @@ export default {
       paceLastYear: 'in het tempo van vorig jaar',
       paceCurrent: 'in het huidige tempo',
       margin: 'Brutomarge excl. btw',
-      cumulative: 'Cumulatief',
       previous: {
         day: 'Vorige dag',
         week: 'Vorige week',
@@ -13102,6 +13110,7 @@ export default {
       empty: 'Geen Aito3D-verkopen in deze periode.',
     },
     movers: {
+      customers: 'Klanten',
       title: 'Bewegingen',
       compareTitle: 'Twee periodes vergelijken',
       compare: '⇄ Twee periodes vergelijken',

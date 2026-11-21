@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
 import { RevenueCash } from '../../../components/revenue/RevenueCash';
 import type { CashResponse, PipelineResponse } from '../../../components/revenue/lib/types';
 
@@ -71,6 +71,29 @@ describe('RevenueCash', () => {
     render(<RevenueCash version={0} />);
     expect(await screen.findByRole('alert')).toBeInTheDocument();
     expect(await screen.findByText('No open quotes')).toBeInTheDocument();
+  });
+
+  it('names the month on the monthly tiles and merges owed and overdue when everything is late', async () => {
+    stub(cash({ outstanding: { total: 712_270, overdue: 712_270, invoices: 31, unknown: 0, dueSoon: 0, lateRecent: 469_470, lateOld: 242_800 } }));
+    render(<RevenueCash version={0} />);
+    expect(await screen.findByText('Invoiced incl. tax · nov. 2026')).toBeInTheDocument();
+    expect(screen.getByText('Collected · nov. 2026')).toBeInTheDocument();
+    expect(screen.getByText('Overdue')).toBeInTheDocument();
+    expect(screen.getByText('712.270 FCP')).toHaveClass('text-amber-700');
+    expect(screen.queryByText('To collect')).toBeNull();
+    expect(screen.queryByText('of which overdue')).toBeNull();
+  });
+
+  it('forecasts the next 30 days from due and young overdue invoices, then the order book to invoice', async () => {
+    stub(cash({ outstanding: { total: 450_000, overdue: 120_000, invoices: 7, unknown: 0, dueSoon: 200_000, lateRecent: 70_000, lateOld: 50_000 } }));
+    render(<RevenueCash version={0} />);
+    const forecast = await screen.findByTestId('revenue-cash-forecast');
+    expect(forecast).toHaveTextContent('Expected within 30 days270.000 FCP');
+    expect(forecast).toHaveTextContent('Invoices due within 30 d200.000 FCP');
+    expect(forecast).toHaveTextContent('Overdue less than 90 d70.000 FCP');
+    expect(forecast).toHaveTextContent('50.000 FCP overdue for more than 90 d not counted');
+    // 1.200.000 accepted less 300.000 of deposits, once the order book has loaded.
+    await waitFor(() => expect(forecast).toHaveTextContent('Then, still to invoice900.000 FCP'));
   });
 
   it('says when no cash refresh has run yet', async () => {

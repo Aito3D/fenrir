@@ -188,7 +188,8 @@ export type BannerKind = "idle" | "error" | "progress";
 
 /** Which of the sync banner's three faces to show; an error always wins over progress. */
 export function bannerState(sync: RevenueSyncStatus): { kind: BannerKind; pctDone: number } {
-  const showProgress = sync.backfilling || sync.running;
+  // A routine sync over a complete history is not progress worth a bar at 100 %.
+  const showProgress = (sync.backfilling || sync.running) && (sync.totalDays === 0 || sync.fetchedDays < sync.totalDays);
   const kind: BannerKind = !showProgress && !sync.lastError ? "idle" : sync.lastError ? "error" : "progress";
   const pctDone = sync.totalDays > 0 ? Math.round((sync.fetchedDays / sync.totalDays) * 100) : 0;
   return { kind, pctDone };

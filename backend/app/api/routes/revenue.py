@@ -470,11 +470,21 @@ async def get_movers(
         cur, prev = ranges["current"], ranges["previous"]
         ctx = await _context(conn, min(cur["from"], prev["from"]), max(cur["to"], prev["to"]))
 
-        def rows(r: dict) -> list[dict]:
-            return _breakdown(ctx, [x for x in ctx["lines"] if r["from"] <= x.day <= r["to"]], filters)
+        def lines_in(r: dict) -> list:
+            return [x for x in ctx["lines"] if r["from"] <= x.day <= r["to"]]
+
+        def by_customer(r: dict) -> dict:
+            return insights.customer_totals(lines_in(r), ctx["items"], ctx["decisions"], ctx["customers"], filters)
 
         shown = COMPARE_SHOWN if free else insights.MOVERS_SHOWN
-        moved = insights.compute_movers(rows(cur), rows(prev), ranges, shown)
+        # Built for every caller and stripped (memo._CUSTOMER_KEYS) for one without revenue:view_customers.
+        moved = insights.compute_movers(
+            _breakdown(ctx, lines_in(cur), filters),
+            _breakdown(ctx, lines_in(prev), filters),
+            ranges,
+            shown,
+            (by_customer(cur), by_customer(prev)),
+        )
         return {"granularity": None if free else granularity, "key": None if free else key, **moved}
 
     return await _respond(request, user, build, flags=flags, now=now)

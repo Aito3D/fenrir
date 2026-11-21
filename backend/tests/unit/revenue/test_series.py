@@ -674,3 +674,17 @@ def test_a_line_uses_its_frozen_cost_and_tax_rate_and_falls_back_to_the_items_cu
     # The item lost its cost since: the frozen line still counts its own.
     [row] = item_breakdown([frozen], ITEMS, [], None, LineFilters())
     assert row["cost"] == 600
+
+
+def test_previous_total_is_the_whole_previous_bucket_on_the_first_column_only():
+    b = series(
+        granularity="year",
+        from_="2026-01-01",
+        to="2026-10-15",
+        lines=[line("2025-03-05", "pla", 700), line("2025-12-20", "pla", 300), line("2026-02-05", "pla", 900)],
+        fetched_days=all_days("2025-01-01", "2026-10-15"),
+    )
+    assert b[0]["previousTotal"] == {"ht": 1000, "ttc": 1160}
+    two = series(lines=[line("2026-08-10", "pla", 400)], fetched_days=all_days("2026-08-01", "2026-10-15"))
+    assert two[0]["previousTotal"]["ht"] == 400
+    assert two[1]["previousTotal"] is None

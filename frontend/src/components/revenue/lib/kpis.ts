@@ -1,4 +1,5 @@
-import { toDateRangeLabel } from "./buckets";
+import { bucketKeyFor, bucketLabel, toDateRangeLabel } from "./buckets";
+import { addDays } from "./dates";
 import type { RevenueBucket, RevenueGranularity, TaxMode } from "./types";
 
 export interface KpiTile {
@@ -54,9 +55,10 @@ export function kpiTiles(buckets: RevenueBucket[], mode: TaxMode, granularity: R
     },
     {
       label: `${granularityLabel} précédent`,
-      value: prev ? pickMode(prev, mode) : null,
+      // A window starting at this bucket has no previous column: the server sends that bucket's total instead.
+      value: prev ? pickMode(prev, mode) : last.previousTotal ? pickMode(last.previousTotal, mode) : null,
       kind: "money",
-      hint: prev ? `${prev.label}${qty(prev)}` : undefined,
+      hint: prev ? `${prev.label}${qty(prev)}` : last.previousTotal ? bucketLabel(bucketKeyFor(addDays(last.start, -1), granularity), granularity) : undefined,
     },
     { label: "Évolution", value: evo, kind: "pct", hint: prevRange ? `vs ${prevRange} (à date)` : `vs ${unit} précédent`, tone: toneOf(evo) },
     {

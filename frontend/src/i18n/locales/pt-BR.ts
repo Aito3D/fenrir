@@ -12810,6 +12810,15 @@ export default {
   },
   revenue: {
     cash: {
+      allOverdue: 'Em atraso',
+      forecast: {
+        title: 'Previsto em 30 dias',
+        dueSoon: 'Faturas que vencem em 30 dias',
+        lateRecent: 'Em atraso há menos de 90 dias',
+        toInvoice: 'Depois, a faturar',
+        toInvoiceNote: 'pedidos aceitos, sem sinais',
+        lateOld: '{{amount}} em atraso há mais de 90 dias, não contados',
+      },
       title: 'Tesouraria',
       invoiced: 'Faturado com impostos',
       collected: 'Recebido',
@@ -12932,8 +12941,8 @@ export default {
       monthReloading: '{{month}} apagado, recarregando do Zoho.',
     },
     hero: {
+      setTarget: 'Definir uma meta',
       partial: '{{period}} · em andamento, dia {{day}} de {{total}}',
-      projection: 'Projeção ≈ {{amount}}',
       target: 'Meta sem impostos {{amount}}',
       vs: 'em relação a {{what}}',
       toDate: '{{range}} (até a data)',
@@ -12943,7 +12952,6 @@ export default {
       paceLastYear: 'no ritmo do ano passado',
       paceCurrent: 'no ritmo atual',
       margin: 'Margem bruta sem impostos',
-      cumulative: 'Acumulado',
       previous: {
         day: 'Dia anterior',
         week: 'Semana anterior',
@@ -13063,6 +13071,7 @@ export default {
       empty: 'Nenhuma venda Aito3D neste período.',
     },
     movers: {
+      customers: 'Clientes',
       title: 'Movimentos',
       compareTitle: 'Comparar dois períodos',
       compare: '⇄ Comparar dois períodos',

@@ -12825,6 +12825,15 @@ export default {
   },
   revenue: {
     cash: {
+      allOverdue: 'Überfällig',
+      forecast: {
+        title: 'Erwartet in 30 Tagen',
+        dueSoon: 'In 30 Tagen fällige Rechnungen',
+        lateRecent: 'Weniger als 90 Tage überfällig',
+        toInvoice: 'Danach noch zu fakturieren',
+        toInvoiceNote: 'angenommene Aufträge, abzüglich Anzahlungen',
+        lateOld: '{{amount}} seit über 90 Tagen überfällig, nicht gezählt',
+      },
       title: 'Liquidität',
       invoiced: 'Fakturiert brutto',
       collected: 'Eingegangen',
@@ -12947,8 +12956,8 @@ export default {
       monthReloading: '{{month}} gelöscht, wird neu aus Zoho geladen.',
     },
     hero: {
+      setTarget: 'Ziel festlegen',
       partial: '{{period}} · laufend, Tag {{day}} von {{total}}',
-      projection: 'Prognose ≈ {{amount}}',
       target: 'Ziel netto {{amount}}',
       vs: 'ggü. {{what}}',
       toDate: '{{range}} (bis heute)',
@@ -12958,7 +12967,6 @@ export default {
       paceLastYear: 'im Tempo des Vorjahres',
       paceCurrent: 'im aktuellen Tempo',
       margin: 'Bruttomarge netto',
-      cumulative: 'Kumuliert',
       previous: {
         day: 'Vortag',
         week: 'Vorwoche',
@@ -13078,6 +13086,7 @@ export default {
       empty: 'Keine Aito3D-Verkäufe in diesem Zeitraum.',
     },
     movers: {
+      customers: 'Kunden',
       title: 'Bewegungen',
       compareTitle: 'Zwei Zeiträume vergleichen',
       compare: '⇄ Zwei Zeiträume vergleichen',

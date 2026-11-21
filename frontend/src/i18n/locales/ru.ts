@@ -12429,6 +12429,15 @@ export default {
   },
   revenue: {
     cash: {
+      allOverdue: 'Просрочено',
+      forecast: {
+        title: 'Ожидается в течение 30 дней',
+        dueSoon: 'Счета со сроком в течение 30 дн.',
+        lateRecent: 'Просрочено менее 90 дн.',
+        toInvoice: 'Затем к выставлению',
+        toInvoiceNote: 'принятые заказы без авансов',
+        lateOld: '{{amount}} просрочено более 90 дн., не учтено',
+      },
       title: 'Денежные средства',
       invoiced: 'Выставлено с НДС',
       collected: 'Получено',
@@ -12551,8 +12560,8 @@ export default {
       monthReloading: '{{month}} очищен, идёт повторная загрузка из Zoho.',
     },
     hero: {
+      setTarget: 'Задать цель',
       partial: '{{period}} · идёт, день {{day}} из {{total}}',
-      projection: 'Прогноз ≈ {{amount}}',
       target: 'Цель без НДС {{amount}}',
       vs: 'по сравнению с: {{what}}',
       toDate: '{{range}} (на эту дату)',
@@ -12562,7 +12571,6 @@ export default {
       paceLastYear: 'в темпе прошлого года',
       paceCurrent: 'в текущем темпе',
       margin: 'Валовая маржа без НДС',
-      cumulative: 'Нарастающим итогом',
       previous: {
         day: 'Предыдущий день',
         week: 'Предыдущая неделя',
@@ -12682,6 +12690,7 @@ export default {
       empty: 'Нет продаж Aito3D за этот период.',
     },
     movers: {
+      customers: 'Клиенты',
       title: 'Изменения',
       compareTitle: 'Сравнить два периода',
       compare: '⇄ Сравнить два периода',

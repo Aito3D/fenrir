@@ -215,14 +215,37 @@ def _rank_movers(cur: dict, prev: dict, n: int) -> dict:
     return {"up": up[:n], "down": down[:n]}
 
 
+def customer_totals(
+    lines: Iterable[RevenueLine],
+    items: dict[str, ScopeItem],
+    decisions: Iterable[RevenueDecision],
+    customers: dict[str, RevenueCustomerFacts],
+    filters: LineFilters,
+) -> dict[str, tuple[str, float]]:
+    """HT per named customer, for the movers; lines without a customer are left out."""
+    out: dict[str, tuple[str, float]] = {}
+    for m in matching_lines(lines, items, decisions, customers, filters):
+        cid = m.line.customer_id
+        if not cid:
+            continue
+        label, ht = out.get(cid) or (customer_display_name(cid, customers.get(cid)), 0.0)
+        out[cid] = (label, ht + m.line.amount)
+    return out
+
+
 def compute_movers(
-    current_rows: list[dict], previous_rows: list[dict], ranges: dict, shown: int = MOVERS_SHOWN
+    current_rows: list[dict],
+    previous_rows: list[dict],
+    ranges: dict,
+    shown: int = MOVERS_SHOWN,
+    customer_totals: tuple[dict, dict] | None = None,
 ) -> dict:
-    """Rows are `item_breakdown` output over each range."""
+    """Rows are `item_breakdown` output over each range; `customer_totals` is `customer_totals` over each range."""
     return {
         **ranges,
         "items": _rank_movers(_totals_by(current_rows, "item"), _totals_by(previous_rows, "item"), shown),
         "brands": _rank_movers(_totals_by(current_rows, "brand"), _totals_by(previous_rows, "brand"), shown),
+        **({"customerMovers": _rank_movers(*customer_totals, shown)} if customer_totals else {}),
         "totals": {
             "current": sum(r["ht"] for r in current_rows),
             "previous": sum(r["ht"] for r in previous_rows),

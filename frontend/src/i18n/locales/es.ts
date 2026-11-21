@@ -12833,6 +12833,15 @@ export default {
   },
   revenue: {
     cash: {
+      allOverdue: 'Vencido',
+      forecast: {
+        title: 'Previsto en 30 días',
+        dueSoon: 'Facturas que vencen en 30 días',
+        lateRecent: 'Vencidas hace menos de 90 días',
+        toInvoice: 'Después, por facturar',
+        toInvoiceNote: 'pedidos aceptados, sin anticipos',
+        lateOld: '{{amount}} vencidos hace más de 90 días, no contados',
+      },
       title: 'Tesorería',
       invoiced: 'Facturado con IVA',
       collected: 'Cobrado',
@@ -12955,8 +12964,8 @@ export default {
       monthReloading: '{{month}} borrado, recargando desde Zoho.',
     },
     hero: {
+      setTarget: 'Definir un objetivo',
       partial: '{{period}} · en curso, día {{day}} de {{total}}',
-      projection: 'Proyección ≈ {{amount}}',
       target: 'Objetivo sin IVA {{amount}}',
       vs: 'frente a {{what}}',
       toDate: '{{range}} (a la fecha)',
@@ -12966,7 +12975,6 @@ export default {
       paceLastYear: 'al ritmo del año pasado',
       paceCurrent: 'al ritmo actual',
       margin: 'Margen bruto sin IVA',
-      cumulative: 'Acumulado',
       previous: {
         day: 'Día anterior',
         week: 'Semana anterior',
@@ -13086,6 +13094,7 @@ export default {
       empty: 'Sin ventas de Aito3D en este período.',
     },
     movers: {
+      customers: 'Clientes',
       title: 'Movimientos',
       compareTitle: 'Comparar dos períodos',
       compare: '⇄ Comparar dos períodos',

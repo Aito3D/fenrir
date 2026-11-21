@@ -11,6 +11,7 @@ import { useRevenueResource } from './useRevenueResource';
 
 type Compare = { from: string; to: string; cfrom: string; cto: string };
 
+const SECTION_LABEL = { customerMovers: 'revenue.movers.customers', items: 'revenue.movers.products', brands: 'revenue.filters.brands' } as const;
 const signed = (n: number) => `${n > 0 ? '+' : ''}${formatFcp(n)}`;
 const tone = (up: boolean) => (up ? 'text-status-ok' : 'text-status-error');
 
@@ -128,13 +129,17 @@ export function RevenueMovers(p: { granularity: RevenueGranularity; bucketKey: s
           <Skeleton className="h-40 w-full" />
         ) : (
           <>
-            {(['items', 'brands'] as const).map((k) => (
-              <section key={k} className="space-y-2">
-                <h3 className="text-[13px] font-medium text-white">{t(k === 'items' ? 'revenue.movers.products' : 'revenue.filters.brands')}</h3>
-                <MoverList title={t('revenue.movers.up')} movers={data[k].up} up />
-                <MoverList title={t('revenue.movers.down')} movers={data[k].down} up={false} />
-              </section>
-            ))}
+            {/* Customers come first and only for a user allowed to see them (the server strips them otherwise). */}
+            {(['customerMovers', 'items', 'brands'] as const).map((k) => {
+              const m = data[k];
+              return m && (
+                <section key={k} className="space-y-2">
+                  <h3 className="text-[13px] font-medium text-white">{t(SECTION_LABEL[k])}</h3>
+                  <MoverList title={t('revenue.movers.up')} movers={m.up} up />
+                  <MoverList title={t('revenue.movers.down')} movers={m.down} up={false} />
+                </section>
+              );
+            })}
           </>
         )}
       </div>

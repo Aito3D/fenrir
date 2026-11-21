@@ -23,6 +23,8 @@ const TARGET_COLOR = '#f59e0b';
 const NOTE_COLOR = '#a0a0a0';
 const FOCUS_COLOR = '#00ae42';
 const HEIGHT = 300;
+// One or two columns would otherwise fill the plot as a solid block.
+const MAX_BAR = 96;
 const SEGMENT_KEY: Record<string, string> = { Pro: 'pro', Particuliers: 'particulier', Passage: 'passage', 'Non identifié': 'inconnu' };
 
 /** Colours belong to the series: a key keeps its colour while it is free, so a series a filter empties repaints nothing. */
@@ -101,7 +103,7 @@ function ColumnMarks(p: {
             <rect x={x0} y={area.y} width={band} height={area.height} fill="transparent" />
             {focused === i && <rect x={x0 + 1} y={area.y} width={band - 2} height={area.height} fill="none" stroke={FOCUS_COLOR} strokeWidth={2} rx={4} />}
             {target != null && (
-              <line data-target x1={x0 + band * 0.15} x2={x0 + band * 0.85} y1={y(target)} y2={y(target)} stroke={TARGET_COLOR} strokeWidth={2} strokeLinecap="round" />
+              <line data-target x1={mid - Math.min(band * 0.35, MAX_BAR / 2 + 6)} x2={mid + Math.min(band * 0.35, MAX_BAR / 2 + 6)} y1={y(target)} y2={y(target)} stroke={TARGET_COLOR} strokeWidth={2} strokeLinecap="round" />
             )}
             {p.notes[i].length > 0 && (
               <rect data-note x={mid - 4} y={area.y - 14} width={8} height={8} fill={NOTE_COLOR} transform={`rotate(45 ${mid} ${area.y - 10})`}>
@@ -315,11 +317,11 @@ export function RevenueChart({ payload, controls, can, onStack, onDrill, drillDe
               domain={[cum.min, cum.max]} ticks={cum.min < 0 ? [cum.min, 0, cum.max] : [0, cum.max]} tickFormatter={compactAxis} />
             <Tooltip content={tooltip} active={focused != null ? true : undefined} defaultIndex={focused ?? undefined} cursor={{ fill: 'rgba(255,255,255,0.04)' }} animationDuration={120} />
             {series.map((s) => (
-              <Bar key={s.key} yAxisId="left" dataKey={`s${s.slot}`} stackId="revenue" fill={colorOf(s)} isAnimationActive={false}>
+              <Bar key={s.key} yAxisId="left" dataKey={`s${s.slot}`} stackId="revenue" fill={colorOf(s)} maxBarSize={MAX_BAR} isAnimationActive={false}>
                 {rows.map((r) => <Cell key={r.i} fillOpacity={r.partial ? 0.6 : 1} />)}
               </Bar>
             ))}
-            <Bar yAxisId="left" dataKey="ghost" stackId="revenue" shape={GhostShape} isAnimationActive={false} />
+            <Bar yAxisId="left" dataKey="ghost" stackId="revenue" shape={GhostShape} maxBarSize={MAX_BAR} isAnimationActive={false} />
             <Line yAxisId="cum" dataKey="cumulative" stroke={LINE_COLOR} strokeOpacity={0.7} strokeWidth={2} strokeDasharray="4 3" dot={false} isAnimationActive={false} />
             <ColumnMarks columns={columns} yMin={yMin} yMax={yMax} targets={targets} notes={notesOf} label={columnLabel}
               missingLabel={(n) => t('revenue.chart.missingDays', { n })}
