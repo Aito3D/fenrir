@@ -219,6 +219,8 @@ async def store_new_order(db: AsyncSession, created: dict) -> None:
     # a board candidate now rather than after the next pass, whose listed header then replaces this one.
     try:
         doc = await sync.find_stored(db, salesorder_id)
+        if doc is None:  # a pass dropped it meanwhile: nothing to put on the board
+            return
         detail = doc.detail or {}
         lines = detail.get("line_items") or []
         doc.header = {

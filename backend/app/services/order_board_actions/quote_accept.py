@@ -131,7 +131,9 @@ async def undo_accept(db: AsyncSession, estimate_id: str, salesorder_id: str, *,
             raise OrderActionRefused("undo_too_late")
         # Whatever happens from here (timeout, crash), the next pass re-reads the quote: a DELETE that went through
         # leaves it accepted with no order, and a stored copy still naming the order would hide it.
-        (await sync.find_quote(db, estimate_id)).pending = True
+        if (quote := await sync.find_quote(db, estimate_id)) is None:  # a pass dropped it: refuse before sending
+            raise QuoteNotStored(estimate_id)
+        quote.pending = True
         await db.commit()
         deleted = False
         try:
@@ -152,8 +154,9 @@ async def undo_accept(db: AsyncSession, estimate_id: str, salesorder_id: str, *,
             await _settle(db, estimate_id, "quote.accept_undone" if deleted else None, by)
             if not deleted:  # an unconfirmed DELETE may still land: the next pass re-reads the quote once more
                 with contextlib.suppress(Exception):
-                    (await sync.find_quote(db, estimate_id)).pending = True
-                    await db.commit()
+                    if (quote := await sync.find_quote(db, estimate_id)) is not None:
+                        quote.pending = True
+                        await db.commit()
 
 
 def _started(row: dict) -> bool:

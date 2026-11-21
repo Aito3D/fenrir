@@ -1,6 +1,7 @@
 """The sync pass keeps the Books estimates (product quotes) too. Zoho is a fake throughout."""
 
 import re
+import time
 from datetime import datetime, timedelta, timezone
 
 import pytest
@@ -9,7 +10,14 @@ from sqlalchemy import select
 from backend.app.models.aito_project import AitoProject
 from backend.app.models.order_board_doc import OrderBoardDoc
 from backend.app.services import order_board_sync as sync
-from backend.app.services.zoho import ZohoNotConfiguredError, zoho_service
+from backend.app.services.zoho import (
+    ZohoNotConfiguredError,
+    ZohoNotFound,
+    ZohoRateLimited,
+    ZohoRequestRejected,
+    ZohoUpstreamError,
+    zoho_service,
+)
 from backend.tests.unit.test_order_board_sync import (  # noqa: F401
     days_ago,
     no_back_off_left_over,
@@ -208,3 +216,95 @@ async def test_quote_rows_carry_the_books_address_or_none(db_session, zoho, monk
 
     monkeypatch.setattr(zoho_service, "books_app_url", unconfigured)
     assert all(r["zoho_url"] is None for r in (await sync.read_quotes(db_session))["rows"])
+
+
+async def _quote_clock(db) -> tuple:
+    detail = (await sync._find_state(db)).detail
+    return detail.get("quotes_listed_at"), detail.get("quotes_swept_at")
+
+
+@pytest.mark.asyncio
+async def test_not_found_estimate_detail_drops_the_doc_and_the_pass_continues(db_session, zoho, monkeypatch):
+    add_quotes(zoho, quote(1), quote(2))
+    fetch = zoho.get_estimate
+
+    async def gone(db, estimate_id):
+        if estimate_id == "e1":
+            raise ZohoNotFound("gone")
+        return await fetch(db, estimate_id)
+
+    monkeypatch.setattr(zoho_service, "get_estimate", gone)
+    await sync.run_pass(db_session)
+    assert set(await stored_quotes(db_session)) == {"e2"}
+    assert (await stored_quotes(db_session))["e2"].detail is not None
+
+
+@pytest.mark.asyncio
+async def test_a_listing_that_raises_leaves_the_watermark_and_sweep_time(db_session, zoho, monkeypatch):
+    add_quotes(zoho, quote(1))
+    await sync.run_pass(db_session)
+    before = await _quote_clock(db_session)
+    await set_state(db_session, quotes_swept_at=(datetime.now(timezone.utc) - timedelta(hours=25)).isoformat())
+    swept = (await _quote_clock(db_session))[1]
+
+    async def boom(db):
+        raise ZohoUpstreamError("listing boom")
+
+    monkeypatch.setattr(zoho_service, "list_estimates", boom)
+    with pytest.raises(ZohoUpstreamError):
+        await sync._quotes.reconcile_quotes(db_session, await sync.load_settings(db_session))
+    assert await _quote_clock(db_session) == (before[0], swept)
+
+
+@pytest.mark.asyncio
+async def test_an_empty_estimate_body_is_never_stored_under_another_id(db_session, zoho, monkeypatch):
+    add_quotes(zoho, quote(1))
+
+    async def empty(db, estimate_id):
+        return {}
+
+    monkeypatch.setattr(zoho_service, "get_estimate", empty)
+    await sync.run_pass(db_session)
+    docs = await stored_quotes(db_session)
+    assert set(docs) == {"e1"}
+    assert (docs["e1"].pending, docs["e1"].detail) == (True, None)
+
+
+@pytest.mark.asyncio
+async def test_a_rejected_estimate_listing_does_not_stop_the_orders(db_session, zoho, monkeypatch):
+    add_quotes(zoho, quote(1))
+    await sync.run_pass(db_session)
+    await set_state(db_session, quotes_swept_at=(datetime.now(timezone.utc) - timedelta(hours=25)).isoformat())
+    before = await _quote_clock(db_session)
+
+    async def rejected(db):
+        raise ZohoRequestRejected("no estimates")
+
+    monkeypatch.setattr(zoho_service, "list_estimates", rejected)
+    zoho.add(order(1))
+    await sync.run_pass(db_session)
+    assert zoho.calls["detail"] == 1
+    assert (await sync.find_stored(db_session, "so1")).detail is not None
+    assert await _quote_clock(db_session) == before
+
+
+@pytest.mark.asyncio
+async def test_a_rate_limited_estimate_listing_still_ends_the_pass(db_session, zoho, monkeypatch):
+    async def limited(db):
+        raise ZohoRateLimited("slow down", retry_after=90)
+
+    monkeypatch.setattr(zoho_service, "list_estimates", limited)
+    zoho.add(order(1))
+    await sync.run_pass(db_session)
+    assert zoho.calls["detail"] == 0
+    assert sync._common._rate_limited_until > time.monotonic()
+
+
+@pytest.mark.asyncio
+async def test_a_converted_accepted_quote_has_its_items_left_out_of_the_stock_read(db_session, zoho):
+    done = quote(
+        1, status="accepted", item="B", salesorders=[{"salesorder_id": "so9", "salesorder_order_status": "open"}]
+    )
+    add_quotes(zoho, done, quote(2, item="A"))
+    await sync.run_pass(db_session)
+    assert [i for batch in zoho.item_batches for i in batch] == ["A"]

@@ -12,7 +12,7 @@ from backend.app.services import order_board_events
 from backend.app.services.aito_poll_watermark import format_books_time
 from backend.app.services.inbox import broadcast_pending
 from backend.app.services.order_board_payment import quote_number_missing
-from backend.app.services.order_board_quotes import quote_state
+from backend.app.services.order_board_quotes import is_converted, quote_state
 from backend.app.services.order_board_sync import _common
 from backend.app.services.order_board_sync._catalog import refresh_catalog_if_stale
 from backend.app.services.order_board_sync._common import (
@@ -180,6 +180,9 @@ async def _fetch_pending_details(db: AsyncSession, stored: dict[tuple[str, str],
         if _written_at.get(doc.zoho_id, -1.0) >= began and written_here:
             continue  # a write here is newer than this copy: keep it, and the pending mark
         if doc.kind == "estimate":
+            if str(fetched.get("estimate_id") or "") != doc.zoho_id:  # never store a body under another id
+                logger.warning("Order board: Books answered estimate %s with another body, left pending", doc.zoho_id)
+                continue
             await store_quote(db, fetched)  # a quote takes none of the order's payment or alert work
         else:
             previous = doc.detail
@@ -234,6 +237,7 @@ async def _reload_stock(
         d
         for d in (await db.execute(select(OrderBoardDoc).where(OrderBoardDoc.kind == "estimate"))).scalars()
         if quote_state(d.header, today) in ("draft", "sent", "accepted")
+        and not (d.header.get("status") == "accepted" and is_converted(d.detail or {}))  # quote_row hides these
     )
     orders_open = (d for d in stored.values() if d.kind == "salesorder" and _is_candidate(d.kind, d.header, settings))
     item_ids = sorted(
@@ -289,7 +293,19 @@ async def _sync(db: AsyncSession) -> None:
     stored = await _reconcile_listings(db, settings)
     await _mark_payment_changes(db, stored, settings, started)
     before = await _quote_marks(db)
-    await reconcile_quotes(db, settings)
+    try:
+        await reconcile_quotes(db, settings)
+    except ZohoRateLimited:
+        raise
+    except ZohoUpstreamError as e:  # the orders do not wait on the /estimates endpoint
+        await db.rollback()  # expires what the pass loaded: take the order docs again
+        stored = {
+            (d.kind, d.zoho_id): d
+            for d in (
+                await db.execute(select(OrderBoardDoc).where(OrderBoardDoc.kind.in_(("salesorder", "purchaseorder"))))
+            ).scalars()
+        }
+        logger.warning("Order board: the quote listing failed (%s), the pass goes on with the orders", type(e).__name__)
     await _fetch_pending_details(db, stored)
     await _reload_stock(db, stored, settings, quotes=await _quote_marks(db) != before)
     await refresh_catalog_if_stale(db)

@@ -1,5 +1,6 @@
 """Accepting a quote creates its sales order in Books; undo deletes it again. Zoho is a fake throughout."""
 
+import importlib
 from datetime import date
 
 import pytest
@@ -383,3 +384,22 @@ async def test_a_converted_refusal_stores_the_fresh_copy(db_session, so_books):
     with pytest.raises(actions.OrderActionRefused, match="quote_converted"):
         await actions.create_order_from_quote(db_session, "e1", by=None)
     assert _quote_rows(await sync.read_quotes(db_session)) == []
+
+
+@pytest.mark.asyncio
+async def test_undo_refused_when_the_quote_doc_goes_before_the_delete(db_session, so_books, monkeypatch):
+    await _accepted_on_board(db_session, so_books)
+    reread = importlib.import_module("backend.app.services.order_board_actions.quote_accept")._reread
+
+    async def reread_then_dropped(db, salesorder_id):
+        order = await reread(db, salesorder_id)
+        await db.delete(await sync.find_quote(db, "e1"))  # a sync pass drops the doc mid-action
+        await db.commit()
+        return order
+
+    monkeypatch.setattr(
+        importlib.import_module("backend.app.services.order_board_actions.quote_accept"), "_reread", reread_then_dropped
+    )
+    with pytest.raises(actions.QuoteNotStored):
+        await actions.undo_accept(db_session, "e1", "so9", by=None)
+    assert so_books.deleted == []

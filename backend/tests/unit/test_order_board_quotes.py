@@ -121,3 +121,9 @@ def test_held_by_orders():
         {"lines": [{"item_id": "i1", "covered": 1.5}]},
     ]
     assert held_by_orders(rows) == {"i1": 3.5}
+
+
+def test_quote_row_total_that_cannot_be_read_is_none():
+    assert quote_row(header(total=""), None, {}, {}, TODAY, set())["total"] is None
+    assert quote_row(header(total="n/a"), None, {}, {}, TODAY, set())["total"] is None
+    assert quote_row(header(total="12.5"), None, {}, {}, TODAY, set())["total"] == 12.5

@@ -35,7 +35,7 @@ def draft_order_id(detail: dict) -> str | None:
 def is_quote_candidate(header: dict, today: date, max_age_days: int, aito_quote_ids: set[str]) -> bool:
     if header.get("estimate_id") in aito_quote_ids or quote_state(header, today) is None:
         return False
-    return not (max_age_days > 0 and age_days(header.get("date"), today) > max_age_days)
+    return not (max_age_days > 0 and age_days(header.get("date") or "", today) > max_age_days)
 
 
 def editable_here(detail: dict) -> bool:
@@ -72,7 +72,10 @@ def quote_row(
     if state == "accepted" and (detail is None or is_converted(detail)):
         return None
     src = {**header, **(detail or {})}
-    total = src.get("total")
+    try:
+        total = None if src.get("total") is None else float(src["total"])
+    except (TypeError, ValueError):
+        total = None
     lines = None
     is_core = None
     if detail is not None:
@@ -106,10 +109,10 @@ def quote_row(
         "date": src.get("date") or "",
         "expiry_date": src.get("expiry_date") or "",
         "state": state,
-        "total": None if total is None else float(total),
+        "total": total,
         "currency": src.get("currency_code") or "",
         "reference": src.get("reference_number") or "",
-        "age_days": age_days(src.get("date"), today),
+        "age_days": age_days(src.get("date") or "", today),
         "is_core": is_core,
         "editable": detail is not None and editable_here(detail),
         "has_draft_order": detail is not None and draft_order_id(detail) is not None,
