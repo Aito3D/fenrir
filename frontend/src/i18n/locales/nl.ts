@@ -12386,6 +12386,8 @@ export default {
       empty: { current: "Geen lopende offertes.", expired: "Geen verlopen offertes.", declined: "Geen afgewezen offertes." },
       state: { draft: "Concept", sent: "Verzonden", accepted: "Geaccepteerd", expired: "Verlopen", declined: "Afgewezen" },
       col: { item: "Artikel", stock: "Voorraad", qty: "Aantal", discount: "Korting", total: "Totaal incl. btw" },
+      edit: "Bewerken",
+      editInZoho: "Bewerken in Zoho",
     },
     mobile: {
       back: 'Terug naar bestellingen',
@@ -12394,6 +12396,16 @@ export default {
       collect: 'Betaling innen',
       filters: 'Filters en sortering',
       showOrders: '{{n}} bestellingen tonen',
+    },
+    newQuote: {
+      button: "Nieuwe offerte",
+      title: "Nieuwe offerte",
+      editTitle: "Offerte bewerken",
+      create: "Offerte aanmaken",
+      save: "Offerte opslaan",
+      saving: "Opslaan…",
+      redated: "Deze offerte is verlopen: opslaan zet de datum op vandaag.",
+      failed: "Offerte niet opgeslagen: {{reason}}",
     },
     newOrder: {
       button: 'Nieuwe bestelling',
@@ -12765,6 +12777,12 @@ export default {
       order_invoiced: "de bestelling heeft een factuur en kan niet meer worden geannuleerd",
       ref_reused: "de eerste poging heeft al een bestelling aangemaakt, controleer het bord voordat je een nieuwe begint",
       unknown_picklist: 'deze picklijst staat niet meer op de bestelling, kijk opnieuw',
+      quote_converted: "de offerte heeft al een verkooporder",
+      quote_not_editable: "deze offerte kan hier niet worden bewerkt, bewerk hem in Zoho",
+      not_declined: "de offerte is niet afgewezen",
+      undo_too_late: "te laat om ongedaan te maken, de bestelling is verder",
+      not_this_quote: "die bestelling komt niet van deze offerte",
+      not_accepted: "de offerte is niet geaccepteerd",
     },
     cancel: {
       label: "Bestelling annuleren",

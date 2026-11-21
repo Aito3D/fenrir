@@ -12419,6 +12419,8 @@ errors: {
       empty: { current: "Inga pågående offerter.", expired: "Inga utgångna offerter.", declined: "Inga avböjda offerter." },
       state: { draft: "Utkast", sent: "Skickad", accepted: "Accepterad", expired: "Utgången", declined: "Avböjd" },
       col: { item: "Artikel", stock: "Lager", qty: "Antal", discount: "Rabatt", total: "Totalt inkl. moms" },
+      edit: "Redigera",
+      editInZoho: "Redigera i Zoho",
     },
     mobile: {
       back: 'Tillbaka till beställningar',
@@ -12427,6 +12429,16 @@ errors: {
       collect: 'Ta betalt',
       filters: 'Filter och sortering',
       showOrders: 'Visa {{n}} beställningar',
+    },
+    newQuote: {
+      button: "Ny offert",
+      title: "Ny offert",
+      editTitle: "Redigera offert",
+      create: "Skapa offert",
+      save: "Spara offert",
+      saving: "Sparar…",
+      redated: "Offerten har gått ut: när den sparas dateras den om till i dag.",
+      failed: "Offerten sparades inte: {{reason}}",
     },
     newOrder: {
       button: 'Ny order',
@@ -12798,6 +12810,12 @@ errors: {
       order_invoiced: "ordern har en faktura och kan inte längre avbrytas",
       ref_reused: "det första försöket skapade redan en order, kontrollera tavlan innan du börjar en ny",
       unknown_picklist: 'den här plocklistan finns inte längre på ordern, titta igen',
+      quote_converted: "offerten har redan en försäljningsorder",
+      quote_not_editable: "offerten kan inte redigeras här, redigera den i Zoho",
+      not_declined: "offerten är inte avböjd",
+      undo_too_late: "för sent att ångra, ordern har gått vidare",
+      not_this_quote: "den ordern kommer inte från den här offerten",
+      not_accepted: "offerten är inte accepterad",
     },
     cancel: {
       label: "Avbryt order",

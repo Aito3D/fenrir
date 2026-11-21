@@ -5,7 +5,7 @@ import { http, HttpResponse } from 'msw';
 import { server } from '../../mocks/server';
 import { render } from '../../utils';
 import { NewOrderDraftRow } from '../../../components/orders/NewOrderDraftRow';
-import type { OrderItemHit } from '../../../api/client';
+import type { OrderItemHit, QuoteLine, QuoteRow } from '../../../api/client';
 import { formatMoney } from '../../../utils/pricing';
 
 const DRAFT_KEY = 'orders.newOrderDraft.v1';
@@ -382,6 +382,101 @@ describe('NewOrderDraftRow', () => {
       await user.click(createBtn());
       await waitFor(() => expect(onCreated).toHaveBeenCalled());
       expect((box.body as { customer_id: string }).customer_id).toBe(DEFAULT_ID);
+    });
+  });
+
+  describe('quote mode', () => {
+    const QUOTE_KEY = 'orders.newQuoteDraft.v1';
+    const REF = '22222222-2222-4222-8222-222222222222';
+    const qline = (o: Partial<QuoteLine> = {}): QuoteLine => ({
+      id: 'ql1', item_id: 'A', name: 'Bambu Lab PLA Basic Noir', sku: 'BL-PLA-BK', quantity: 4, rate: 2500, discount: '10%', total: 9000, available: 14, ...o,
+    });
+    const quote = (o: Partial<QuoteRow> = {}): QuoteRow => ({
+      id: 'e1', number: 'DEV-00412', customer: 'Nautic Service', customer_id: 'c1', date: '2026-11-10', expiry_date: '2026-12-10',
+      state: 'sent', total: 248900, currency: 'XPF', reference: '', age_days: 2, is_core: true, editable: true, has_draft_order: false, modified: '',
+      lines: [qline(), qline({ id: 'ql2', item_id: 'H', name: 'Bambu Lab H2D', sku: 'H2D', quantity: 1, rate: 239900, discount: null, total: 239900, available: 0 })],
+      ...o,
+    });
+    const quotesResult = { quotes: { rows: [], loading: 0, ready: true }, estimate_id: 'e9' };
+
+    it('a quote draft and an order draft never show each other', () => {
+      seed([{ item: item(), quantity: 3, discount: '' }]);
+      const { unmount } = render(<NewOrderDraftRow mode="quote" currency="XPF" open={[]} finished={[]} onCreated={vi.fn()} onClose={vi.fn()} />);
+      expect(screen.getByRole('dialog', { name: 'New quote' })).toBeInTheDocument();
+      expect(screen.getByText('Ready to scan')).toBeInTheDocument();
+      unmount();
+      localStorage.removeItem(DRAFT_KEY);
+      localStorage.setItem(QUOTE_KEY, JSON.stringify({ lines: [{ item: item(), quantity: 3, discount: '' }], client: null, clientRef: REF }));
+      renderRow();
+      expect(screen.getByText('Ready to scan')).toBeInTheDocument();
+      expect(localStorage.getItem(QUOTE_KEY)).toContain(REF);
+    });
+
+    it('create sends client_ref and lines to createQuote, reports the new id and clears only the quote draft', async () => {
+      const user = userEvent.setup();
+      const onCreated = vi.fn();
+      let body: unknown = null;
+      server.use(http.post('/api/v1/order-board/quotes', async ({ request }) => {
+        body = await request.json();
+        return HttpResponse.json(quotesResult);
+      }));
+      seed([{ item: item({ id: 'Z', name: 'Other' }), quantity: 1, discount: '' }]);
+      localStorage.setItem(QUOTE_KEY, JSON.stringify({ lines: [{ item: item(), quantity: 2, discount: '5%' }], client: null, clientRef: REF }));
+      render(<NewOrderDraftRow mode="quote" currency="XPF" open={[]} finished={[]} onCreated={onCreated} onClose={vi.fn()} />);
+      await screen.findByDisplayValue('Client de passage');
+      await user.click(screen.getByRole('button', { name: 'Create quote' }));
+      await waitFor(() => expect(onCreated).toHaveBeenCalledWith(expect.objectContaining({ estimate_id: 'e9' })));
+      expect(body).toEqual({ customer_id: DEFAULT_ID, client_ref: REF, lines: [{ item_id: 'A', quantity: 2, discount: '5%' }] });
+      expect(localStorage.getItem(QUOTE_KEY)).toBeNull();
+      expect(localStorage.getItem(DRAFT_KEY)).toContain('Other');
+    });
+
+    it('edit starts from the quote, keeps line_id on a changed line, sends a new line without one, and never touches storage', async () => {
+      const user = userEvent.setup();
+      const onCreated = vi.fn();
+      let body: unknown = null;
+      server.use(
+        http.get('/api/v1/order-board/items', () => HttpResponse.json({ items: [item({ id: 'B', name: 'PLA Silk Or', sku: 'PLA-SILK' })] })),
+        http.get('/api/v1/zoho/contacts/c1', () => HttpResponse.json({ id: 'c1', name: 'Nautic Service', phone: '', mobile: '', email: '' })),
+        http.put('/api/v1/order-board/quotes/e1', async ({ request }) => {
+          body = await request.json();
+          return HttpResponse.json({ ...quotesResult, estimate_id: 'e1' });
+        }),
+      );
+      seed([{ item: item({ id: 'Z', name: 'Other' }), quantity: 1, discount: '' }]);
+      const getItem = vi.spyOn(Storage.prototype, 'getItem');
+      const setItem = vi.spyOn(Storage.prototype, 'setItem');
+      const removeItem = vi.spyOn(Storage.prototype, 'removeItem');
+      render(<NewOrderDraftRow mode="quote" quote={quote()} currency="XPF" open={[]} finished={[]} onCreated={onCreated} onClose={vi.fn()} />);
+      expect(screen.getByDisplayValue('Nautic Service')).toBeInTheDocument();
+      expect(screen.getByLabelText('Qty · Bambu Lab PLA Basic Noir')).toHaveValue(4);
+      expect(screen.getByLabelText('Discount · Bambu Lab PLA Basic Noir')).toHaveValue('10%');
+      // The quote's own unit price, not the catalogue's.
+      expect(screen.getByText((_, el) => el?.tagName === 'SPAN' && el.textContent === formatMoney(2500, 'XPF'))).toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: 'Reset draft' })).not.toBeInTheDocument();
+      await user.click(screen.getByRole('button', { name: 'One more · Bambu Lab PLA Basic Noir' }));
+      const search = screen.getByLabelText('Scan or search: name, SKU, EAN, reference…');
+      await user.type(search, 'silk');
+      await user.click(await screen.findByRole('button', { name: /^PLA Silk Or/ }, { timeout: 3000 }));
+      await user.click(screen.getByRole('button', { name: 'Save quote' }));
+      await waitFor(() => expect(onCreated).toHaveBeenCalledWith(expect.objectContaining({ estimate_id: 'e1' })));
+      expect(body).toEqual({
+        customer_id: 'c1',
+        lines: [
+          { line_id: 'ql1', item_id: 'A', quantity: 5, discount: '10%' },
+          { line_id: 'ql2', item_id: 'H', quantity: 1 },
+          { item_id: 'B', quantity: 1 },
+        ],
+      });
+      const touched = (spy: typeof getItem | typeof setItem | typeof removeItem) =>
+        spy.mock.calls.some(([k]) => k === QUOTE_KEY || k === DRAFT_KEY);
+      expect(touched(getItem) || touched(setItem) || touched(removeItem)).toBe(false);
+      expect(localStorage.getItem(DRAFT_KEY)).toContain('Other');
+    });
+
+    it('an expired quote says saving re-dates it to today', () => {
+      render(<NewOrderDraftRow mode="quote" quote={quote({ state: 'expired' })} currency="XPF" open={[]} finished={[]} onCreated={vi.fn()} onClose={vi.fn()} />);
+      expect(screen.getByText('This quote has expired: saving re-dates it to today.')).toBeInTheDocument();
     });
   });
 });

@@ -12347,6 +12347,8 @@ export default {
       empty: { current: "Nessun preventivo in corso.", expired: "Nessun preventivo scaduto.", declined: "Nessun preventivo rifiutato." },
       state: { draft: "Bozza", sent: "Inviato", accepted: "Accettato", expired: "Scaduto", declined: "Rifiutato" },
       col: { item: "Articolo", stock: "Magazzino", qty: "Qtà", discount: "Sconto", total: "Totale IVA incl." },
+      edit: "Modifica",
+      editInZoho: "Modifica in Zoho",
     },
     mobile: {
       back: 'Torna agli ordini',
@@ -12355,6 +12357,16 @@ export default {
       collect: 'Incassa',
       filters: 'Filtri e ordinamento',
       showOrders: 'Mostra {{n}} ordini',
+    },
+    newQuote: {
+      button: "Nuovo preventivo",
+      title: "Nuovo preventivo",
+      editTitle: "Modifica preventivo",
+      create: "Crea preventivo",
+      save: "Salva preventivo",
+      saving: "Salvataggio…",
+      redated: "Questo preventivo è scaduto: salvandolo viene datato a oggi.",
+      failed: "Preventivo non salvato: {{reason}}",
     },
     newOrder: {
       button: 'Nuovo ordine',
@@ -12726,6 +12738,12 @@ export default {
       order_invoiced: "l’ordine ha una fattura e non può più essere annullato",
       ref_reused: "il primo tentativo ha già creato un ordine, controlla la bacheca prima di iniziarne uno nuovo",
       unknown_picklist: 'questa lista di prelievo non è più nell’ordine, controlla di nuovo',
+      quote_converted: "il preventivo ha già un ordine di vendita",
+      quote_not_editable: "questo preventivo non si può modificare qui, modificalo in Zoho",
+      not_declined: "il preventivo non è rifiutato",
+      undo_too_late: "troppo tardi per annullare, l'ordine è andato avanti",
+      not_this_quote: "quell'ordine non viene da questo preventivo",
+      not_accepted: "il preventivo non è accettato",
     },
     cancel: {
       label: "Annulla ordine",

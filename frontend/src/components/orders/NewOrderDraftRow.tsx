@@ -1,14 +1,15 @@
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useMutation, useQuery } from '@tanstack/react-query';
-import { Loader2, Plus, RotateCcw, X } from 'lucide-react';
+import { Check, Loader2, Plus, RotateCcw, X } from 'lucide-react';
 import { api } from '../../api/client';
-import type { FinishedOrderRow, OrderBoardRow, OrderEditResult, ZohoContact } from '../../api/client';
+import type { FinishedOrderRow, OrderBoardRow, OrderEditResult, QuoteRow, QuotesResponse, ZohoContact } from '../../api/client';
 import { useAuth } from '../../contexts/AuthContext';
 import { useToast } from '../../contexts/ToastContext';
 import { useAitoZohoStatus } from '../../hooks/useAitoZohoStatus';
 import { useDismissableDialog } from '../../hooks/useDismissableDialog';
 import { useNewOrderDraft } from '../../hooks/useNewOrderDraft';
+import type { NewOrderDraft } from '../../hooks/useNewOrderDraft';
 import { formatMoney } from '../../utils/pricing';
 import { Card } from '../Card';
 import { ClientCombobox } from '../aito/ClientCombobox';
@@ -23,18 +24,37 @@ import { errorReason } from './orderErrors';
 
 const MODAL_OUT_MS = 170;
 
-/** A counter order being put together in a modal over the board. Nothing reaches Books before "Create order";
- *  the draft lives in the browser until then (closing keeps it, the hold button clears it). */
-export function NewOrderDraftRow({ currency, open, finished, onCreated, onClose }: {
+export type QuoteSaved = { quotes: QuotesResponse; estimate_id: string };
+
+/** An existing quote as a draft: its customer, and its lines at the quote's own unit price. */
+const fromQuote = (q: QuoteRow): NewOrderDraft => ({
+  client: { id: q.customer_id, name: q.customer, isDefault: false },
+  clientRef: '',
+  lines: (q.lines ?? []).map(l => ({
+    lineId: l.id,
+    item: { id: l.item_id ?? '', name: l.name, sku: l.sku, rate: l.rate, stock_on_hand: l.available, product_type: 'goods' },
+    quantity: l.quantity,
+    discount: l.discount ?? '',
+  })),
+});
+
+/** A counter order (or, `mode="quote"`, a quote) being put together in a modal over the board. Nothing reaches Books
+ *  before "Create"; the draft lives in the browser until then (closing keeps it, the hold button clears it).
+ *  With `quote`, the dialog edits that quote: it starts from the quote, keeps nothing, and closing drops the changes. */
+export function NewOrderDraftRow({ currency, open, finished, mode = 'order', quote, onCreated, onClose }: {
   currency: string;
   open: OrderBoardRow[];
   finished: FinishedOrderRow[];
-  onCreated: (result: OrderEditResult & { salesorder_id: string }) => void;
+  mode?: 'order' | 'quote';
+  quote?: QuoteRow;
+  onCreated: (result: (OrderEditResult & { salesorder_id: string }) | QuoteSaved) => void;
   onClose: () => void;
 }) {
   const { t } = useTranslation();
   const { showToast } = useToast();
-  const { draft, setDraft, reset } = useNewOrderDraft();
+  const [start] = useState(() => (quote ? fromQuote(quote) : undefined));
+  const { draft, setDraft, reset } = useNewOrderDraft(mode, start);
+  const isQuote = mode === 'quote';
   const status = useAitoZohoStatus();
   const defaultId = status.data?.default_contact_id ?? '';
   // No client picked means the client de passage, resolved here rather than stored.
@@ -65,20 +85,22 @@ export function NewOrderDraftRow({ currency, open, finished, onCreated, onClose 
     : null;
 
   const create = useMutation({
-    mutationFn: (customerId: string) => api.createCounterOrder({
-      customer_id: customerId,
-      client_ref: draft.clientRef,
-      lines: draft.lines.map(l => {
+    mutationFn: (customerId: string): Promise<(OrderEditResult & { salesorder_id: string }) | QuoteSaved> => {
+      // A kept quote line sends its line_id and its current discount (none sent removes it).
+      const lines = draft.lines.map(l => {
         const discount = normDiscount(l.discount);
-        return { item_id: l.item.id, quantity: l.quantity, ...(discount ? { discount } : {}) };
-      }),
-    }),
+        return { ...(l.lineId ? { line_id: l.lineId } : {}), item_id: l.item.id, quantity: l.quantity, ...(discount ? { discount } : {}) };
+      });
+      if (quote) return api.editQuote(quote.id, { customer_id: customerId, lines });
+      const body = { customer_id: customerId, client_ref: draft.clientRef, lines };
+      return isQuote ? api.createQuote(body) : api.createCounterOrder(body);
+    },
     // reset, not clearNewOrderDraft: it also mints a new client_ref, or the next order would be deduped into this one.
     onSuccess: result => {
-      reset();
+      if (!quote) reset();
       onCreated(result);
     },
-    onError: e => showToast(t('orders.newOrder.failed', { reason: errorReason(t, e) }), 'error'),
+    onError: e => showToast(t(isQuote ? 'orders.newQuote.failed' : 'orders.newOrder.failed', { reason: errorReason(t, e) }), 'error'),
   });
   const busy = create.isPending;
   const canCreate = !why && !busy;
@@ -93,6 +115,11 @@ export function NewOrderDraftRow({ currency, open, finished, onCreated, onClose 
       else if (!busy) close();
     },
   });
+  const title = quote ? t('orders.newQuote.editTitle') : isQuote ? t('orders.newQuote.title') : t('orders.newOrder.title');
+  // Quotes wear violet, orders the board's green: the two documents never look alike.
+  const tone = isQuote
+    ? { bg: 'bg-violet-600', lit: 'shadow-violet-600/20 hover:bg-violet-500' }
+    : { bg: 'bg-bambu-green', lit: 'shadow-bambu-green/20 hover:bg-bambu-green-light' };
   const pick = (c: ZohoContact) => {
     setDraft({ ...draft, client: { id: c.id, name: c.name, isDefault: c.id === defaultId } });
     setCreatingClient(false);
@@ -109,15 +136,21 @@ export function NewOrderDraftRow({ currency, open, finished, onCreated, onClose 
         ref={dialogRef}
         role="dialog"
         aria-modal="true"
-        aria-label={t('orders.newOrder.title')}
+        aria-label={title}
         tabIndex={-1}
         // Not clipped: the client field sits in the bottom bar and its list opens below the card.
         className={`flex w-full max-w-[96rem] flex-col focus:outline-none ${closing ? 'animate-modal-out' : 'animate-modal-in'}`}
         onClick={(e: React.MouseEvent) => e.stopPropagation()}
       >
         <div className="flex flex-wrap items-center gap-x-3 gap-y-1 px-5 py-3">
-          <span className="text-base font-semibold text-white">{t('orders.newOrder.title')}</span>
-          <span className="rounded bg-bambu-green/15 px-1.5 py-0.5 text-[11px] text-bambu-green">{t('orders.newOrder.draft')}</span>
+          <span className="text-base font-semibold text-white">{title}</span>
+          {isQuote ? (
+            <span className={`rounded bg-violet-500/15 px-1.5 py-0.5 text-[11px] text-violet-700 dark:text-violet-300 ${quote ? 'font-mono' : ''}`}>
+              {quote ? quote.number : t('orders.newOrder.draft')}
+            </span>
+          ) : (
+            <span className="rounded bg-bambu-green/15 px-1.5 py-0.5 text-[11px] text-bambu-green">{t('orders.newOrder.draft')}</span>
+          )}
           <button type="button" onClick={requestClose} disabled={busy} className={`ml-auto inline-flex items-center gap-1 rounded-md px-1.5 py-1 text-xs text-bambu-gray hover:text-white ${focusRingCls}`}>
             <X aria-hidden="true" className="h-3.5 w-3.5" />
             {t('orders.newOrder.abandon')}
@@ -181,7 +214,7 @@ export function NewOrderDraftRow({ currency, open, finished, onCreated, onClose 
                 </div>
               </dl>
               <div className="flex items-stretch gap-2">
-                <HoldButton
+                {!quote && <HoldButton
                   onHold={reset}
                   durationMs={500}
                   progress="perimeter"
@@ -190,18 +223,21 @@ export function NewOrderDraftRow({ currency, open, finished, onCreated, onClose 
                   className={`h-12 w-12 flex-shrink-0 justify-center border border-bambu-dark-tertiary text-bambu-gray transition-colors hover:border-red-400/40 hover:text-red-400 data-[holding=true]:border-red-400 data-[holding=true]:text-red-400 ${focusRingCls}`}
                 >
                   <RotateCcw className="relative h-4 w-4" />
-                </HoldButton>
+                </HoldButton>}
                 <button
                   type="button"
                   // Not `disabled`: the click on a blocked button is what says why.
                   aria-disabled={!canCreate}
                   onClick={submit}
-                  className={`btn-press inline-flex h-12 flex-1 items-center justify-center gap-2 rounded-lg bg-bambu-green px-6 text-sm font-semibold text-white transition-[opacity,background-color,box-shadow] duration-200 ${focusRingCls} ${canCreate ? 'shadow-lg shadow-bambu-green/20 hover:bg-bambu-green-light' : 'opacity-45'}`}
+                  className={`btn-press inline-flex h-12 flex-1 items-center justify-center gap-2 rounded-lg ${tone.bg} px-6 text-sm font-semibold text-white transition-[opacity,background-color,box-shadow] duration-200 ${focusRingCls} ${canCreate ? `shadow-lg ${tone.lit}` : 'opacity-45'}`}
                 >
-                  {busy ? <Loader2 aria-hidden="true" className="h-4 w-4 animate-spin" /> : <Plus aria-hidden="true" className="h-4 w-4" />}
-                  {busy ? t('orders.newOrder.creating') : t('orders.newOrder.create')}
+                  {busy ? <Loader2 aria-hidden="true" className="h-4 w-4 animate-spin" /> : quote ? <Check aria-hidden="true" className="h-4 w-4" /> : <Plus aria-hidden="true" className="h-4 w-4" />}
+                  {quote
+                    ? (busy ? t('orders.newQuote.saving') : t('orders.newQuote.save'))
+                    : busy ? t('orders.newOrder.creating') : t(isQuote ? 'orders.newQuote.create' : 'orders.newOrder.create')}
                 </button>
               </div>
+              {quote?.state === 'expired' && <p className="text-xs text-bambu-gray">{t('orders.newQuote.redated')}</p>}
               {tried && why && <p role="alert" className="animate-rise text-xs text-red-400">{why}</p>}
             </section>
           </aside>

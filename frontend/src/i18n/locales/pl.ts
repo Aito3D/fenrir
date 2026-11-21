@@ -12567,6 +12567,8 @@ export default {
       empty: { current: "Brak bieżących ofert.", expired: "Brak wygasłych ofert.", declined: "Brak odrzuconych ofert." },
       state: { draft: "Szkic", sent: "Wysłana", accepted: "Przyjęta", expired: "Wygasła", declined: "Odrzucona" },
       col: { item: "Produkt", stock: "Stan", qty: "Ilość", discount: "Rabat", total: "Razem brutto" },
+      edit: "Edytuj",
+      editInZoho: "Edytuj w Zoho",
     },
     mobile: {
       back: 'Wróć do zamówień',
@@ -12575,6 +12577,16 @@ export default {
       collect: 'Przyjmij płatność',
       filters: 'Filtry i sortowanie',
       showOrders: 'Pokaż zamówienia: {{n}}',
+    },
+    newQuote: {
+      button: "Nowa oferta",
+      title: "Nowa oferta",
+      editTitle: "Edytuj ofertę",
+      create: "Utwórz ofertę",
+      save: "Zapisz ofertę",
+      saving: "Zapisywanie…",
+      redated: "Ta oferta wygasła: zapisanie zmieni jej datę na dzisiejszą.",
+      failed: "Oferta nie została zapisana: {{reason}}",
     },
     newOrder: {
       button: 'Nowe zamówienie',
@@ -12946,6 +12958,12 @@ export default {
       order_invoiced: "zamówienie ma fakturę i nie można go już anulować",
       ref_reused: "pierwsza próba już utworzyła zamówienie, sprawdź tablicę, zanim zaczniesz nowe",
       unknown_picklist: 'ta lista kompletacji nie jest już w zamówieniu, sprawdź ponownie',
+      quote_converted: "oferta ma już zamówienie sprzedaży",
+      quote_not_editable: "tej oferty nie można edytować tutaj, edytuj ją w Zoho",
+      not_declined: "oferta nie jest odrzucona",
+      undo_too_late: "za późno na cofnięcie, zamówienie poszło dalej",
+      not_this_quote: "to zamówienie nie pochodzi z tej oferty",
+      not_accepted: "oferta nie jest zaakceptowana",
     },
     cancel: {
       label: "Anuluj zamówienie",

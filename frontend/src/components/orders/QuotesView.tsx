@@ -7,6 +7,7 @@ import { Skeleton } from '../Skeleton';
 import { QuoteCard } from './QuoteCard';
 import { chipOf, filterQuotes, quotesQuery } from './quotes';
 import type { QuoteChip } from './quotes';
+import type { QuoteRow } from '../../api/client';
 
 const CHIPS: QuoteChip[] = ['current', 'expired', 'declined'];
 const CHIP_LABEL: Record<QuoteChip, string> = {
@@ -23,8 +24,11 @@ const chipCls = (on: boolean) =>
   `btn-press shrink-0 rounded-full border px-3 py-1.5 text-xs ${on ? 'border-violet-500 bg-violet-500/15 text-white' : 'border-bambu-dark-tertiary bg-bambu-dark-secondary text-bambu-gray hover:text-white'}`;
 
 /** The Devis side of the Order Board: one search, three chips (current, expired, declined), the quotes.
- *  `openId` is the opened quote (the page keeps it in the URL); a quote opened from a link brings its chip up. */
-export function QuotesView({ coreOnly, openId, onToggle }: { coreOnly: boolean; openId: string | null; onToggle: (id: string) => void }) {
+ *  `openId` is the opened quote (the page keeps it in the URL); a quote opened from a link brings its chip up,
+ *  and so does one whose chip changed (an expired quote re-dated by an edit). `onEdit` opens the quote dialog. */
+export function QuotesView({ coreOnly, openId, onToggle, onEdit }: {
+  coreOnly: boolean; openId: string | null; onToggle: (id: string) => void; onEdit?: (row: QuoteRow) => void;
+}) {
   const { t } = useTranslation();
   const { data, isError, refetch } = useQuery(quotesQuery);
   const [chip, setChip] = useState<QuoteChip>('current');
@@ -33,8 +37,8 @@ export function QuotesView({ coreOnly, openId, onToggle }: { coreOnly: boolean; 
   const open = openId ? rows.find(r => r.id === openId) : undefined;
   const followed = useRef<string | null>(null);
   useEffect(() => {
-    if (!open || followed.current === open.id) return;
-    followed.current = open.id;
+    if (!open || followed.current === `${open.id}:${chipOf(open)}`) return;
+    followed.current = `${open.id}:${chipOf(open)}`;
     setChip(chipOf(open));
   }, [open]);
   const counts = Object.fromEntries(CHIPS.map(c => [c, filterQuotes(rows, { chip: c, text, coreOnly }).length])) as Record<QuoteChip, number>;
@@ -63,7 +67,7 @@ export function QuotesView({ coreOnly, openId, onToggle }: { coreOnly: boolean; 
       </div>
     );
   } else {
-    list = listed.map(r => <QuoteCard key={r.id} row={r} open={r.id === openId} onToggle={() => onToggle(r.id)} />);
+    list = listed.map(r => <QuoteCard key={r.id} row={r} open={r.id === openId} onToggle={() => onToggle(r.id)} onEdit={onEdit && (() => onEdit(r))} />);
   }
 
   return (

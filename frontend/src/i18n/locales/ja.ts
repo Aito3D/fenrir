@@ -12361,6 +12361,8 @@ export default {
       empty: { current: "進行中の見積はありません。", expired: "期限切れの見積はありません。", declined: "辞退された見積はありません。" },
       state: { draft: "下書き", sent: "送信済み", accepted: "承諾済み", expired: "期限切れ", declined: "辞退" },
       col: { item: "商品", stock: "在庫", qty: "数量", discount: "割引", total: "税込合計" },
+      edit: "編集",
+      editInZoho: "Zohoで編集",
     },
     mobile: {
       back: '注文に戻る',
@@ -12369,6 +12371,16 @@ export default {
       collect: '入金を受け取る',
       filters: '絞り込みと並べ替え',
       showOrders: '{{n}}件の注文を表示',
+    },
+    newQuote: {
+      button: "新規見積",
+      title: "新規見積",
+      editTitle: "見積を編集",
+      create: "見積を作成",
+      save: "見積を保存",
+      saving: "保存中…",
+      redated: "この見積は期限切れです。保存すると今日の日付になります。",
+      failed: "見積を保存できませんでした：{{reason}}",
     },
     newOrder: {
       button: '新規注文',
@@ -12740,6 +12752,12 @@ export default {
       order_invoiced: "請求書があるため、この注文はキャンセルできません",
       ref_reused: "最初の試行で注文はすでに作成されています。新しく始める前にボードを確認してください",
       unknown_picklist: 'このピッキングリストは注文にありません。もう一度確認してください',
+      quote_converted: "この見積にはすでに受注があります",
+      quote_not_editable: "この見積はここでは編集できません。Zohoで編集してください",
+      not_declined: "この見積は辞退されていません",
+      undo_too_late: "元に戻すには遅すぎます。注文は進んでいます",
+      not_this_quote: "その注文はこの見積から作られていません",
+      not_accepted: "この見積は承認されていません",
     },
     cancel: {
       label: "注文をキャンセル",

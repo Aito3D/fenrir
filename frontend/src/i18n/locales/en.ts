@@ -12418,6 +12418,8 @@ export default {
       empty: { current: "No current quotes.", expired: "No expired quotes.", declined: "No declined quotes." },
       state: { draft: "Draft", sent: "Sent", accepted: "Accepted", expired: "Expired", declined: "Declined" },
       col: { item: "Item", stock: "Stock", qty: "Qty", discount: "Discount", total: "Total incl. tax" },
+      edit: "Edit",
+      editInZoho: "Edit in Zoho",
     },
     mobile: {
       back: 'Back to orders',
@@ -12426,6 +12428,16 @@ export default {
       collect: 'Collect payment',
       filters: 'Filters and sort',
       showOrders: 'Show {{n}} orders',
+    },
+    newQuote: {
+      button: "New quote",
+      title: "New quote",
+      editTitle: "Edit quote",
+      create: "Create quote",
+      save: "Save quote",
+      saving: "Saving…",
+      redated: "This quote has expired: saving re-dates it to today.",
+      failed: "Quote not saved: {{reason}}",
     },
     newOrder: {
       button: 'New order',
@@ -12797,6 +12809,12 @@ export default {
       order_invoiced: "the order has an invoice, it can no longer be cancelled",
       ref_reused: "the first attempt already created an order, check the board before starting a new one",
       unknown_picklist: 'this picklist is no longer on the order, look again',
+      quote_converted: "the quote already has a sales order",
+      quote_not_editable: "this quote cannot be edited here, edit it in Zoho",
+      not_declined: "the quote is not declined",
+      undo_too_late: "too late to undo, the order has moved on",
+      not_this_quote: "that order does not come from this quote",
+      not_accepted: "the quote is not accepted",
     },
     cancel: {
       label: "Cancel order",

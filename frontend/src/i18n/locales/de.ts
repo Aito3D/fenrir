@@ -12362,6 +12362,8 @@ export default {
       empty: { current: "Keine laufenden Angebote.", expired: "Keine abgelaufenen Angebote.", declined: "Keine abgelehnten Angebote." },
       state: { draft: "Entwurf", sent: "Gesendet", accepted: "Angenommen", expired: "Abgelaufen", declined: "Abgelehnt" },
       col: { item: "Artikel", stock: "Bestand", qty: "Menge", discount: "Rabatt", total: "Gesamt inkl. MwSt." },
+      edit: "Bearbeiten",
+      editInZoho: "In Zoho bearbeiten",
     },
     mobile: {
       back: 'Zurück zu den Bestellungen',
@@ -12370,6 +12372,16 @@ export default {
       collect: 'Zahlung erfassen',
       filters: 'Filter und Sortierung',
       showOrders: '{{n}} Bestellungen anzeigen',
+    },
+    newQuote: {
+      button: "Neues Angebot",
+      title: "Neues Angebot",
+      editTitle: "Angebot bearbeiten",
+      create: "Angebot anlegen",
+      save: "Angebot speichern",
+      saving: "Wird gespeichert…",
+      redated: "Dieses Angebot ist abgelaufen: Beim Speichern wird es auf heute datiert.",
+      failed: "Angebot nicht gespeichert: {{reason}}",
     },
     newOrder: {
       button: 'Neue Bestellung',
@@ -12741,6 +12753,12 @@ export default {
       order_invoiced: "die Bestellung hat eine Rechnung und kann nicht mehr storniert werden",
       ref_reused: "der erste Versuch hat bereits eine Bestellung angelegt, prüfen Sie das Board, bevor Sie eine neue beginnen",
       unknown_picklist: 'diese Pickliste ist nicht mehr auf der Bestellung, bitte neu laden',
+      quote_converted: "das Angebot hat bereits einen Kundenauftrag",
+      quote_not_editable: "dieses Angebot kann hier nicht bearbeitet werden, bearbeite es in Zoho",
+      not_declined: "das Angebot ist nicht abgelehnt",
+      undo_too_late: "zu spät zum Rückgängigmachen, die Bestellung ist weiter",
+      not_this_quote: "diese Bestellung stammt nicht aus diesem Angebot",
+      not_accepted: "das Angebot ist nicht angenommen",
     },
     cancel: {
       label: "Bestellung stornieren",

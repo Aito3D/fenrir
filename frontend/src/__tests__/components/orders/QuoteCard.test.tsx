@@ -72,4 +72,20 @@ describe('QuoteCard', () => {
     render(<QuoteCard row={quote({ zoho_url: null })} open onToggle={vi.fn()} />);
     expect(screen.queryByRole('link', { name: 'Open in Zoho Books' })).not.toBeInTheDocument();
   });
+
+  it('an editable quote offers Edit; one this screen cannot edit links to Books instead', async () => {
+    stub();
+    const onEdit = vi.fn();
+    const { unmount } = render(<QuoteCard row={quote({ zoho_url: 'https://books.example/q/e1' })} open onToggle={vi.fn()} onEdit={onEdit} />);
+    screen.getByRole('button', { name: 'Edit' }).click();
+    expect(onEdit).toHaveBeenCalled();
+    expect(screen.queryByRole('link', { name: 'Edit in Zoho' })).not.toBeInTheDocument();
+    unmount();
+    const { unmount: u2 } = render(<QuoteCard row={quote({ editable: false, zoho_url: 'https://books.example/q/e1' })} open onToggle={vi.fn()} onEdit={onEdit} />);
+    expect(screen.queryByRole('button', { name: 'Edit' })).not.toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Edit in Zoho' })).toHaveAttribute('href', 'https://books.example/q/e1');
+    u2();
+    render(<QuoteCard row={quote({ editable: false, zoho_url: null })} open onToggle={vi.fn()} onEdit={onEdit} />);
+    expect(screen.queryByTestId('quote-actions')).not.toBeInTheDocument();
+  });
 });

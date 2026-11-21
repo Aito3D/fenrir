@@ -6,7 +6,8 @@ export const isRefused = (e: unknown): boolean => e instanceof ApiError && (e.st
 
 const REASON_CODES = ['version', 'below_floor', 'unknown_item', 'service_line', 'nothing_changed', 'package_shipped', 'package_changed',
   'picklist_open', 'unknown_line', 'bad_quantity', 'too_many', 'picklist_shared',
-  'nothing_to_pack', 'unknown_package', 'unknown_picklist', 'bad_discount', 'create_failed', 'order_invoiced', 'ref_reused'];
+  'nothing_to_pack', 'unknown_package', 'unknown_picklist', 'bad_discount', 'create_failed', 'order_invoiced', 'ref_reused',
+  'quote_converted', 'quote_not_editable', 'not_declined', 'undo_too_late', 'not_this_quote', 'not_accepted'];
 
 /** The refusal code: the server sends it as the plain-string detail, which becomes the message. */
 const reasonCode = (e: ApiError): string | null => {

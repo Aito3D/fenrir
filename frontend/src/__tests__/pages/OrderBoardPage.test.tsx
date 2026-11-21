@@ -1209,4 +1209,34 @@ describe('OrderBoardPage Devis side', () => {
     expect(window.location.search).not.toContain('quote=');
     expect(await screen.findByText('SO-00412')).toBeInTheDocument();
   });
+
+  it('on the Devis side the header button starts a quote, and the created quote comes back opened', async () => {
+    server.use(http.get('/api/v1/zoho/status', () =>
+      HttpResponse.json({ configured: true, reachable: true, default_contact_id: 'walk-in', default_contact_name: 'Client de passage' })));
+    localStorage.setItem('orders.newQuoteDraft.v1', JSON.stringify({
+      lines: [{ item: { id: 'A', name: 'Bambu Lab PLA Basic Noir', sku: 'BL-PLA-BK', rate: 3400, stock_on_hand: 9, product_type: 'goods' }, quantity: 1, discount: '' }],
+      client: null, clientRef: '11111111-1111-4111-8111-111111111111',
+    }));
+    serve(board());
+    serveQuotes(QUOTES);
+    server.use(
+      http.get('/api/v1/order-board/quotes/:id/events', () => HttpResponse.json({ events: [], has_more: false })),
+      http.post('/api/v1/order-board/quotes', () => HttpResponse.json({
+        quotes: { rows: [quote({ id: 'e9', number: 'DEV-00500', customer: 'Client de passage', state: 'draft' }), ...QUOTES], loading: 0, ready: true },
+        estimate_id: 'e9',
+      })),
+    );
+    window.history.replaceState({}, '', '/orders?view=quotes');
+    render(<OrderBoardPage />);
+    await screen.findByText('Nautic Service');
+    expect(screen.queryByRole('button', { name: 'New order' })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'New quote' }));
+    expect(await screen.findByRole('dialog', { name: 'New quote' })).toBeInTheDocument();
+    await screen.findByDisplayValue('Client de passage', undefined, { timeout: 3000 });
+    fireEvent.click(screen.getByRole('button', { name: 'Create quote' }));
+    await waitFor(() => expect(window.location.search).toContain('quote=e9'), { timeout: 3000 });
+    expect(window.location.search).toContain('view=quotes');
+    expect(screen.queryByRole('dialog', { name: 'New quote' })).not.toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: /DEV-00500/, expanded: true })).toBeInTheDocument();
+  });
 });

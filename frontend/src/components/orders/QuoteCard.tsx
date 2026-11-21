@@ -1,11 +1,12 @@
 import type { ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useQuery } from '@tanstack/react-query';
-import { ChevronDown } from 'lucide-react';
+import { ChevronDown, ExternalLink, Pencil } from 'lucide-react';
 import { api } from '../../api/client';
 import type { QuoteLine, QuoteRow } from '../../api/client';
 import { useAuth } from '../../contexts/AuthContext';
 import { formatMoney } from '../../utils/pricing';
+import { Button } from '../Button';
 import { Card } from '../Card';
 import { Skeleton } from '../Skeleton';
 import { DocumentRow } from '../aito/DocumentRow';
@@ -83,10 +84,24 @@ function QuoteSide({ row }: { row: QuoteRow }) {
 }
 
 /** One quote, in the quotes' violet: the collapsed row is the button that opens its lines.
- *  `children` is the action footer; nothing renders without one. */
-export function QuoteCard({ row, open, onToggle, children }: { row: QuoteRow; open: boolean; onToggle: () => void; children?: ReactNode }) {
+ *  `children` and, given `onEdit`, Edit (or "Edit in Zoho" for a quote this screen cannot edit) form the action footer;
+ *  nothing renders without one. */
+export function QuoteCard({ row, open, onToggle, onEdit, children }: {
+  row: QuoteRow; open: boolean; onToggle: () => void; onEdit?: () => void; children?: ReactNode;
+}) {
   const { t } = useTranslation();
   const money = (n: number) => formatMoney(n, row.currency);
+  const edit = !onEdit ? null : row.editable ? (
+    <Button variant="secondary" size="sm" onClick={onEdit}>
+      <Pencil aria-hidden="true" className="h-4 w-4" />
+      {t('orders.quotes.edit')}
+    </Button>
+  ) : row.zoho_url ? (
+    <a href={row.zoho_url} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1.5 rounded-lg px-2 py-1.5 text-sm text-violet-700 hover:underline dark:text-violet-300">
+      {t('orders.quotes.editInZoho')}
+      <ExternalLink aria-hidden="true" className="h-3.5 w-3.5" />
+    </a>
+  ) : null;
   return (
     <Card id={`quote-${row.id}`} className="overflow-clip border-l-4 border-l-violet-500">
       <div className="bg-violet-50/60 dark:bg-violet-500/[0.05]">
@@ -151,8 +166,9 @@ export function QuoteCard({ row, open, onToggle, children }: { row: QuoteRow; op
               </div>
               <QuoteSide row={row} />
             </div>
-            {children && (
+            {(edit || children) && (
               <div data-testid="quote-actions" className="flex flex-wrap items-center gap-2 border-t border-violet-500/20 px-4 py-3">
+                {edit}
                 {children}
               </div>
             )}

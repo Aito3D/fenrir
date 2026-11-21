@@ -12347,6 +12347,8 @@ export default {
       empty: { current: "Aucun devis en cours.", expired: "Aucun devis expiré.", declined: "Aucun devis refusé." },
       state: { draft: "Brouillon", sent: "Envoyé", accepted: "Accepté", expired: "Expiré", declined: "Refusé" },
       col: { item: "Article", stock: "Stock", qty: "Qté", discount: "Remise", total: "Total TTC" },
+      edit: "Modifier",
+      editInZoho: "Modifier dans Zoho",
     },
     mobile: {
       back: 'Retour aux commandes',
@@ -12355,6 +12357,16 @@ export default {
       collect: 'Encaisser',
       filters: 'Filtres et tri',
       showOrders: 'Voir {{n}} commandes',
+    },
+    newQuote: {
+      button: "Nouveau devis",
+      title: "Nouveau devis",
+      editTitle: "Modifier le devis",
+      create: "Créer le devis",
+      save: "Enregistrer le devis",
+      saving: "Enregistrement…",
+      redated: "Ce devis a expiré : l'enregistrer le redate à aujourd'hui.",
+      failed: "Devis non enregistré : {{reason}}",
     },
     newOrder: {
       button: 'Nouvelle commande',
@@ -12726,6 +12738,12 @@ export default {
       order_invoiced: "la commande a une facture, elle ne peut plus être annulée",
       ref_reused: "la première tentative a déjà créé une commande, vérifiez le tableau avant d'en commencer une nouvelle",
       unknown_picklist: 'ce prélèvement n’est plus sur la commande, regardez à nouveau',
+      quote_converted: "le devis a déjà un bon de commande",
+      quote_not_editable: "ce devis ne peut pas être modifié ici, modifiez-le dans Zoho",
+      not_declined: "le devis n'est pas refusé",
+      undo_too_late: "trop tard pour annuler, la commande a avancé",
+      not_this_quote: "cette commande ne vient pas de ce devis",
+      not_accepted: "le devis n'est pas accepté",
     },
     cancel: {
       label: "Annuler la commande",

@@ -6,13 +6,14 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { AlertTriangle, Box, Loader2, PackageCheck, Plug, Plus, PowerOff, Printer, RefreshCw, Search, SearchX, SlidersHorizontal } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { api } from '../api/client';
-import type { OrderBoardResponse, OrderBoardRow, OrderEditResult } from '../api/client';
+import type { OrderBoardResponse, OrderBoardRow, OrderEditResult, QuoteRow } from '../api/client';
 import { Button } from '../components/Button';
 import { Skeleton } from '../components/Skeleton';
 import { Sheet } from '../components/mobile/Sheet';
 import { usePrintBlob } from '../components/aito/usePrintBlob';
 import { FinishedOrderCard } from '../components/orders/FinishedOrderCard';
 import { NewOrderDraftRow } from '../components/orders/NewOrderDraftRow';
+import type { QuoteSaved } from '../components/orders/NewOrderDraftRow';
 import { OrderCard } from '../components/orders/OrderCard';
 import { OrderMobileFilters } from '../components/orders/OrderMobileFilters';
 import { OrderStatsStrip } from '../components/orders/OrderStatsStrip';
@@ -118,8 +119,9 @@ export function OrderBoardPage() {
   const [statsOpen, setStatsOpen] = useState(readStatsOpen);
   const [shown, setShown] = useState(PAGE);
   const [start, setStart] = useState<{ id: string; target: string; tick: number } | null>(null);
-  // A counter order being drafted, in a modal over the board until it is created or closed.
-  const [drafting, setDrafting] = useState(false);
+  // A counter order or a quote being drafted (or a quote being edited), in a modal over the board until saved or closed.
+  const [drafting, setDrafting] = useState<{ mode: 'order' | 'quote'; quote?: QuoteRow } | null>(null);
+  const newMode = quotesView ? 'quote' : 'order';
   const scrollTarget = useRef<{ id: string; block: ScrollLogicalPosition } | null>(null);
   // One order is open at a time and the URL says which (`?order=`): a copied address or Back lands on it.
   const [searchParams, setSearchParams] = useSearchParams();
@@ -283,11 +285,20 @@ export function OrderBoardPage() {
   const firstCounts = useRef<typeof tileCounts | null>(null);
   if (ready && !firstCounts.current && !searchText.trim()) firstCounts.current = tileCounts;
   const hidden = all.length - branded.length;
-  // The new order comes back open, with nothing filtering it out.
-  const onCreated = (result: OrderEditResult & { salesorder_id: string }) => {
+  // The new order comes back open, with nothing filtering it out. A created or edited quote comes back opened.
+  const onCreated = (result: (OrderEditResult & { salesorder_id: string }) | QuoteSaved) => {
+    setDrafting(null);
+    if ('estimate_id' in result) {
+      queryClient.setQueryData(quotesQuery.queryKey, result.quotes);
+      setSearchParams(prev => {
+        const next = new URLSearchParams(prev);
+        next.set('quote', result.estimate_id);
+        return next;
+      });
+      return;
+    }
     const id = result.salesorder_id;
     queryClient.setQueryData(BOARD_KEY, result.board);
-    setDrafting(false);
     if (coreOnly && result.board.rows.find(r => r.id === id)?.is_core === false) setCoreOnly(false);
     setOrder(id, true);
     scrollTarget.current = { id, block: 'start' };
@@ -459,9 +470,13 @@ export function OrderBoardPage() {
             </span>
           )}
           {hasPermission('orders:update') && !drafting && (
-            <Button size="sm" onClick={() => setDrafting(true)}>
+            <Button
+              size="sm"
+              onClick={() => setDrafting({ mode: newMode })}
+              className={quotesView ? '!bg-violet-600 hover:!bg-violet-500 focus:!ring-violet-500' : ''}
+            >
               <Plus aria-hidden="true" className="h-4 w-4" />
-              {t('orders.newOrder.button')}
+              {t(quotesView ? 'orders.newQuote.button' : 'orders.newOrder.button')}
             </Button>
           )}
           {hasPermission('orders:update') && (
@@ -485,15 +500,24 @@ export function OrderBoardPage() {
 
       {drafting && (
         <NewOrderDraftRow
-          currency={all[0]?.currency ?? finishedQuery.data?.rows[0]?.currency ?? ''}
+          currency={drafting.quote?.currency ?? all[0]?.currency ?? finishedQuery.data?.rows[0]?.currency ?? ''}
           open={all}
           finished={finishedQuery.data?.rows ?? []}
+          mode={drafting.mode}
+          quote={drafting.quote}
           onCreated={onCreated}
-          onClose={() => setDrafting(false)}
+          onClose={() => setDrafting(null)}
         />
       )}
       {phone && <div className="mb-3">{viewSwitch}</div>}
-      {quotesView && <QuotesView coreOnly={coreOnly} openId={quoteId} onToggle={toggleQuote} />}
+      {quotesView && (
+        <QuotesView
+          coreOnly={coreOnly}
+          openId={quoteId}
+          onToggle={toggleQuote}
+          onEdit={hasPermission('orders:update') ? quote => setDrafting({ mode: 'quote', quote }) : undefined}
+        />
+      )}
       {phone && !quotesView && (
         <>
           <div className="-mx-4 mb-3 flex gap-2 overflow-x-auto px-4 pb-1">
@@ -632,9 +656,9 @@ export function OrderBoardPage() {
       {phone && hasPermission('orders:update') && !drafting && (
         <button
           type="button"
-          aria-label={t('orders.newOrder.button')}
-          onClick={() => setDrafting(true)}
-          className="btn-press fixed bottom-[calc(1.5rem+env(safe-area-inset-bottom))] right-4 z-30 flex h-14 w-14 items-center justify-center rounded-full bg-bambu-green text-white shadow-lg"
+          aria-label={t(quotesView ? 'orders.newQuote.button' : 'orders.newOrder.button')}
+          onClick={() => setDrafting({ mode: newMode })}
+          className={`btn-press fixed bottom-[calc(1.5rem+env(safe-area-inset-bottom))] right-4 z-30 flex h-14 w-14 items-center justify-center rounded-full text-white shadow-lg ${quotesView ? 'bg-violet-600' : 'bg-bambu-green'}`}
         >
           <Plus aria-hidden="true" className="h-6 w-6" />
         </button>

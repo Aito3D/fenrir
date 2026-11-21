@@ -12347,6 +12347,8 @@ export default {
       empty: { current: "Nenhum orçamento em andamento.", expired: "Nenhum orçamento expirado.", declined: "Nenhum orçamento recusado." },
       state: { draft: "Rascunho", sent: "Enviado", accepted: "Aceito", expired: "Expirado", declined: "Recusado" },
       col: { item: "Produto", stock: "Estoque", qty: "Qtd.", discount: "Desconto", total: "Total c/ impostos" },
+      edit: "Editar",
+      editInZoho: "Editar no Zoho",
     },
     mobile: {
       back: 'Voltar aos pedidos',
@@ -12355,6 +12357,16 @@ export default {
       collect: 'Receber pagamento',
       filters: 'Filtros e ordenação',
       showOrders: 'Ver {{n}} pedidos',
+    },
+    newQuote: {
+      button: "Novo orçamento",
+      title: "Novo orçamento",
+      editTitle: "Editar orçamento",
+      create: "Criar orçamento",
+      save: "Salvar orçamento",
+      saving: "Salvando…",
+      redated: "Este orçamento expirou: ao salvar, ele recebe a data de hoje.",
+      failed: "Orçamento não salvo: {{reason}}",
     },
     newOrder: {
       button: 'Novo pedido',
@@ -12726,6 +12738,12 @@ export default {
       order_invoiced: "o pedido tem uma fatura e não pode mais ser cancelado",
       ref_reused: "a primeira tentativa já criou um pedido, confira o quadro antes de começar um novo",
       unknown_picklist: 'esta lista de separação não está mais no pedido, olhe de novo',
+      quote_converted: "o orçamento já tem um pedido de venda",
+      quote_not_editable: "este orçamento não pode ser editado aqui, edite-o no Zoho",
+      not_declined: "o orçamento não está recusado",
+      undo_too_late: "tarde demais para desfazer, o pedido avançou",
+      not_this_quote: "esse pedido não vem deste orçamento",
+      not_accepted: "o orçamento não está aceito",
     },
     cancel: {
       label: "Cancelar pedido",

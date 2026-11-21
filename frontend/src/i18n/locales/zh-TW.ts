@@ -12345,6 +12345,8 @@ export default {
       empty: { current: "沒有進行中的報價。", expired: "沒有已過期的報價。", declined: "沒有已拒絕的報價。" },
       state: { draft: "草稿", sent: "已傳送", accepted: "已接受", expired: "已過期", declined: "已拒絕" },
       col: { item: "商品", stock: "庫存", qty: "數量", discount: "折扣", total: "含稅合計" },
+      edit: "編輯",
+      editInZoho: "在 Zoho 中編輯",
     },
     mobile: {
       back: '返回訂單',
@@ -12353,6 +12355,16 @@ export default {
       collect: '收款',
       filters: '篩選與排序',
       showOrders: '查看 {{n}} 筆訂單',
+    },
+    newQuote: {
+      button: "新報價",
+      title: "新報價",
+      editTitle: "編輯報價",
+      create: "建立報價",
+      save: "儲存報價",
+      saving: "正在儲存…",
+      redated: "此報價已過期：儲存後日期將改為今天。",
+      failed: "報價未儲存：{{reason}}",
     },
     newOrder: {
       button: '新訂單',
@@ -12724,6 +12736,12 @@ export default {
       order_invoiced: "訂單已有發票，無法再取消",
       ref_reused: "第一次嘗試已建立訂單，請先查看看板再開始新訂單",
       unknown_picklist: '此揀貨單已不在訂單中，請重新查看',
+      quote_converted: "此報價已有銷售訂單",
+      quote_not_editable: "此報價無法在這裡編輯，請在 Zoho 中編輯",
+      not_declined: "此報價未被拒絕",
+      undo_too_late: "復原已太遲，訂單已繼續處理",
+      not_this_quote: "該訂單並非來自此報價",
+      not_accepted: "此報價未被接受",
     },
     cancel: {
       label: "取消訂單",

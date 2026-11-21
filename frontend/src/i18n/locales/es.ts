@@ -12370,6 +12370,8 @@ export default {
       empty: { current: "No hay presupuestos en curso.", expired: "No hay presupuestos caducados.", declined: "No hay presupuestos rechazados." },
       state: { draft: "Borrador", sent: "Enviado", accepted: "Aceptado", expired: "Caducado", declined: "Rechazado" },
       col: { item: "Artículo", stock: "Existencias", qty: "Cant.", discount: "Descuento", total: "Total IVA incl." },
+      edit: "Editar",
+      editInZoho: "Editar en Zoho",
     },
     mobile: {
       back: 'Volver a los pedidos',
@@ -12378,6 +12380,16 @@ export default {
       collect: 'Cobrar',
       filters: 'Filtros y orden',
       showOrders: 'Ver {{n}} pedidos',
+    },
+    newQuote: {
+      button: "Nuevo presupuesto",
+      title: "Nuevo presupuesto",
+      editTitle: "Editar presupuesto",
+      create: "Crear presupuesto",
+      save: "Guardar presupuesto",
+      saving: "Guardando…",
+      redated: "Este presupuesto ha caducado: al guardarlo se fecha a hoy.",
+      failed: "Presupuesto no guardado: {{reason}}",
     },
     newOrder: {
       button: 'Nuevo pedido',
@@ -12749,6 +12761,12 @@ export default {
       order_invoiced: "el pedido tiene una factura y ya no se puede cancelar",
       ref_reused: "el primer intento ya creó un pedido, revise el tablero antes de empezar uno nuevo",
       unknown_picklist: 'esta lista de picking ya no está en el pedido, vuelve a mirar',
+      quote_converted: "el presupuesto ya tiene un pedido de venta",
+      quote_not_editable: "este presupuesto no se puede editar aquí, edítalo en Zoho",
+      not_declined: "el presupuesto no está rechazado",
+      undo_too_late: "demasiado tarde para deshacer, el pedido ha avanzado",
+      not_this_quote: "ese pedido no viene de este presupuesto",
+      not_accepted: "el presupuesto no está aceptado",
     },
     cancel: {
       label: "Cancelar pedido",

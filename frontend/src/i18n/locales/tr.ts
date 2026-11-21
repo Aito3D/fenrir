@@ -12289,6 +12289,8 @@ export default {
       empty: { current: "Süren teklif yok.", expired: "Süresi dolan teklif yok.", declined: "Reddedilen teklif yok." },
       state: { draft: "Taslak", sent: "Gönderildi", accepted: "Kabul edildi", expired: "Süresi doldu", declined: "Reddedildi" },
       col: { item: "Ürün", stock: "Stok", qty: "Adet", discount: "İndirim", total: "KDV dahil toplam" },
+      edit: "Düzenle",
+      editInZoho: "Zoho'da düzenle",
     },
     mobile: {
       back: 'Siparişlere dön',
@@ -12297,6 +12299,16 @@ export default {
       collect: 'Ödeme al',
       filters: 'Filtreler ve sıralama',
       showOrders: '{{n}} siparişi göster',
+    },
+    newQuote: {
+      button: "Yeni teklif",
+      title: "Yeni teklif",
+      editTitle: "Teklifi düzenle",
+      create: "Teklif oluştur",
+      save: "Teklifi kaydet",
+      saving: "Kaydediliyor…",
+      redated: "Bu teklifin süresi doldu: kaydetmek tarihini bugüne çeker.",
+      failed: "Teklif kaydedilmedi: {{reason}}",
     },
     newOrder: {
       button: 'Yeni sipariş',
@@ -12668,6 +12680,12 @@ export default {
       order_invoiced: "siparişin faturası var, artık iptal edilemez",
       ref_reused: "ilk deneme zaten bir sipariş oluşturdu, yenisine başlamadan önce panoyu kontrol edin",
       unknown_picklist: 'bu toplama listesi artık siparişte değil, yeniden bakın',
+      quote_converted: "teklifin zaten bir satış siparişi var",
+      quote_not_editable: "bu teklif burada düzenlenemez, Zoho'da düzenleyin",
+      not_declined: "teklif reddedilmiş değil",
+      undo_too_late: "geri almak için çok geç, sipariş ilerledi",
+      not_this_quote: "o sipariş bu tekliften gelmiyor",
+      not_accepted: "teklif kabul edilmiş değil",
     },
     cancel: {
       label: "Siparişi iptal et",

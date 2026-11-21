@@ -12345,6 +12345,8 @@ export default {
       empty: { current: "没有进行中的报价。", expired: "没有已过期的报价。", declined: "没有已拒绝的报价。" },
       state: { draft: "草稿", sent: "已发送", accepted: "已接受", expired: "已过期", declined: "已拒绝" },
       col: { item: "商品", stock: "库存", qty: "数量", discount: "折扣", total: "含税合计" },
+      edit: "编辑",
+      editInZoho: "在 Zoho 中编辑",
     },
     mobile: {
       back: '返回订单',
@@ -12353,6 +12355,16 @@ export default {
       collect: '收款',
       filters: '筛选和排序',
       showOrders: '查看 {{n}} 个订单',
+    },
+    newQuote: {
+      button: "新报价",
+      title: "新报价",
+      editTitle: "编辑报价",
+      create: "创建报价",
+      save: "保存报价",
+      saving: "正在保存…",
+      redated: "此报价已过期：保存后日期将改为今天。",
+      failed: "报价未保存：{{reason}}",
     },
     newOrder: {
       button: '新订单',
@@ -12724,6 +12736,12 @@ export default {
       order_invoiced: "订单已有发票，无法再取消",
       ref_reused: "第一次尝试已创建订单，请先查看看板再开始新订单",
       unknown_picklist: '此拣货单已不在订单中，请重新查看',
+      quote_converted: "该报价已有销售订单",
+      quote_not_editable: "此报价无法在这里编辑，请在 Zoho 中编辑",
+      not_declined: "该报价未被拒绝",
+      undo_too_late: "撤销已太迟，订单已继续处理",
+      not_this_quote: "该订单并非来自此报价",
+      not_accepted: "该报价未被接受",
     },
     cancel: {
       label: "取消订单",

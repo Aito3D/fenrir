@@ -11944,6 +11944,8 @@ export default {
       empty: { current: "진행 중인 견적이 없습니다.", expired: "만료된 견적이 없습니다.", declined: "거절된 견적이 없습니다." },
       state: { draft: "임시", sent: "발송됨", accepted: "수락됨", expired: "만료됨", declined: "거절됨" },
       col: { item: "품목", stock: "재고", qty: "수량", discount: "할인", total: "세금 포함 합계" },
+      edit: "수정",
+      editInZoho: "Zoho에서 수정",
     },
     mobile: {
       back: '주문으로 돌아가기',
@@ -11952,6 +11954,16 @@ export default {
       collect: '결제 받기',
       filters: '필터 및 정렬',
       showOrders: '주문 {{n}}건 보기',
+    },
+    newQuote: {
+      button: "새 견적",
+      title: "새 견적",
+      editTitle: "견적 수정",
+      create: "견적 생성",
+      save: "견적 저장",
+      saving: "저장 중…",
+      redated: "만료된 견적입니다. 저장하면 오늘 날짜로 변경됩니다.",
+      failed: "견적이 저장되지 않음: {{reason}}",
     },
     newOrder: {
       button: '새 주문',
@@ -12323,6 +12335,12 @@ export default {
       order_invoiced: "청구서가 있어 이 주문은 더 이상 취소할 수 없습니다",
       ref_reused: "첫 번째 시도에서 이미 주문이 생성되었습니다. 새로 시작하기 전에 보드를 확인하세요",
       unknown_picklist: '이 피킹 리스트는 더 이상 주문에 없습니다. 다시 확인하세요',
+      quote_converted: "이 견적에는 이미 판매 주문이 있습니다",
+      quote_not_editable: "이 견적은 여기서 수정할 수 없습니다. Zoho에서 수정하세요",
+      not_declined: "견적이 거절 상태가 아닙니다",
+      undo_too_late: "되돌리기에는 너무 늦었습니다. 주문이 진행되었습니다",
+      not_this_quote: "그 주문은 이 견적에서 나온 것이 아닙니다",
+      not_accepted: "견적이 수락 상태가 아닙니다",
     },
     cancel: {
       label: "주문 취소",
