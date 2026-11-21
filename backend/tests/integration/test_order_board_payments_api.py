@@ -1118,3 +1118,78 @@ async def test_manual_amount_above_balance_is_422_and_records_nothing(
     assert "5000" in r.json()["detail"]["message"]
     assert books_payments.payments == []
     assert await _events(db_session, "payment.received") == []
+
+
+# --- manual payment and terminal start share one lock per order ----------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_terminal_refused_while_a_manual_payment_is_in_flight(
+    async_client,
+    tokens,  # noqa: F811
+    order,
+    live_invoice,
+    books_payments,
+    terminal,
+    monkeypatch,
+):
+    import asyncio
+
+    await order({"invoices": [INVOICE_NEW]})
+    inside, release = asyncio.Event(), asyncio.Event()
+    real_pay = zoho_service.record_customer_payment
+
+    async def slow_pay(db, **kw):
+        inside.set()
+        await release.wait()
+        return await real_pay(db, **kw)
+
+    monkeypatch.setattr(zoho_service, "record_customer_payment", slow_pay)
+    manual = asyncio.create_task(
+        async_client.post(f"{BASE}/manual-payment", json={"amount": 7000, "mode": "cash"}, headers=tokens["both"])
+    )
+    await inside.wait()
+    r = await async_client.post(f"{BASE}/terminal-payment", json={"amount": 7000}, headers=tokens["both"])
+    assert r.status_code == 409 and r.json()["detail"]["code"] == "terminal_in_progress"
+    assert terminal.calls == []
+    release.set()
+    assert (await manual).status_code == 200
+    assert routes._payment_locks == {}  # no lock left behind
+
+
+@pytest.mark.asyncio
+async def test_manual_payment_waits_for_a_terminal_start_then_is_refused(
+    async_client,
+    tokens,  # noqa: F811
+    order,
+    live_invoice,
+    books_payments,
+    terminal,
+    monkeypatch,
+):
+    import asyncio
+
+    await order({"invoices": [INVOICE_NEW]})
+    inside, release = asyncio.Event(), asyncio.Event()
+    real_start = routes.start_order_terminal_payment
+
+    async def slow_start(*a, **kw):
+        inside.set()
+        await release.wait()
+        return await real_start(*a, **kw)
+
+    monkeypatch.setattr(routes, "start_order_terminal_payment", slow_start)
+    start = asyncio.create_task(
+        async_client.post(f"{BASE}/terminal-payment", json={"amount": 7000}, headers=tokens["both"])
+    )
+    await inside.wait()
+    manual = asyncio.create_task(
+        async_client.post(f"{BASE}/manual-payment", json={"amount": 7000, "mode": "cash"}, headers=tokens["both"])
+    )
+    await asyncio.sleep(0)  # let the manual request reach the lock; it has to queue behind the start
+    release.set()
+    assert (await start).status_code == 201
+    r = await manual
+    assert r.status_code == 409 and r.json()["detail"]["code"] == "terminal_in_progress"
+    assert books_payments.payments == []
+    assert routes._payment_locks == {}
