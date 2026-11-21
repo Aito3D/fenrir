@@ -763,7 +763,7 @@ async def test_cohorts_leave_out_sales_without_a_customer_and_the_walk_in_accoun
 
 
 @pytest.mark.asyncio
-async def test_funnel_shape_and_etag_follow_the_board(async_client, revenue_db, tokens, db_session):
+async def test_funnel_shape_and_etag_follow_the_board(async_client, revenue_db, tokens):
     from datetime import timedelta
 
     from backend.app.models.aito_project import AitoProject
@@ -772,12 +772,10 @@ async def test_funnel_shape_and_etag_follow_the_board(async_client, revenue_db, 
     first = await async_client.get(url, headers=tokens["read"])
     assert first.json()["sent"] == {"count": 0, "total": 0}
     sent = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(days=3)
-    db_session.add(
-        AitoProject(
-            description="Logo", board_column="print", quote_status="accepted", quote_total=12000, quote_sent_at=sent
-        )
-    )
-    await db_session.commit()
+    async with async_sessionmaker(revenue_db, expire_on_commit=False)() as db:
+        card = {"description": "Logo", "board_column": "print", "quote_status": "accepted", "quote_total": 12000}
+        db.add(AitoProject(**card, quote_sent_at=sent))
+        await db.commit()
     again = await async_client.get(url, headers={**tokens["read"], "If-None-Match": first.headers["etag"]})
     assert again.status_code == 200
     assert again.json()["accepted"] == {"count": 1, "total": 12000}
