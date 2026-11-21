@@ -3,13 +3,16 @@
 from datetime import date
 
 import pytest
+from sqlalchemy import select
 
+from backend.app.models.order_board_doc import OrderBoardDoc
 from backend.app.services import order_board_actions as actions, order_board_sync as sync
 from backend.app.services.order_board_sync import _common as sync_common
 from backend.app.services.zoho import ZohoRateLimited, ZohoUpstreamError, zoho_service
 from backend.tests.unit.test_order_board_actions import events_of
 from backend.tests.unit.test_order_board_quote_actions import _stored, books, no_ref_left_over  # noqa: F401
 from backend.tests.unit.test_order_board_quote_sync import quote
+from backend.tests.unit.test_order_board_routes import tokens  # noqa: F401
 from backend.tests.unit.test_order_board_sync import (  # noqa: F401
     no_back_off_left_over,
     order,
@@ -215,8 +218,7 @@ async def _accepted_on_board(db, books) -> None:
     await sync.run_pass(db)
     await sync.run_pass(db)
     await actions.accept_quote(db, "e1", by=None)
-    await sync.run_pass(db)
-    assert await sync.find_board_row(db, "so9") is not None
+    assert await sync.find_board_row(db, "so9") is not None  # at once: no pass in between
 
 
 @pytest.mark.asyncio
@@ -274,3 +276,43 @@ async def test_undo_of_an_unstored_order_is_404(db_session, so_books):
     with pytest.raises(actions.OrderNotOnBoard):
         await actions.undo_accept(db_session, "e1", "so404", by=None)
     assert so_books.deleted == []
+
+
+@pytest.mark.asyncio
+async def test_a_failing_reused_draft_is_never_deleted(db_session, so_books):
+    draft = {"salesorder_id": "so7", "salesorder_order_status": "draft"}
+    await _stored(db_session, so_books, {**quote(1, status="accepted"), "salesorders": [draft]})
+    so_books.open_error = ZohoUpstreamError("refused")
+    with pytest.raises(actions.OrderActionRefused, match="create_failed"):
+        await actions.create_order_from_quote(db_session, "e1", by=None)
+    assert (so_books.so_payloads, so_books.deleted) == ([], [])  # reused, not created here: left in Books
+
+
+@pytest.mark.asyncio
+async def test_accept_route_returns_the_new_row(async_client, db_session, so_books, tokens):  # noqa: F811
+    await _stored(db_session, so_books, quote(1, status="sent"))
+    await sync.run_pass(db_session)
+    await sync.run_pass(db_session)
+    r = await async_client.post("/api/v1/order-board/quotes/e1/accept", headers=tokens["both"])
+    assert r.status_code == 200
+    body = r.json()
+    assert (body["salesorder_id"], body["row"]["id"]) == ("so9", "so9")
+    assert any(row["id"] == "so9" for row in body["board"]["rows"])
+
+
+@pytest.mark.asyncio
+async def test_a_pass_after_accept_keeps_one_doc_and_its_row(db_session, so_books):
+    await _accepted_on_board(db_session, so_books)
+    before = await sync.find_board_row(db_session, "so9")
+    await sync.run_pass(db_session)
+    docs = (
+        await db_session.execute(
+            select(OrderBoardDoc).where(OrderBoardDoc.kind == "salesorder", OrderBoardDoc.zoho_id == "so9")
+        )
+    ).scalars()
+    assert len(list(docs)) == 1
+    row = await sync.find_board_row(db_session, "so9")
+    # The fake's items carry no stock: "to_order" either way; the listed header changed nothing in the row.
+    assert (row["number"], row["status"]) == ("SO-00009", before["status"])
+    assert [(line["id"], line["remaining"]) for line in row["lines"]] == [("l9", 1.0)]
+    assert (await sync.find_stored(db_session, "so9")).header["status"] == "open"

@@ -475,3 +475,29 @@ async def test_a_429_void_is_not_counted_as_an_attempt(db_session, books, monkey
     assert sync_common._pending_voids == {"9": "SO-00009"}
     assert sync_common._void_attempts == {}
     assert await _void_failed_events(db_session) == []
+
+
+@pytest.mark.asyncio
+async def test_a_new_order_is_on_the_board_at_once_and_a_pass_keeps_one_copy(db_session, books):
+    await sync.run_pass(db_session)
+    await sync.run_pass(db_session)  # the board is computed
+    assert await actions.create_counter_order(db_session, "c1", [{"item_id": "A", "quantity": 1}], "r", by=None) == "9"
+    row = await sync.find_board_row(db_session, "9")  # no pass in between
+    assert (row["number"], row["units"]["shipped"], row["packed"]) == ("SO-00009", 0, 0)
+    header = (await sync.find_stored(db_session, "9")).header
+    assert (header["status"], header["quantity"], header["quantity_shipped"]) == ("open", 1, 0)
+    await sync.run_pass(db_session)
+    assert [d.zoho_id for d in await _docs(db_session)] == ["9"]
+    after = await sync.find_board_row(db_session, "9")
+    assert [(line["id"], line["remaining"]) for line in after["lines"]] == [("l9", 1.0)]
+
+
+@pytest.mark.asyncio
+async def test_a_failed_reread_leaves_the_create_header(db_session, books):
+    await sync.run_pass(db_session)
+    await sync.run_pass(db_session)
+    books.fail_detail_once = True
+    await actions.create_counter_order(db_session, "c1", [{"item_id": "A", "quantity": 1}], "r", by=None)
+    doc = await sync.find_stored(db_session, "9")
+    assert (doc.header["status"], doc.pending) == ("draft", True)
+    assert await sync.find_board_row(db_session, "9") is None  # the next pass puts it on

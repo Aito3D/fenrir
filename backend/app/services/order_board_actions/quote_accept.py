@@ -55,6 +55,7 @@ async def create_order_from_quote(db: AsyncSession, estimate_id: str, *, by: str
 async def _order_step(db: AsyncSession, estimate_id: str, detail: dict, by: str | None) -> str:
     """Create (or reuse the linked draft), confirm and store the quote's order; returns its ``salesorder_id``."""
     salesorder_id = draft_order_id(detail)
+    made_here = salesorder_id is None  # only a draft this call created may be deleted
     created = {"salesorder_id": salesorder_id}
     if salesorder_id is None:
         with sync._busy_on_rate_limit(estimate_id):
@@ -86,14 +87,15 @@ async def _order_step(db: AsyncSession, estimate_id: str, detail: dict, by: str 
         raise sync.ZohoBusy(estimate_id) from e
     except Exception as e:
         logger.warning("Order board: confirming the new order %s failed (%s)", salesorder_id, type(e).__name__)
-        try:  # deleting (not voiding) releases the quote; if it fails, the retry reuses the draft
-            await zoho_service.delete_salesorder(db, salesorder_id)
-        except Exception as delete_error:
-            logger.error(
-                "Order board: deleting %s failed (%s), a draft order is left in Books",
-                salesorder_id,
-                type(delete_error).__name__,
-            )
+        if made_here:
+            try:  # deleting (not voiding) releases the quote; if it fails, the retry reuses the draft
+                await zoho_service.delete_salesorder(db, salesorder_id)
+            except Exception as delete_error:
+                logger.error(
+                    "Order board: deleting %s failed (%s), a draft order is left in Books",
+                    salesorder_id,
+                    type(delete_error).__name__,
+                )
         raise OrderActionRefused("create_failed") from e
     finally:
         sync.note_write(salesorder_id)

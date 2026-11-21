@@ -1,6 +1,7 @@
 """Create a counter (walk-in) sales order in Books and put it on the board at once."""
 
 import asyncio
+import contextlib
 import logging
 import math
 import re
@@ -14,12 +15,26 @@ from backend.app.models.order_board_doc import OrderBoardDoc
 from backend.app.services import order_board_sync as sync
 from backend.app.services.order_board_actions._common import OrderActionRefused, _best_effort_refresh, _log, _num
 from backend.app.services.order_board_sync import _common as sync_common
+from backend.app.services.order_board_sync._recompute import recompute
 from backend.app.services.zoho import ZohoRateLimited, zoho_service
 
 logger = logging.getLogger(__name__)
 
 _DISCOUNT = re.compile(r"(\d+(?:\.\d+)?)(%?)")
 _KEEP_REFS = 200
+_HEADER_FROM_DETAIL = (
+    "status",
+    "date",
+    "last_modified_time",
+    "salesorder_number",
+    "customer_id",
+    "customer_name",
+    "reference_number",
+    "total",
+    "paid_status",
+    "invoiced_status",
+)
+_SUMMED = ("quantity", "quantity_packed", "quantity_shipped", "quantity_invoiced")
 # shortcut: in-memory dedupe, lost on restart; upgrade to a stored marker if restarts mid-sale matter
 # shortcut: a create that times out after Books saved it is not remembered, so a retry makes a second order the
 # operator voids; upgrade by searching Books for the ref before creating if that happens in practice
@@ -198,4 +213,25 @@ async def store_new_order(db: AsyncSession, created: dict) -> None:
         doc.pending = True
         await db.commit()
     number = created.get("salesorder_number") or salesorder_id
-    await _best_effort_refresh(db, salesorder_id, number)  # a failure leaves it pending for the next pass
+    if not await _best_effort_refresh(db, salesorder_id, number):  # left pending for the next pass
+        return
+    # The create response is no list row (a draft, no quantities): give it one from the fresh detail, so the order is
+    # a board candidate now rather than after the next pass, whose listed header then replaces this one.
+    try:
+        doc = await sync.find_stored(db, salesorder_id)
+        detail = doc.detail or {}
+        lines = detail.get("line_items") or []
+        doc.header = {
+            **(doc.header or {}),
+            **{k: detail.get(k) for k in _HEADER_FROM_DETAIL},
+            **{k: sum(_num(line.get(k)) for line in lines) for k in _SUMMED},
+        }
+        changed = await recompute(db, quiet={salesorder_id})
+        await db.commit()
+    except Exception as e:
+        logger.warning("Order board: putting the new order %s on the board failed (%s)", number, type(e).__name__)
+        with contextlib.suppress(Exception):
+            await db.rollback()
+        return
+    if changed:
+        await sync.announce_board_change(finished=changed == "orders")
