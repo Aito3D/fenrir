@@ -1,10 +1,11 @@
 /** "Edit" in the packed band: change what a waiting parcel holds, take lines out, add shelf lines, save to Zoho. */
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { fireEvent, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { http, HttpResponse } from 'msw';
 import { useQuery } from '@tanstack/react-query';
 import { server } from '../../mocks/server';
+import { api } from '../../../api/client';
 import type { OrderBoardLine, OrderPanelRow } from '../../../api/client';
 
 const mockUseAuth = {
@@ -230,6 +231,10 @@ describe('editing a parcel', () => {
   it('while the parcel is read from Books, Edit is disabled and a hand-over opened meanwhile wins', async () => {
     const user = userEvent.setup();
     let answer: () => void = () => {};
+    // The positive settle signal: the parcel read the panel awaits, observed through a passthrough spy.
+    const realRead = api.getOrderPackage.bind(api);
+    let read: Promise<unknown> = Promise.resolve();
+    const readSpy = vi.spyOn(api, 'getOrderPackage').mockImplementation((...args) => (read = realRead(...args)));
     server.use(http.get(`${BASE}/packages/p1`, () => new Promise<Response>(resolve => {
       answer = () => resolve(HttpResponse.json({ id: 'p1', number: 'PKG-00031', version: 'v1', picklist_id: 'pl1', lines: [{ line_id: 'l1', quantity: 2, max: 3 }] }));
     })));
@@ -240,7 +245,9 @@ describe('editing a parcel', () => {
     await user.click(screen.getByRole('button', { name: 'Hand over the parcel' }));
     answer();
     await waitFor(() => expect(screen.queryByRole('button', { name: 'Hand over the parcel' })).not.toBeInTheDocument());
-    await new Promise(r => setTimeout(r, 50));
+    await read; // the panel's continuation was registered first, so it has run once this resolves
+    await act(async () => { for (let i = 0; i < 20; i++) await Promise.resolve(); }); // commit its state updates
+    readSpy.mockRestore();
     expect(screen.queryByRole('columnheader', { name: 'In the parcel' })).not.toBeInTheDocument(); // one bar at a time
   });
 

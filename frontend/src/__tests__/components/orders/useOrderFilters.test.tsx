@@ -23,6 +23,8 @@ function Box() {
       <input data-testid="q" value={f.query} onChange={e => f.setQuery(e.target.value)} />
       <output data-testid="state">{`${f.payFilter}|${f.follow}|${f.sort.key}|${f.sort.flipped}|${f.coreOnly}`}</output>
       <button onClick={() => f.setSort({ key: 'value', flipped: true })}>sort</button>
+      <button onClick={() => f.setFollow('unbilled')}>follow</button>
+      <button onClick={() => f.setFollow(null)}>unfollow</button>
       <button onClick={() => f.chooseCoreOnly(false)}>core</button>
       <button onClick={() => f.setCoreOnly(false)}>core-temp</button>
     </>
@@ -81,6 +83,34 @@ describe('useOrderFilters', () => {
     await waitFor(() => expect(screen.getByTestId('state').textContent).toBe('unpaid|null|customer|true|false'));
     await waitFor(() => expect(router.state.location.search).toBe('?pay=unpaid&sort=customer&flip=1'));
     expect(putUiPref).not.toHaveBeenCalled();
+  });
+
+  it('takes a known follow-up filter from the link', async () => {
+    mount('/orders?follow=unbilled');
+    await waitFor(() => expect(screen.getByTestId('state').textContent).toBe('all|unbilled|age|false|true'));
+  });
+
+  it('saves a follow-up filter the viewer picks', async () => {
+    mount('/orders');
+    await waitFor(() => expect(getUiPrefs).toHaveBeenCalled());
+    fireEvent.click(screen.getByText('follow'));
+    expect(screen.getByTestId('state').textContent).toBe('all|unbilled|age|false|true');
+    expect(putUiPref).toHaveBeenLastCalledWith('orders', { follow: 'unbilled' });
+  });
+
+  it('saves clearing the follow-up filter, merged over the saved one', async () => {
+    getUiPrefs.mockResolvedValue({ orders: { follow: 'notCollected', pay: 'unpaid' } });
+    mount('/orders');
+    await waitFor(() => expect(screen.getByTestId('state').textContent).toBe('unpaid|notCollected|age|false|true'));
+    fireEvent.click(screen.getByText('unfollow'));
+    expect(screen.getByTestId('state').textContent).toBe('unpaid|null|age|false|true');
+    expect(putUiPref).toHaveBeenLastCalledWith('orders', { follow: null, pay: 'unpaid' });
+  });
+
+  it('takes a known follow-up filter saved on the account', async () => {
+    getUiPrefs.mockResolvedValue({ orders: { follow: 'notCollected' } });
+    mount('/orders');
+    await waitFor(() => expect(screen.getByTestId('state').textContent).toBe('all|notCollected|age|false|true'));
   });
 
   it('lets a link that names its filters win over the saved ones', async () => {

@@ -204,3 +204,105 @@ async def test_a_failed_sweep_keeps_the_old_copy_and_the_board(db_session, zoho,
     assert list(ids) == ["keep"]
     state = await sync._find_state(db_session)
     assert state.detail.get("last_error") is None
+
+
+async def _ids_in_catalog(db):
+    return sorted((await db.execute(select(OrderBoardDoc.zoho_id).where(OrderBoardDoc.kind == "catalog"))).scalars())
+
+
+def _pages(monkeypatch, total=4):
+    """Books' item pages, one item each; returns the list of page numbers asked for."""
+    asked = []
+
+    async def page(db, n):
+        asked.append(n)
+        return [_goods(f"new{n}", "New")], n < total
+
+    monkeypatch.setattr(zoho_service, "list_items_page_all", page)
+    return asked
+
+
+@pytest.mark.asyncio
+async def test_a_sweep_cut_by_the_budget_resumes_at_the_next_page_and_completes(db_session, monkeypatch):
+    old = (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat()
+    await _seed(db_session, [_goods("keep", "Old item")], loaded_at=old)
+    asked = _pages(monkeypatch)
+    busy = [lambda: len(asked) >= 2]  # the budget trips once two pages are in
+    monkeypatch.setattr(_catalog, "zoho_busy", lambda ceiling=None: busy[0]())
+    await _catalog.refresh_catalog_if_stale(db_session)
+    assert asked == [1, 2]
+    assert await _ids_in_catalog(db_session) == ["keep"]  # the old copy answers until the sweep is complete
+    assert "catalog_failed_at" not in (await sync._find_state(db_session)).detail  # no back-off for a budget cut
+    busy[0] = lambda: False
+    await _catalog.refresh_catalog_if_stale(db_session)
+    assert asked == [1, 2, 3, 4]  # resumed, no page twice
+    assert await _ids_in_catalog(db_session) == ["new1", "new2", "new3", "new4"]
+    detail = (await sync._find_state(db_session)).detail
+    assert "catalog_sweep" not in detail and not _catalog._stale(detail["catalog_loaded_at"])
+
+
+@pytest.mark.asyncio
+async def test_a_failure_keeps_the_staged_pages_for_the_retry(db_session, monkeypatch):
+    old = (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat()
+    await _seed(db_session, [_goods("keep", "Old item")], loaded_at=old)
+    asked = []
+
+    async def page(db, n):
+        asked.append(n)
+        if n == 2:
+            raise ZohoUnreachable("down")
+        return [_goods(f"new{n}", "New")], n < 2
+
+    monkeypatch.setattr(zoho_service, "list_items_page_all", page)
+    await _catalog.refresh_catalog_if_stale(db_session)
+    assert asked == [1, 2] and await _ids_in_catalog(db_session) == ["keep"]
+    state = await sync._find_state(db_session)
+    past = (datetime.now(timezone.utc) - timedelta(seconds=_catalog._CATALOG_RETRY_SECONDS + 1)).isoformat()
+    state.detail = {**state.detail, "catalog_failed_at": past}
+    await db_session.commit()
+    retried = _pages(monkeypatch, total=2)
+    await _catalog.refresh_catalog_if_stale(db_session)
+    assert retried == [2]  # resumed at page 2, page 1 not fetched again
+    assert await _ids_in_catalog(db_session) == ["new1", "new2"]
+
+
+@pytest.mark.asyncio
+async def test_sweep_progress_older_than_the_ttl_is_discarded(db_session, monkeypatch):
+    old = (datetime.now(timezone.utc) - timedelta(hours=2)).isoformat()
+    await _seed(db_session, [_goods("keep", "Old item")], loaded_at=old)
+    state = await sync._find_state(db_session)
+    state.detail = {**state.detail, "catalog_sweep": {"started_at": old, "next_page": 3}}
+    db_session.add(OrderBoardDoc(kind=_catalog._STAGE, zoho_id="ancient", header=_goods("ancient", "Ancient")))
+    await db_session.commit()
+    asked = _pages(monkeypatch, total=2)
+    await _catalog.refresh_catalog_if_stale(db_session)
+    assert asked == [1, 2]  # from the start, not page 3
+    assert await _ids_in_catalog(db_session) == ["new1", "new2"]  # the ancient staged page never got mixed in
+
+
+@pytest.mark.asyncio
+async def test_a_failed_sweep_is_not_retried_before_the_back_off_but_is_after(db_session, monkeypatch):
+    old = (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat()
+    await _seed(db_session, [_goods("keep", "Old item")], loaded_at=old)
+    calls = []
+    failing = [True]
+
+    async def page(db, n):
+        calls.append(n)
+        if failing[0]:
+            raise ZohoUnreachable("down")
+        return [_goods("fresh", "Fresh")], False
+
+    monkeypatch.setattr(zoho_service, "list_items_page_all", page)
+    await _catalog.refresh_catalog_if_stale(db_session)
+    await _catalog.refresh_catalog_if_stale(db_session)  # inside the back-off: no second sweep
+    assert calls == [1]
+    state = await sync._find_state(db_session)
+    past = (datetime.now(timezone.utc) - timedelta(seconds=_catalog._CATALOG_RETRY_SECONDS + 1)).isoformat()
+    state.detail = {**state.detail, "catalog_failed_at": past}
+    await db_session.commit()
+    failing[0] = False
+    await _catalog.refresh_catalog_if_stale(db_session)  # back-off over: swept, copy replaced, failure forgotten
+    assert calls == [1, 1]
+    assert await _ids_in_catalog(db_session) == ["fresh"]
+    assert "catalog_failed_at" not in (await sync._find_state(db_session)).detail

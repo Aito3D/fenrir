@@ -1490,3 +1490,229 @@ revenue.yoy.tooltipCumul
 1 testId="weekday-means"
 ```
 
+## O6 — public functions, classes and constants (integration + payment services)
+```regen: for f in backend/app/services/zoho.py backend/app/services/heimdall.py backend/app/services/aito_payment_links.py backend/app/services/aito_terminal_payments.py backend/app/services/aito_manual_payments.py backend/app/services/aito_customer_credit.py backend/app/services/aito_payment_documents.py backend/app/services/aito_client_rating.py backend/app/services/aito_events.py backend/app/services/aito_tracking.py backend/app/api/routes/aito_payments.py backend/app/api/routes/zoho.py backend/app/api/routes/heimdall.py; do echo "# $f"; grep -E "^(def|class|async def) [a-zA-Z]|^[A-Z][A-Z_0-9]* = |^[A-Z][A-Z_0-9]*: " "$f" | sed -E "s/ = .*/ =/; s/(def [a-zA-Z_0-9]+)\(.*/\1(/"; done```
+```
+# backend/app/services/zoho.py
+DEFAULT_CONTACT_ID_FALLBACK =
+DEFAULT_CONTACT_NAME_FALLBACK =
+class ZohoNotConfiguredError(Exception):
+class ZohoUpstreamError(Exception):
+class ZohoUnreachable(ZohoUpstreamError):
+class ZohoAmbiguous(ZohoUpstreamError):
+class ZohoRequestRejected(ZohoUpstreamError):
+class ZohoNotFound(ZohoUpstreamError):
+class ZohoAmbiguousReferenceError(ZohoUpstreamError):
+class ZohoRateLimited(ZohoUpstreamError):
+def normalize_display_name(
+class ModifiedSinceRows(list):
+class ZohoService:
+# backend/app/services/heimdall.py
+class HeimdallNotConfigured(Exception):
+class HeimdallUpstreamError(Exception):
+class HeimdallAuthError(HeimdallUpstreamError):
+class HeimdallNotFound(HeimdallUpstreamError):
+class HeimdallConflict(HeimdallUpstreamError):
+class HeimdallRateLimited(HeimdallUpstreamError):
+class HeimdallUnreachable(HeimdallUpstreamError):
+class HeimdallAmbiguous(HeimdallUpstreamError):
+class HeimdallInvalid(HeimdallUpstreamError):
+class LinkView:
+def parse_credential(
+def sign(
+class HeimdallService:
+# backend/app/services/aito_payment_links.py
+async def deposit_pct(
+def required_amount(
+def outstanding_amount(
+MAX_POLLS_PER_TICK =
+ABANDONED_RESERVATION_SECONDS =
+class Wanted:
+QUOTE_VALIDITY =
+def wanted_link(
+def expires_in_days(
+def needs_action(
+class PatchDidNotConverge(Exception):
+async def current_link(
+async def current_links(
+async def reconcile_project(
+async def poll_link(
+async def reconcile_payment_links(
+def link_view(
+class InvoiceLinkExists(Exception):
+class QuoteLinkManaged(Exception):
+async def create_invoice_link(
+async def create_order_invoice_link(
+async def cancel_order_link(
+async def cancel_invoice_link(
+# backend/app/services/aito_terminal_payments.py
+OPEN_STATUSES =
+BLOCKING_STATUSES =
+STATUSES =
+REFRESH_MIN_SECONDS =
+ABANDONED_RESERVATION_SECONDS =
+SETTLED_STATUSES =
+EFFECTS_REDRIVE_GRACE_SECONDS =
+MAX_EFFECTS_REDRIVE_FAILURES =
+async def current_terminal_payment(
+async def current_terminal_payments(
+def terminal_view(
+class TerminalInProgress(Exception):
+async def start_terminal_payment(
+async def start_order_terminal_payment(
+async def apply_terminal_state(
+async def refresh_terminal_payment(
+async def poll_open_terminal_payments(
+# backend/app/services/aito_manual_payments.py
+DUPLICATE_WINDOW_SECONDS =
+MODE_SETTINGS =
+class DuplicateManualPayment(Exception):
+class AmountAboveBalance(Exception):
+class ManualPaymentPartial(Exception):
+class ManualPaymentUnrecorded(Exception):
+class ManualPaymentOutcomeUnknown(Exception):
+class ManualPaymentResult:
+async def record_manual_payment(
+async def record_order_manual_payment(
+async def settle_invoiced_deposits(
+async def refresh_after_payment(
+# backend/app/services/aito_customer_credit.py
+def unused_credit_total(
+async def read_customer_credit(
+async def unlinked_retainers(
+# backend/app/services/aito_payment_documents.py
+class DocumentMismatch(Exception):
+class PaymentDocument:
+async def resolve_document(
+def scope_where(
+def scope_columns(
+async def resolve_order_document(
+async def record_order_payment(
+async def refresh_order_after_payment(
+# backend/app/services/aito_client_rating.py
+class RatingProfile:
+INDIVIDUAL_PROFILE =
+COMPANY_PROFILE =
+GRACE_DAYS =
+ON_TIME_SLACK_DAYS =
+GOOD_MIN_ON_TIME_RATIO =
+CHRONIC_MIN_SETTLED =
+CHRONIC_MAX_ON_TIME_RATIO =
+COMPANY_SUB_TYPE =
+HISTORY_MONTHS =
+CACHE_TTL =
+REFRESH_MIN_AGE =
+PAID_ON_FIELD =
+class ClientRating:
+def rate_invoices(
+async def expire_client_rating(
+async def read_client_rating(
+# backend/app/services/aito_events.py
+def utc_now_naive(
+KINDS: dict[str, str] =
+COALESCE_WINDOW =
+COALESCING_KINDS: frozenset[str] =
+def kinds_for_depth(
+def contact_mark_kind(
+def diff_fields(
+async def record(
+# backend/app/services/aito_tracking.py
+TOKEN_ALPHABET =
+TOKEN_LENGTH =
+LEGACY_TOKEN_MIN_LENGTH =
+TRACKING_TTL_AFTER_DONE =
+TRACKING_TTL_DORMANT =
+DORMANT_COLUMNS =
+CLOSED_QUOTE_STATUSES =
+PAYABLE_QUOTE_STATUSES =
+NOTES_PREFIX =
+NOTES_CODE_PREFIX =
+SMS_PREFIX =
+SMS_SIGNATURE =
+SMS_SIGNATURE_SEP =
+def mint_token(
+def normalize_token(
+async def mint_unique_token(
+async def external_url(
+def tracking_url_for(
+def tracking_notes(
+def with_tracking_sms(
+def with_opening_hours_sms(
+async def shop_opening_hours(
+def with_tracking_notes(
+async def ensure_tracking_token(
+async def build_tracking_url(
+async def done_at(
+def is_expired(
+TASK_FALLBACK =
+def invoice_state(
+async def payment_state(
+async def invoice_pay_url(
+def tracking_balance(
+INVOICE_CURRENCY =
+async def balance_state(
+def task_quantity(
+async def last_activity(
+VIEW_DEDUP_WINDOW =
+async def log_view(
+async def purge_tracking_views(
+async def compute_tracking(
+# backend/app/api/routes/aito_payments.py
+async def start_terminal_payment_route(
+async def get_terminal_payment(
+async def record_manual_payment_route(
+async def create_invoice_payment_link(
+async def cancel_invoice_payment_link(
+async def get_unlinked_retainers(
+async def link_retainer(
+async def heimdall_webhook(
+# backend/app/api/routes/zoho.py
+class ZohoStatus(BaseModel):
+class ZohoContact(BaseModel):
+class ZohoContactDetail(ZohoContact):
+async def zoho_status(
+async def search_contacts(
+class ZohoContactCreate(BaseModel):
+class ZohoContactPerson(BaseModel):
+class ZohoContactPersonCreate(BaseModel):
+async def get_contact(
+async def create_contact(
+class ZohoContactPatch(BaseModel):
+async def patch_contact(
+async def list_contact_persons(
+async def create_contact_person(
+class ZohoEstimateSummary(BaseModel):
+class ZohoQuoteInfo(BaseModel):
+class ZohoQuoteClient(BaseModel):
+class ZohoSkippedLine(BaseModel):
+class ZohoDiscountIssue(BaseModel):
+class ZohoQuoteShipping(BaseModel):
+class ZohoQuotePreview(BaseModel):
+async def search_estimates(
+async def preview_estimate(
+# backend/app/api/routes/heimdall.py
+async def test_heimdall(
+```
+
+## O6 — route decorators (aito_payments, zoho, heimdall)
+```regen: grep -HE "^@router\.(get|post|put|delete|patch)\(" backend/app/api/routes/aito_payments.py backend/app/api/routes/zoho.py backend/app/api/routes/heimdall.py```
+```
+backend/app/api/routes/aito_payments.py:@router.post(
+backend/app/api/routes/aito_payments.py:@router.get("/{project_id}/terminal-payment/{payment_id}", response_model=AitoTerminalPaymentView)
+backend/app/api/routes/aito_payments.py:@router.post("/{project_id}/manual-payment", response_model=AitoProjectResponse)
+backend/app/api/routes/aito_payments.py:@router.post("/{project_id}/payment-link", response_model=AitoProjectResponse)
+backend/app/api/routes/aito_payments.py:@router.post("/{project_id}/payment-link/{link_id}/cancel", response_model=AitoProjectResponse)
+backend/app/api/routes/aito_payments.py:@router.get("/{project_id}/unlinked-retainers", response_model=list[AitoUnlinkedRetainer])
+backend/app/api/routes/aito_payments.py:@router.post("/{project_id}/unlinked-retainers/{retainer_id}/link", response_model=AitoProjectResponse)
+backend/app/api/routes/aito_payments.py:@router.post("/payments/webhook", status_code=204)
+backend/app/api/routes/zoho.py:@router.get("/status", response_model=ZohoStatus)
+backend/app/api/routes/zoho.py:@router.get("/contacts", response_model=list[ZohoContact])
+backend/app/api/routes/zoho.py:@router.get("/contacts/{contact_id}", response_model=ZohoContactDetail)
+backend/app/api/routes/zoho.py:@router.post("/contacts", response_model=ZohoContact, status_code=201)
+backend/app/api/routes/zoho.py:@router.patch("/contacts/{contact_id}", status_code=204)
+backend/app/api/routes/zoho.py:@router.get("/contacts/{contact_id}/persons", response_model=list[ZohoContactPerson])
+backend/app/api/routes/zoho.py:@router.post("/contacts/{contact_id}/persons", response_model=ZohoContactPerson, status_code=201)
+backend/app/api/routes/zoho.py:@router.get("/estimates", response_model=list[ZohoEstimateSummary])
+backend/app/api/routes/zoho.py:@router.get("/estimates/{estimate_id}/preview", response_model=ZohoQuotePreview)
+backend/app/api/routes/heimdall.py:@router.post("/test", response_model=HeimdallStatus)
+```

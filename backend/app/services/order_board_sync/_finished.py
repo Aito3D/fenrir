@@ -25,6 +25,7 @@ from backend.app.services.order_board_sync._common import (
     load_settings,
     open_rate_limit_window,
 )
+from backend.app.services.order_board_sync._retainers import _retainers
 from backend.app.services.zoho import (
     ZohoNotConfiguredError,
     ZohoNotFound,
@@ -222,10 +223,16 @@ async def _fetch_finished_detail(db: AsyncSession, doc: OrderBoardDoc) -> None:
     except ZohoRateLimited as e:
         open_rate_limit_window(e)
         raise ZohoBusy(salesorder_id) from e
+    # The order's quote deposits ride with the detail (as in refresh_order): without them a finished order's unused
+    # deposit stops counting as paid. A Zoho failure keeps the previous ones; a 429 has opened the back-off already.
+    try:
+        retainers = await _retainers(db, fetched, doc.detail, {})
+    except ZohoRateLimited as e:
+        raise ZohoBusy(salesorder_id) from e
     # No pass lock here (a pass can run long): if a pass wrote this row meanwhile, its mark or newer detail
     # must not be lost, so the fetched copy goes in marked stale and the next open fetches again.
     await db.refresh(doc)
-    detail = {**fetched, "_fetched_at": _now(), **({"_stale": True} if _snapshot(doc) != before else {})}
+    detail = {**fetched, "_fetched_at": _now(), **retainers, **({"_stale": True} if _snapshot(doc) != before else {})}
     doc.detail = detail
     doc.pending = False
     await db.commit()

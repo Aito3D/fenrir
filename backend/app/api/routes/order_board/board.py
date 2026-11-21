@@ -1,8 +1,4 @@
-"""Reading is one local read of the stored board. Refresh runs one bounded sync
-pass against Zoho Books (GETs only). The settings routes are their own
-endpoints, not the general settings API, because Operators hold
-``settings:read`` only and must still be able to tune the board.
-"""
+"""The Order Board routes: the board, its settings, watch/unwatch, the events timeline and notes, and the prep sheets."""
 
 import asyncio
 from dataclasses import asdict
@@ -102,6 +98,8 @@ async def refresh_order_board(
     return await order_board_sync.read_board(db)
 
 
+# The settings routes are their own endpoints, not the general settings API, because Operators hold
+# ``settings:read`` only and must still be able to tune the board.
 @router.get("/settings", response_model=OrderBoardSettingsBody)
 async def get_order_board_settings(
     db: AsyncSession = Depends(get_db, scope="function"),

@@ -56,6 +56,11 @@ export function OrderSidePanel({
     setSearchParams(prev => { const next = new URLSearchParams(prev); next.delete('sms'); return next; }, { replace: true });
   }, [askedSms, smsAllowed, contactPhone, setSearchParams]);
   const invoiceSent = useRef(false);
+  const sendInvoice = (applyCredit: boolean, scope?: 'packed' | 'whole') => {
+    if (createInvoice.isPending || invoiceSent.current) return;
+    invoiceSent.current = true;
+    createInvoice.mutate({ id: row.id, applyCredit, scope }, { onSettled: () => { invoiceSent.current = false; } });
+  };
   // Built once so the desktop tab and the phone tabs render the very same blocks.
   const contactBlock = (
     <OrderContactBlock
@@ -75,16 +80,8 @@ export function OrderSidePanel({
       row={row}
       canEmail={canUpdate}
       busy={createInvoice.isPending}
-      onCreateInvoice={canUpdate ? () => {
-        if (createInvoice.isPending || invoiceSent.current) return;
-        invoiceSent.current = true;
-        createInvoice.mutate({ id: row.id, applyCredit: (row.payment?.advance ?? 0) + (row.payment?.retainer ?? 0) > 0 }, { onSettled: () => { invoiceSent.current = false; } });
-      } : undefined}
-      onInvoiceNow={canUpdate ? (scope, applyCredit) => {
-        if (createInvoice.isPending || invoiceSent.current) return;
-        invoiceSent.current = true;
-        createInvoice.mutate({ id: row.id, applyCredit, scope }, { onSettled: () => { invoiceSent.current = false; } });
-      } : undefined}
+      onCreateInvoice={canUpdate ? () => sendInvoice((row.payment?.advance ?? 0) + (row.payment?.retainer ?? 0) > 0) : undefined}
+      onInvoiceNow={canUpdate ? (scope, applyCredit) => sendInvoice(applyCredit, scope) : undefined}
     >
       <OrderDepositAvailable orderId={row.id} currency={row.currency} />
       {row.payment && <OrderPaymentBlock payment={row.payment} currency={row.currency} total={editingTotal ?? undefined} orderId={canUpdate ? row.id : undefined} />}

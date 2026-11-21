@@ -306,6 +306,13 @@
      },
      {
       "args": [
+       "c1"
+      ],
+      "call": "zoho.list_customer_retainers",
+      "kwargs": {}
+     },
+     {
+      "args": [
        [
         "A",
         "B"
@@ -7233,6 +7240,13 @@
        "so2"
       ],
       "call": "zoho.get_salesorder",
+      "kwargs": {}
+     },
+     {
+      "args": [
+       "c1"
+      ],
+      "call": "zoho.list_customer_retainers",
       "kwargs": {}
      },
      {

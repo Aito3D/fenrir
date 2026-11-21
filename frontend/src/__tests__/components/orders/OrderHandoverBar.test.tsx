@@ -1,9 +1,10 @@
 /** The hand-over bar under a waiting parcel, the band that opens it, and "Create invoice" on the invoices card. */
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { fireEvent, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { http, HttpResponse } from 'msw';
 import { server } from '../../mocks/server';
+import { api } from '../../../api/client';
 import type { OrderBoardLine, OrderHandoverOutcome, OrderHandoverPreview, OrderPackage, OrderPanelRow } from '../../../api/client';
 
 const mockUseAuth = {
@@ -298,8 +299,13 @@ describe('the hand-over bar, answers and refusals', () => {
     mockUseAuth.hasPermission.mockImplementation(() => false);
     let asked = 0;
     server.use(http.get('/api/v1/order-board/orders/so1/packages/p1/handover', () => { asked++; return HttpResponse.json(preview()); }));
+    // The bar's preview query starts in an effect on mount: it calls api.getOrderHandover synchronously, with no network in between,
+    // so a flush of the mounted tree is enough to see the call if the bar had opened (unlike the msw handler, which answers later).
+    const previewCall = vi.spyOn(api, 'getOrderHandover');
     render(<OrderLinesPanel row={panelRow()} start="handover-p1" />);
-    await new Promise(r => setTimeout(r, 100));
+    await act(async () => { for (let i = 0; i < 20; i++) await Promise.resolve(); });
+    expect(previewCall).not.toHaveBeenCalled();
+    previewCall.mockRestore();
     expect(asked).toBe(0);
   });
 

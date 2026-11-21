@@ -193,7 +193,9 @@ async def record_order_payment(
     Heimdall books the money in Books itself, so a board pass may already have
     recorded this payment (a board event: no `method`) after the row was created
     (`since`). Then the newest such event is annotated with `method` (its amount
-    stays the board's) instead of telling the same payment twice."""
+    stays the board's) instead of telling the same payment twice. Only an event whose amount matches the
+    settled one (rounded to 2 decimals, the way the board records it) is the same payment; another payment
+    that reached the order meanwhile keeps its own line and this one gets its own."""
     from backend.app.models.order_board_event import OrderBoardEvent
     from backend.app.services import order_board_events
 
@@ -208,7 +210,8 @@ async def record_order_payment(
             .order_by(OrderBoardEvent.occurred_at.desc(), OrderBoardEvent.id.desc())
         )
         for event in (await db.execute(stmt)).scalars():
-            if "method" not in (event.detail or {}):
+            detail = event.detail or {}
+            if "method" not in detail and round(_num(detail.get("amount")), 2) == round(float(amount), 2):
                 event.detail = {**(event.detail or {}), "method": method}  # a new dict: JSON change tracking
                 await db.flush()
                 return

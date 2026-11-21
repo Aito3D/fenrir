@@ -1,6 +1,8 @@
 """Payment routes of the Order Board."""
 
+import asyncio
 import math
+from contextlib import asynccontextmanager
 from datetime import date
 from typing import Literal
 
@@ -49,6 +51,25 @@ from backend.app.services.order_board import order_row
 from backend.app.services.order_board_actions._common import _log
 from backend.app.services.order_board_payment import order_facts
 from backend.app.services.zoho import ZohoNotConfiguredError, ZohoUpstreamError
+
+_payment_locks: dict[str, list] = {}  # salesorder_id -> [lock, callers holding or waiting]; dropped by the last one
+
+
+@asynccontextmanager
+async def _order_payment_lock(salesorder_id: str, *, wait: bool):
+    """One lock per order for the manual payment and the terminal start, so the checks and the write of one
+    cannot interleave with the other. `wait=False` refuses 409 `terminal_in_progress` instead of queueing."""
+    entry = _payment_locks.setdefault(salesorder_id, [asyncio.Lock(), 0])
+    entry[1] += 1
+    try:
+        if not wait and entry[0].locked():
+            raise _refuse(409, "terminal_in_progress", "A payment is already in progress for this order")
+        async with entry[0]:
+            yield
+    finally:
+        entry[1] -= 1
+        if entry[1] == 0:
+            _payment_locks.pop(salesorder_id, None)
 
 
 class OrderPaymentBody(BaseModel):
@@ -268,23 +289,24 @@ async def start_order_terminal_payment_route(
     """Fire the counter terminal on the order's document. 201 with the row (`processing`); poll the GET below.
     A pending payment link answers 409 `link_open` (the client could pay twice) unless `cancel_link` cancels it first."""
     _check_counter_payment_rate_limit(request, user)
-    document = await _payment_document(db, salesorder_id, body.amount)
-    link = await current_link(db, ("order", salesorder_id), kind=None)
-    if _open_link(link):
-        if not body.cancel_link:
-            raise _refuse(409, "link_open", "A payment link is open for this order")
-        assert link is not None
-        await _cancel_link(db, link, user)
-    try:
-        row = await start_order_terminal_payment(
-            db, salesorder_id, document=document, amount=body.amount, actor_name=_by(user), now=utc_now_naive()
-        )
-    except TerminalInProgress as e:
-        raise _refuse(409, "terminal_in_progress", str(e)) from e
-    except HeimdallNotConfigured as e:
-        raise _refuse(502, "not_configured", str(e)) from e
-    except HeimdallUpstreamError as e:
-        raise _heimdall_refusal(e) from e
+    async with _order_payment_lock(salesorder_id, wait=False):  # held through the reservation commit
+        document = await _payment_document(db, salesorder_id, body.amount)
+        link = await current_link(db, ("order", salesorder_id), kind=None)
+        if _open_link(link):
+            if not body.cancel_link:
+                raise _refuse(409, "link_open", "A payment link is open for this order")
+            assert link is not None
+            await _cancel_link(db, link, user)
+        try:
+            row = await start_order_terminal_payment(
+                db, salesorder_id, document=document, amount=body.amount, actor_name=_by(user), now=utc_now_naive()
+            )
+        except TerminalInProgress as e:
+            raise _refuse(409, "terminal_in_progress", str(e)) from e
+        except HeimdallNotConfigured as e:
+            raise _refuse(502, "not_configured", str(e)) from e
+        except HeimdallUpstreamError as e:
+            raise _heimdall_refusal(e) from e
     view = terminal_view(row)
     try:  # the terminal is already asking for the card: a lost history line must not read as a failed start
         await _log(db, salesorder_id, "terminal.started", _by(user), amount=row.amount, document=row.document_number)
@@ -324,40 +346,41 @@ async def record_order_manual_payment_route(
     _check_counter_payment_rate_limit(request, user)
     if body.mode == "cheque" and not (body.reference or "").strip():
         raise _refuse(422, "reference_required", "A cheque needs its number as reference")
-    document = await _payment_document(db, salesorder_id, body.amount)
-    if _open_link(await current_link(db, ("order", salesorder_id), kind=None)):
-        raise _refuse(409, "link_open", "A payment link is open for this order: cancel it first")
-    # A terminal charge still waiting could settle on top of this payment.
-    terminal_row = await current_terminal_payment(db, ("order", salesorder_id))
-    if terminal_row is not None and terminal_row.status in BLOCKING_STATUSES:
-        raise _refuse(409, "terminal_in_progress", "A terminal payment is already in progress for this order")
-    try:
-        await record_order_manual_payment(
-            db,
-            salesorder_id,
-            document=document,
-            mode=body.mode,
-            amount=body.amount,
-            reference=body.reference,
-            today=date.today(),
-        )
-    except DuplicateManualPayment as e:
-        raise _refuse(409, "duplicate", str(e)) from e
-    except AmountAboveBalance as e:
-        raise _refuse(422, "amount_above_balance", str(e)) from e
-    except ManualPaymentPartial as e:
-        raise _refuse(
-            502,
-            "manual_partial",
-            f"Retainer {e.retainer_number} was raised in Zoho Books but its payment could not be recorded: "
-            f"{e.cause}. Record the payment on it in Books.",
-        ) from e
-    except ManualPaymentOutcomeUnknown as e:
-        raise _refuse(502, "manual_outcome_unknown", f"{e}. Check Zoho Books before retrying.") from e
-    except ManualPaymentUnrecorded as e:
-        raise _refuse(502, "manual_unrecorded", str(e)) from e
-    except (ZohoNotConfiguredError, ZohoUpstreamError) as e:
-        await db.rollback()
-        raise _refuse(502, "upstream", str(e)) from e
+    async with _order_payment_lock(salesorder_id, wait=True):  # held through the Books write
+        document = await _payment_document(db, salesorder_id, body.amount)
+        if _open_link(await current_link(db, ("order", salesorder_id), kind=None)):
+            raise _refuse(409, "link_open", "A payment link is open for this order: cancel it first")
+        # A terminal charge still waiting could settle on top of this payment.
+        terminal_row = await current_terminal_payment(db, ("order", salesorder_id))
+        if terminal_row is not None and terminal_row.status in BLOCKING_STATUSES:
+            raise _refuse(409, "terminal_in_progress", "A terminal payment is already in progress for this order")
+        try:
+            await record_order_manual_payment(
+                db,
+                salesorder_id,
+                document=document,
+                mode=body.mode,
+                amount=body.amount,
+                reference=body.reference,
+                today=date.today(),
+            )
+        except DuplicateManualPayment as e:
+            raise _refuse(409, "duplicate", str(e)) from e
+        except AmountAboveBalance as e:
+            raise _refuse(422, "amount_above_balance", str(e)) from e
+        except ManualPaymentPartial as e:
+            raise _refuse(
+                502,
+                "manual_partial",
+                f"Retainer {e.retainer_number} was raised in Zoho Books but its payment could not be recorded: "
+                f"{e.cause}. Record the payment on it in Books.",
+            ) from e
+        except ManualPaymentOutcomeUnknown as e:
+            raise _refuse(502, "manual_outcome_unknown", f"{e}. Check Zoho Books before retrying.") from e
+        except ManualPaymentUnrecorded as e:
+            raise _refuse(502, "manual_unrecorded", str(e)) from e
+        except (ZohoNotConfiguredError, ZohoUpstreamError) as e:
+            await db.rollback()
+            raise _refuse(502, "upstream", str(e)) from e
     _logged(user, salesorder_id, "manual_payment")
     return {"board": await order_board_sync.read_board(db)}

@@ -143,6 +143,7 @@ async def _create(
                 number,
                 type(void_error).__name__,
             )
+            sync_common._pending_voids[salesorder_id] = number  # the pass retries it (and records order.void_failed)
         raise OrderActionRefused("create_failed") from e
     finally:
         sync.note_write(salesorder_id)
@@ -152,13 +153,16 @@ async def _create(
         del _created[next(iter(_created))]
     doc = await sync.find_stored(db, salesorder_id)  # a pass may have listed it already
     if doc is None:
-        db.add(OrderBoardDoc(kind="salesorder", zoho_id=salesorder_id, header=created, pending=True))
+        db.add(
+            OrderBoardDoc(kind="salesorder", zoho_id=salesorder_id, header={**created, "status": "open"}, pending=True)
+        )
         try:
             await db.commit()
         except IntegrityError:  # a pass stored it between the check and the insert: use its copy
             await db.rollback()
             doc = await sync.find_stored(db, salesorder_id)
     if doc is not None:
+        doc.header = {**doc.header, "status": "open"}  # confirmed: the board lists it at once, not after a pass
         doc.pending = True
         await db.commit()
     await _best_effort_refresh(db, salesorder_id, number)  # a failure leaves it pending for the next pass

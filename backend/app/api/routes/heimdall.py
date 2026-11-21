@@ -34,7 +34,10 @@ async def test_heimdall(
     if not overriding and not await heimdall_service.is_configured(db):
         return HeimdallStatus(configured=False, reachable=None, error=None)
     try:
-        await heimdall_service.ping(db, base_url=payload.base_url, token=payload.token)
+        if overriding:
+            await heimdall_service.ping(db, base_url=payload.base_url, token=payload.token)
+        else:  # a lone URL or token is ignored: the saved key is never signed for a typed URL
+            await heimdall_service.ping(db)
     except HeimdallNotConfigured:
         return HeimdallStatus(configured=False, reachable=None, error=None)
     except HeimdallAuthError as e:
