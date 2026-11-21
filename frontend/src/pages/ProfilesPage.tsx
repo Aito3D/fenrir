@@ -1805,7 +1805,7 @@ function CreatePresetModal({
 
           {/* Drag overlay */}
           {isDragging && (
-            <div className="absolute inset-0 bg-bambu-green/10 border-2 border-dashed border-bambu-green rounded-lg flex items-center justify-center z-10">
+            <div className="animate-overlay-in absolute inset-0 bg-bambu-green/10 border-2 border-dashed border-bambu-green rounded-lg flex items-center justify-center z-10">
               <div className="text-center">
                 <Upload className="w-12 h-12 text-bambu-green mx-auto mb-2" />
                 <p className="text-bambu-green font-medium">{t('profiles.presets.dropJsonToImport')}</p>

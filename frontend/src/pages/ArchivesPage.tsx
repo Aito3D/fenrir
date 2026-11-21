@@ -2961,7 +2961,7 @@ export function ArchivesPage() {
     >
       {/* Drag & Drop Overlay */}
       {isDraggingOver && (
-        <div className="fixed inset-0 z-50 bg-bambu-dark/90 flex items-center justify-center pointer-events-none">
+        <div className="animate-overlay-in fixed inset-0 z-50 bg-bambu-dark/90 flex items-center justify-center pointer-events-none">
           <div className="border-4 border-dashed border-bambu-green rounded-xl p-12 text-center">
             <Upload className="w-16 h-16 mx-auto mb-4 text-bambu-green" />
             <p className="text-2xl font-semibold text-white mb-2">{t('archives.page.dropFilesHere')}</p>

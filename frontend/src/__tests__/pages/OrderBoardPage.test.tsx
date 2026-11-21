@@ -885,7 +885,21 @@ describe('OrderBoardPage actions', () => {
     await user.click(screen.getByRole('button', { name: 'Refresh' }));
     expect(await screen.findByRole('button', { name: 'Print prep sheets (1)' })).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'Clear selection' }));
-    expect(screen.queryByTestId('orders-batch')).not.toBeInTheDocument();
+    // It fades out, then unmounts.
+    await waitFor(() => expect(screen.queryByTestId('orders-batch')).not.toBeInTheDocument());
+  });
+
+  it('an open order that leaves the board holds in place, folded and inert, then is gone', async () => {
+    const user = userEvent.setup();
+    serve(board({ rows: [row(), row({ id: 'so2', number: 'SO-00418' })] }));
+    server.use(http.post('/api/v1/order-board/refresh', () => HttpResponse.json(board({ rows: [row({ id: 'so2', number: 'SO-00418' })] }))));
+    render(<OrderBoardPage />);
+    await user.click(await screen.findByRole('button', { name: /SO-00412/ }));
+    await user.click(screen.getByRole('button', { name: 'Refresh' }));
+    await waitFor(() => expect(document.getElementById('order-so1')?.parentElement).toHaveAttribute('inert'));
+    expect(document.getElementById('order-so1')!.nextElementSibling).toBeNull(); // the wrapper holds just the card
+    await waitFor(() => expect(document.getElementById('order-so1')).toBeNull());
+    expect(screen.getByRole('button', { name: /SO-00418/ })).toBeInTheDocument();
   });
 
   it('the stats strip is closed until opened, shows the four figures and remembers it was left open', async () => {

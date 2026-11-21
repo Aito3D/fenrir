@@ -2282,6 +2282,28 @@ html[data-vt='aito-card-exit']::view-transition-group(aito-card) {
   animation: rise-sm 0.28s var(--ease-signature) backwards;
 }
 
+/* Order Board: a saved or new order's row flashes once, a green wash that
+   fades out. On ::before so only opacity animates and the theme accent is
+   used as is; animationend still fires on the row (it clears the flag). Kept
+   under reduced motion: it is a fade, nothing moves. */
+@keyframes row-flash {
+  from { opacity: 0.16; }
+  to { opacity: 0; }
+}
+.animate-row-flash::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: var(--color-bambu-green);
+  opacity: 0;
+  animation: row-flash 1.2s ease-out;
+}
+/* A scan hit on a parcel line: short enough that scans in quick succession each read as one beat. */
+.animate-row-flash.flash-quick::before {
+  animation-duration: 0.5s;
+}
+
 /* Opacity-only so recomputing numbers never shift layout */
 @keyframes value-tick {
   from { opacity: 0.35; }
