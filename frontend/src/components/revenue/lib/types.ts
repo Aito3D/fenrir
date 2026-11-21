@@ -405,3 +405,18 @@ export interface ResultResponse {
   /** Null when no contribution rate can be computed (no sales, costs above sales, or no charges). */
   breakEven: { amount: number; reached: number; day: string | null; projected: boolean } | null;
 }
+
+export interface PvmResponse {
+  from: string;
+  to: string;
+  previousFrom: string;
+  previousTo: string;
+  previous: number;
+  volume: number;
+  mix: number;
+  price: number;
+  new: number;
+  lost: number;
+  current: number;
+  items: Array<{ name: string; effect: number; volume: number; price: number; kind: 'both' | 'new' | 'lost' }>;
+}

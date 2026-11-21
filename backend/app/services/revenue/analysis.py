@@ -1,7 +1,7 @@
 """The revenue page's analysis rules: Pareto (ABC) split, margin by brand / nature and dormant items."""
 
 from backend.app.services.revenue.dates import add_days
-from backend.app.services.revenue.series import NO_BRAND, NO_NATURE
+from backend.app.services.revenue.series import NO_BRAND, NO_NATURE, js_round
 
 ABC_THRESHOLDS = {"A": 0.8, "B": 0.95}
 ABC_ROWS_SHOWN = 200
@@ -78,3 +78,55 @@ def dormant_items(
         }
         for r in former[:shown]
     ]
+
+
+PVM_ROWS = 10
+
+
+def price_volume_mix(cur: list[dict], prev: list[dict], shown: int = PVM_ROWS) -> dict:
+    """Why revenue moved between two periods, from the per-item breakdowns (quantity, HT).
+
+    Items sold with a quantity in both periods split their change into volume `(q1 − q0) × p0` and price
+    `(p1 − p0) × q1`; the volume part is then cut in two: what the change in total units is worth at the old average
+    price (`volume`) and the rest, units moving between cheap and dear items (`mix`). Anything else (sold in one period
+    only, or a line without quantity such as a credit note) is `new` or `lost`. The six figures sum to the change.
+    """
+    before = {r["itemId"]: r for r in prev}
+    after = {r["itemId"]: r for r in cur}
+    volume_items = price = new = lost = 0.0
+    q0_all = q1_all = r0_all = 0.0
+    items = []
+    for item_id in after.keys() | before.keys():
+        a, b = after.get(item_id), before.get(item_id)
+        name = (a or b)["name"]
+        if a and b and a["quantity"] > 0 and b["quantity"] > 0:
+            p0 = b["ht"] / b["quantity"]
+            vol = (a["quantity"] - b["quantity"]) * p0
+            pri = a["ht"] - a["quantity"] * p0
+            volume_items += vol
+            price += pri
+            q0_all += b["quantity"]
+            q1_all += a["quantity"]
+            r0_all += b["ht"]
+            items.append({"name": name, "effect": vol + pri, "volume": vol, "price": pri, "kind": "both"})
+            continue
+        if a:
+            new += a["ht"]
+            items.append({"name": name, "effect": a["ht"], "volume": 0, "price": 0, "kind": "new"})
+        if b:
+            lost -= b["ht"]
+            items.append({"name": name, "effect": -b["ht"], "volume": 0, "price": 0, "kind": "lost"})
+    volume = (q1_all - q0_all) * r0_all / q0_all if q0_all else 0.0
+    out = {
+        "previous": js_round(sum(r["ht"] for r in prev)),
+        "current": js_round(sum(r["ht"] for r in cur)),
+        "volume": js_round(volume),
+        "price": js_round(price),
+        "new": js_round(new),
+        "lost": js_round(lost),
+    }
+    # Mix takes the rounding remainder so the bridge always closes.
+    out["mix"] = out["current"] - out["previous"] - out["volume"] - out["price"] - out["new"] - out["lost"]
+    ranked = sorted((i for i in items if i["effect"]), key=lambda i: (-abs(i["effect"]), i["name"].casefold()))
+    out["items"] = [{**i, **{k: js_round(i[k]) for k in ("effect", "volume", "price")}} for i in ranked[:shown]]
+    return out

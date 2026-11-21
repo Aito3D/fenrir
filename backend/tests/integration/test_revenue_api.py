@@ -101,6 +101,7 @@ async def tokens(db_session):
         "/cash",
         "/pipeline",
         "/movers",
+        "/pvm?from=2025-03-01&to=2025-03-31",
         "/analysis?from=2025-03-01&to=2025-03-31",
     ],
 )
@@ -733,3 +734,12 @@ async def test_result_needs_margin_and_carries_twelve_months(async_client, reven
     assert set(body) == {"fixedMonthly", "months", "breakEven"}
     assert len(body["months"]) == 12
     assert set(body["months"][0]) == {"month", "ht", "variable", "labor", "fixed", "result"}
+
+
+@pytest.mark.asyncio
+async def test_pvm_compares_with_the_period_just_before(async_client, revenue_db, tokens):
+    month = f"{DAY[:7]}-01"
+    body = (await async_client.get(f"{URL}/pvm?from={month}&to={DAY}", headers=tokens["read"])).json()
+    assert body["current"] == 1000 and body["previous"] == 0 and body["new"] == 1000
+    assert body["previousTo"] < month
+    assert (await async_client.get(f"{URL}/pvm?from={DAY}&to={month}", headers=tokens["read"])).status_code == 422

@@ -30,7 +30,7 @@ from backend.app.services.revenue import (
     sync,
 )
 from backend.app.services.revenue.config import REVENUE_GRANULARITIES, REVENUE_HISTORY_START
-from backend.app.services.revenue.dates import add_days, is_valid_day, org_today
+from backend.app.services.revenue.dates import add_days, days_between, is_valid_day, org_today
 from backend.app.services.revenue.insights import attach_targets, calendar_days, yoy_pivot
 from backend.app.services.revenue.scope import ITEM_ID_RE, build_review_list
 from backend.app.services.revenue.series import LineFilters, js_round
@@ -482,6 +482,36 @@ async def get_movers(
         return {"granularity": None if free else granularity, "key": None if free else key, **moved}
 
     return await _respond(request, user, build, flags=flags, now=now)
+
+
+@router.get("/pvm")
+async def get_pvm(
+    request: Request,
+    from_: str = Query("", alias="from"),
+    to: str = "",
+    items: str | None = None,
+    brand: list[str] = Query(default=[]),
+    kind: str | None = None,
+    segment: str | None = None,
+    user: User | None = RequirePermissionIfAuthEnabled(Permission.REVENUE_READ),
+):
+    """Price / volume / mix bridge between the period and the one of the same length just before it."""
+    _ordered_range(from_, to)
+    flags = memo.caller_flags(user)
+    filters = _filters(flags, items, brand, kind, segment)
+    prev_to = add_days(from_, -1)
+    prev_from = max(add_days(from_, -days_between(from_, to)), REVENUE_HISTORY_START)
+
+    async def build(conn, _now, _status):
+        ctx = await _context(conn, min(prev_from, from_), to)
+
+        def rows(a: str, b: str) -> list[dict]:
+            return _breakdown(ctx, [x for x in ctx["lines"] if a <= x.day <= b], filters)
+
+        bridge = analysis.price_volume_mix(rows(from_, to), rows(prev_from, prev_to))
+        return {"from": from_, "to": to, "previousFrom": prev_from, "previousTo": prev_to, **bridge}
+
+    return await _respond(request, user, build, flags=flags, now=datetime.now(timezone.utc))
 
 
 @router.get("/analysis")

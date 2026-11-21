@@ -164,7 +164,13 @@ def _aged():
 
 
 def test_aging_puts_each_balance_in_its_overdue_bucket():
-    assert cash.aging(_aged(), ALL_3D, TODAY)["buckets"] == {"notDue": 150, "d30": 200, "d60": 300, "d90": 400, "over": 500}
+    assert cash.aging(_aged(), ALL_3D, TODAY)["buckets"] == {
+        "notDue": 150,
+        "d30": 200,
+        "d60": 300,
+        "d90": 400,
+        "over": 500,
+    }
 
 
 def test_aging_applies_the_share_and_leaves_unknown_and_non_3d_out():

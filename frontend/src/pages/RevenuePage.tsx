@@ -20,6 +20,7 @@ import { RevenueCalendar } from '../components/revenue/RevenueCalendar';
 import { RevenueMenu } from '../components/revenue/RevenueMenu';
 import { RevenueReview } from '../components/revenue/RevenueReview';
 import { RevenueResult } from '../components/revenue/RevenueResult';
+import { RevenueBridge } from '../components/revenue/RevenueBridge';
 import { RevenueLabor } from '../components/revenue/RevenueLabor';
 import { RevenueFixedCosts } from '../components/revenue/RevenueFixedCosts';
 import { RevenueTargets } from '../components/revenue/RevenueTargets';
@@ -546,7 +547,12 @@ export function RevenuePage() {
             <RevenueCustomers from={data.from} to={data.to} granularity={data.granularity} filterParams={filterParams} taxMode={active.taxMode}
               segment={active.segment} onSegment={(segment) => setControls({ segment })} version={data} />
           )}
-          {view === 'produits' && data && <RevenueAnalysis from={data.from} to={data.to} filterParams={filterParams} version={data} />}
+          {view === 'produits' && data && (
+            <>
+              <RevenueBridge from={data.from} to={data.to} filterParams={filterParams} version={data} />
+              <RevenueAnalysis from={data.from} to={data.to} filterParams={filterParams} version={data} />
+            </>
+          )}
           {view === 'saison' && data && (
             <>
               <RevenueYoy filterParams={filterParams} taxMode={active.taxMode} version={data} />
