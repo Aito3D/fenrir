@@ -12672,6 +12672,7 @@ export default {
       failed: 'Заметка не сохранена',
     },
     table: {
+      unit: 'Суммы в FCP',
       title: 'Детализация по периодам',
       period: 'Период',
       ht: 'Выручка HT',
@@ -12690,6 +12691,7 @@ export default {
       empty: 'Нет продаж Aito3D за этот период.',
     },
     movers: {
+      dimension: 'Показанный список',
       customers: 'Клиенты',
       title: 'Изменения',
       compareTitle: 'Сравнить два периода',

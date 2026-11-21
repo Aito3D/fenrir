@@ -13125,6 +13125,7 @@ errors: {
       failed: 'Anteckningen sparades inte',
     },
     table: {
+      unit: 'Belopp i FCP',
       title: 'Detalj per period',
       period: 'Period',
       ht: 'Omsättning HT',
@@ -13143,6 +13144,7 @@ errors: {
       empty: 'Ingen Aito3D-försäljning under perioden.',
     },
     movers: {
+      dimension: 'Visad lista',
       customers: 'Kunder',
       title: 'Rörelser',
       compareTitle: 'Jämför två perioder',

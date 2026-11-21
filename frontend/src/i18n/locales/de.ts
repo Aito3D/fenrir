@@ -13068,6 +13068,7 @@ export default {
       failed: 'Notiz nicht gespeichert',
     },
     table: {
+      unit: 'Beträge in FCP',
       title: 'Detail nach Zeitraum',
       period: 'Zeitraum',
       ht: 'Umsatz HT',
@@ -13086,6 +13087,7 @@ export default {
       empty: 'Keine Aito3D-Verkäufe in diesem Zeitraum.',
     },
     movers: {
+      dimension: 'Angezeigte Liste',
       customers: 'Kunden',
       title: 'Bewegungen',
       compareTitle: 'Zwei Zeiträume vergleichen',

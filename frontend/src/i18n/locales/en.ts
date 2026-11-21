@@ -13124,6 +13124,7 @@ export default {
       failed: 'Note not saved',
     },
     table: {
+      unit: 'Amounts in FCP',
       title: 'Detail by period',
       period: 'Period',
       ht: 'Revenue HT',
@@ -13142,6 +13143,7 @@ export default {
       empty: 'No Aito3D sales in this period.',
     },
     movers: {
+      dimension: 'List shown',
       customers: 'Customers',
       title: 'Movements',
       compareTitle: 'Compare two periods',

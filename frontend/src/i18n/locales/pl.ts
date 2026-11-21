@@ -13273,6 +13273,7 @@ export default {
       failed: 'Notatka nie została zapisana',
     },
     table: {
+      unit: 'Kwoty w FCP',
       title: 'Szczegóły według okresu',
       period: 'Okres',
       ht: 'Przychód HT',
@@ -13291,6 +13292,7 @@ export default {
       empty: 'Brak sprzedaży Aito3D w tym okresie.',
     },
     movers: {
+      dimension: 'Wyświetlana lista',
       customers: 'Klienci',
       title: 'Ruchy',
       compareTitle: 'Porównaj dwa okresy',

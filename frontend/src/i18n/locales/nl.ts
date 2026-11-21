@@ -13092,6 +13092,7 @@ export default {
       failed: 'Notitie niet opgeslagen',
     },
     table: {
+      unit: 'Bedragen in FCP',
       title: 'Detail per periode',
       period: 'Periode',
       ht: 'Omzet HT',
@@ -13110,6 +13111,7 @@ export default {
       empty: 'Geen Aito3D-verkopen in deze periode.',
     },
     movers: {
+      dimension: 'Getoonde lijst',
       customers: 'Klanten',
       title: 'Bewegingen',
       compareTitle: 'Twee periodes vergelijken',

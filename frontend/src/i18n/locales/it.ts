@@ -13053,6 +13053,7 @@ export default {
       failed: 'Nota non salvata',
     },
     table: {
+      unit: 'Importi in FCP',
       title: 'Dettaglio per periodo',
       period: 'Periodo',
       ht: 'Fatturato HT',
@@ -13071,6 +13072,7 @@ export default {
       empty: 'Nessuna vendita Aito3D in questo periodo.',
     },
     movers: {
+      dimension: 'Elenco mostrato',
       customers: 'Clienti',
       title: 'Movimenti',
       compareTitle: 'Confronta due periodi',

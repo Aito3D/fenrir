@@ -12995,6 +12995,7 @@ export default {
       failed: 'Not kaydedilmedi',
     },
     table: {
+      unit: 'Tutarlar FCP cinsinden',
       title: 'Döneme göre ayrıntı',
       period: 'Dönem',
       ht: 'Ciro HT',
@@ -13013,6 +13014,7 @@ export default {
       empty: 'Bu dönemde Aito3D satışı yok.',
     },
     movers: {
+      dimension: 'Gösterilen liste',
       customers: 'Müşteriler',
       title: 'Hareketler',
       compareTitle: 'İki dönemi karşılaştır',

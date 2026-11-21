@@ -184,7 +184,8 @@ export function RevenueHero({ payload, taxMode, canMargin, onSetTarget }: {
         </div>
         {share == null && <Sparkline buckets={buckets} mode={taxMode} />}
       </div>
-      <div className="mt-2 grid grid-cols-[repeat(auto-fit,minmax(13.5rem,1fr))] gap-2">
+      {/* Two per row: the card then matches the pace chart beside it, and a phone shows pairs, not a column. */}
+      <div className="mt-2 grid grid-cols-2 gap-2">
         {tiles.map((tile) => (
           <div key={tile.label} className="grid">
             <Tile

@@ -12650,6 +12650,7 @@ export default {
       failed: '메모가 저장되지 않았습니다',
     },
     table: {
+      unit: '금액 단위: FCP',
       title: '기간별 상세',
       period: '기간',
       ht: '매출 HT',
@@ -12668,6 +12669,7 @@ export default {
       empty: '이 기간에 Aito3D 판매가 없습니다.',
     },
     movers: {
+      dimension: '표시할 목록',
       customers: '고객',
       title: '변동',
       compareTitle: '두 기간 비교',

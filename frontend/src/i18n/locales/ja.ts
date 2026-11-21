@@ -13067,6 +13067,7 @@ export default {
       failed: 'メモを保存できませんでした',
     },
     table: {
+      unit: '金額の単位: FCP',
       title: '期間別の詳細',
       period: '期間',
       ht: '売上 HT',
@@ -13085,6 +13086,7 @@ export default {
       empty: 'この期間の Aito3D の販売はありません。',
     },
     movers: {
+      dimension: '表示する一覧',
       customers: '顧客',
       title: '変動',
       compareTitle: '2つの期間を比較',

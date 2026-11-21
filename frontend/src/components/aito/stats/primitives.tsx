@@ -90,7 +90,7 @@ export function Tile({
         {/* Keyed on the value so the tick replays when the range changes. */}
         <span
           key={value}
-          className={`truncate text-2xl font-semibold tracking-[-0.02em] animate-value-tick ${tone === 'alert' ? 'text-status-error' : 'text-white'}`}
+          className={`truncate text-xl font-semibold sm:text-2xl tracking-[-0.02em] animate-value-tick ${tone === 'alert' ? 'text-status-error' : 'text-white'}`}
         >
           {value}
         </span>
@@ -119,7 +119,8 @@ export interface FactRow {
  *  list of facts reads as the panel's contents rather than as ruled paper. */
 export function Facts({ rows, testId }: { rows: FactRow[]; testId?: string }) {
   return (
-    <dl data-testid={testId} className="grid gap-1.5">
+    // One bounded column: a long label must truncate, not widen the list past its panel.
+    <dl data-testid={testId} className="grid grid-cols-[minmax(0,1fr)] gap-1.5">
       {rows.map((row, i) => (
         <div
           key={i}

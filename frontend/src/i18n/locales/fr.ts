@@ -13053,6 +13053,7 @@ export default {
       failed: 'Note non enregistrée',
     },
     table: {
+      unit: 'Montants en FCP',
       title: 'Détail par période',
       period: 'Période',
       ht: 'CA HT',
@@ -13071,6 +13072,7 @@ export default {
       empty: 'Aucune vente Aito3D sur cette période.',
     },
     movers: {
+      dimension: 'Liste affichée',
       customers: 'Clients',
       title: 'Mouvements',
       compareTitle: 'Comparer deux périodes',
@@ -13138,7 +13140,7 @@ export default {
       marginNote: 'Au coût d\'aujourd\'hui (Prix Dealer, sinon prix d\'achat), sur les articles qui ont un coût.',
       coverage: 'coût connu sur {{pct}} de {{amount}}',
       noData: 'Aucune donnée.',
-      dormantTitle: 'Plus vendus depuis 90 jours',
+      dormantTitle: 'Sans vente depuis 90 jours',
       dormantHint: 'Vendus dans l\'année, aucune vente depuis 90 jours — à vérifier avant de les recommander. CA HT sur la période d\'avant.',
       lastSale: 'dernière vente {{date}}',
       none: 'Aucun.',

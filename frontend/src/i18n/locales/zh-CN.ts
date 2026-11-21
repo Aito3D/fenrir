@@ -13051,6 +13051,7 @@ export default {
       failed: '备注未保存',
     },
     table: {
+      unit: '金额单位：FCP',
       title: '按期间明细',
       period: '期间',
       ht: '营业额 HT',
@@ -13069,6 +13070,7 @@ export default {
       empty: '此期间没有 Aito3D 销售。',
     },
     movers: {
+      dimension: '显示的列表',
       customers: '客户',
       title: '变动',
       compareTitle: '比较两个期间',
