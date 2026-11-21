@@ -52,7 +52,7 @@ async def read_board(db: AsyncSession) -> dict:
             "enabled": settings.sync_enabled,
             "configured": await zoho_service.is_configured(db),
             "running": _pass_lock.locked(),
-            "pending": await _pending_count(db),
+            "pending": await _pending_count(db, ("salesorder", "purchaseorder")),  # quote details back-fill quietly
             "last_error": state.get("last_error"),
             "last_error_at": state.get("last_error_at"),
             "last_success_at": state.get("last_success_at"),

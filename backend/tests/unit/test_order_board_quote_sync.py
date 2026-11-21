@@ -182,3 +182,12 @@ async def test_a_write_during_the_fetch_keeps_the_quote_pending(db_session, zoho
     await sync.run_pass(db_session)
     doc = (await stored_quotes(db_session))["e1"]
     assert (doc.detail, doc.pending) == (None, True)
+
+
+@pytest.mark.asyncio
+async def test_pending_quote_details_do_not_raise_the_board_pending_count(db_session, zoho):
+    zoho.add(order(1))
+    add_quotes(zoho, *(quote(n) for n in range(25)))
+    await sync.run_pass(db_session)
+    assert (await sync.read_quotes(db_session))["loading"] == 6
+    assert (await sync.read_board(db_session))["sync"]["pending"] == 0
