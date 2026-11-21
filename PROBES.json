@@ -239,5 +239,33 @@
   "timeout": 600,
   "scrub": [],
   "files": []
+ },
+ {
+  "id": "revenue-pure",
+  "cmd": "PYTHONHASHSEED=0 PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=. ./venv/bin/python3 tools/probe_revenue_pure.py 2>/dev/null",
+  "timeout": 300,
+  "scrub": [],
+  "files": []
+ },
+ {
+  "id": "revenue-http",
+  "cmd": "mkdir -p /tmp/fenrir-revenue-probe/http-data && OUT=$(mktemp /tmp/fenrir-revenue-probe/http.XXXXXX) && PROBE_OUT=$OUT DATA_DIR=/tmp/fenrir-revenue-probe/http-data LOG_DIR=/tmp/fenrir-revenue-probe/http-data/logs PYTHONHASHSEED=0 PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=. ./venv/bin/python3 -m pytest -p backend.tests.conftest -p no:randomly -p no:cacheprovider -q tools/probe_revenue_http_test.py > $OUT.log 2>&1; rc=$?; cat $OUT; [ $rc = 0 ] || tail -40 $OUT.log; rm -f $OUT $OUT.log; exit $rc",
+  "timeout": 600,
+  "scrub": [],
+  "files": []
+ },
+ {
+  "id": "revenue-frontend-pure",
+  "cmd": "mkdir -p /tmp/fenrir-revenue-probe && frontend/node_modules/.bin/rolldown tools/probe_revenue_frontend_entry.ts --format cjs --file /tmp/fenrir-revenue-probe/revenueFrontend.cjs >/dev/null 2>&1 && TZ=Pacific/Tahiti node tools/probe_revenue_frontend.cjs",
+  "timeout": 300,
+  "scrub": [],
+  "files": []
+ },
+ {
+  "id": "revenue-i18n",
+  "cmd": "LC_ALL=C node tools/probe_revenue_i18n.cjs",
+  "timeout": 300,
+  "scrub": [],
+  "files": []
  }
 ]
