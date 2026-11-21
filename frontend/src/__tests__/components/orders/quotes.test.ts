@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { QuoteRow, QuoteState } from '../../../api/client';
-import { chipOf, filterQuotes, quoteCounts } from '../../../components/orders/quotes';
+import { chipOf, filterQuotes, quoteCounts, quotesPollMs } from '../../../components/orders/quotes';
+import { SETTLED_POLL_MS } from '../../../components/orders/orderBoard';
 
 const row = (o: Partial<QuoteRow> = {}): QuoteRow => ({
   id: 'e1', number: 'EST-001', customer: 'Acme', customer_id: 'c1', date: '2026-11-01', expiry_date: '2026-12-01',
@@ -44,5 +45,13 @@ describe('quotes helpers', () => {
       row({ id: 'c', date: '2026-11-05', number: 'EST-009' }),
     ];
     expect(filterQuotes(rows, all).map(r => r.id)).toEqual(['c', 'b', 'a']);
+  });
+
+  it('polls fast while quotes are still loading, then at the board\'s settled interval', () => {
+    expect(quotesPollMs(undefined)).toBe(4000);
+    expect(quotesPollMs({ rows: [], loading: 0, ready: false })).toBe(4000);
+    expect(quotesPollMs({ rows: [], loading: 3, ready: true })).toBe(4000);
+    expect(quotesPollMs({ rows: [], loading: 0, ready: true })).toBe(SETTLED_POLL_MS);
+    expect(SETTLED_POLL_MS).toBe(180000);
   });
 });

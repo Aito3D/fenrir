@@ -1139,8 +1139,8 @@ describe('OrderBoardPage Devis side', () => {
     state: 'sent', total: 248900, currency: 'XPF', reference: '', age_days: 2, is_core: true, editable: true,
     has_draft_order: false, modified: '', lines: [], ...o,
   });
-  const serveQuotes = (rows: QuoteRow[]) =>
-    server.use(http.get('/api/v1/order-board/quotes', () => HttpResponse.json({ rows, loading: 0, ready: true })));
+  const serveQuotes = (rows: QuoteRow[], loading = 0) =>
+    server.use(http.get('/api/v1/order-board/quotes', () => HttpResponse.json({ rows, loading, ready: true })));
   const QUOTES = [
     quote(),
     quote({ id: 'e2', number: 'DEV-00414', customer: 'Marc Le Goff', state: 'draft' }),
@@ -1179,5 +1179,34 @@ describe('OrderBoardPage Devis side', () => {
     await userEvent.setup().click(row);
     expect(window.location.search).not.toContain('quote=');
     expect(window.location.search).toContain('view=quotes');
+  });
+
+  it('shows no Devis count while quotes are still loading', async () => {
+    serve(board());
+    serveQuotes(QUOTES, 3);
+    window.history.replaceState({}, '', '/orders?view=quotes');
+    render(<OrderBoardPage />);
+    // The rows have arrived (the loading line says so), yet the switch shows no partial count.
+    expect(await screen.findByText('Loading quotes… 3 remaining')).toBeInTheDocument();
+    expect(screen.getByText('Nautic Service')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /^Quotes –$/ })).toBeInTheDocument();
+  });
+
+  it('switching sides drops the other side\'s opened document from the URL', async () => {
+    const user = userEvent.setup();
+    serve(board());
+    serveQuotes(QUOTES);
+    window.history.replaceState({}, '', '/orders?order=so1');
+    render(<OrderBoardPage />);
+    await screen.findAllByText('SO-00412'); // the row and its opened panel
+    await user.click(await screen.findByRole('button', { name: /^Quotes 2$/ }));
+    await waitFor(() => expect(window.location.search).toContain('view=quotes'));
+    expect(window.location.search).not.toContain('order=');
+    await user.click(await screen.findByText('Nautic Service'));
+    await waitFor(() => expect(window.location.search).toContain('quote=e1'));
+    await user.click(screen.getByRole('button', { name: 'Orders' }));
+    await waitFor(() => expect(window.location.search).not.toContain('view='));
+    expect(window.location.search).not.toContain('quote=');
+    expect(await screen.findByText('SO-00412')).toBeInTheDocument();
   });
 });

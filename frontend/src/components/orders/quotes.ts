@@ -1,5 +1,18 @@
-import type { QuoteRow } from '../../api/client';
+import { queryOptions } from '@tanstack/react-query';
+import { api } from '../../api/client';
+import type { QuoteRow, QuotesResponse } from '../../api/client';
 import { fold } from './itemSearchText';
+import { SETTLED_POLL_MS } from './orderBoard';
+
+/** Fast while the server is still reading quotes, then the board's slow fallback. */
+export const quotesPollMs = (d: QuotesResponse | undefined): number => (!d?.ready || d.loading > 0 ? 4000 : SETTLED_POLL_MS);
+
+/** The one quotes query: the page's Devis count and the Devis side share it. */
+export const quotesQuery = queryOptions({
+  queryKey: ['order-board', 'quotes'],
+  queryFn: api.getQuotes,
+  refetchInterval: q => quotesPollMs(q.state.data),
+});
 
 export type QuoteChip = 'current' | 'expired' | 'declined';
 

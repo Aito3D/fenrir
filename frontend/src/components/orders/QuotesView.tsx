@@ -2,14 +2,12 @@ import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useQuery } from '@tanstack/react-query';
 import { FileText, Loader2, Search, SearchX } from 'lucide-react';
-import { api } from '../../api/client';
 import { Button } from '../Button';
 import { Skeleton } from '../Skeleton';
 import { QuoteCard } from './QuoteCard';
-import { chipOf, filterQuotes } from './quotes';
+import { chipOf, filterQuotes, quotesQuery } from './quotes';
 import type { QuoteChip } from './quotes';
 
-const QUOTES_KEY = ['order-board', 'quotes'] as const;
 const CHIPS: QuoteChip[] = ['current', 'expired', 'declined'];
 const CHIP_LABEL: Record<QuoteChip, string> = {
   current: 'orders.quotes.chip.current',
@@ -28,7 +26,7 @@ const chipCls = (on: boolean) =>
  *  `openId` is the opened quote (the page keeps it in the URL); a quote opened from a link brings its chip up. */
 export function QuotesView({ coreOnly, openId, onToggle }: { coreOnly: boolean; openId: string | null; onToggle: (id: string) => void }) {
   const { t } = useTranslation();
-  const { data, isError, refetch } = useQuery({ queryKey: QUOTES_KEY, queryFn: api.getQuotes });
+  const { data, isError, refetch } = useQuery(quotesQuery);
   const [chip, setChip] = useState<QuoteChip>('current');
   const [text, setText] = useState('');
   const rows = data?.ready ? data.rows : [];

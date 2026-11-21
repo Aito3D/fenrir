@@ -5517,6 +5517,8 @@ export interface QuoteRow {
   id: string; number: string; customer: string; customer_id: string; date: string; expiry_date: string;
   state: QuoteState; total: number | null; currency: string; reference: string; age_days: number;
   is_core: boolean | null; editable: boolean; has_draft_order: boolean; modified: string; lines: QuoteLine[] | null;
+  /** The estimate in the Books web app; null when Zoho is not configured. */
+  zoho_url?: string | null;
 }
 export interface QuoteOrderResult {
   quotes: QuotesResponse; board: OrderBoardResponse; row: OrderBoardRow | null; salesorder_id: string;

@@ -17,7 +17,7 @@ import { OrderCard } from '../components/orders/OrderCard';
 import { OrderMobileFilters } from '../components/orders/OrderMobileFilters';
 import { OrderStatsStrip } from '../components/orders/OrderStatsStrip';
 import { QuotesView } from '../components/orders/QuotesView';
-import { filterQuotes } from '../components/orders/quotes';
+import { filterQuotes, quotesQuery } from '../components/orders/quotes';
 import {
   byBrand,
   byFinishedPayment,
@@ -110,11 +110,11 @@ export function OrderBoardPage() {
     onError: () => showToast(t('orders.refreshFailed'), 'error'),
   });
 
-  const { query, setQuery, status, setStatus, payFilter, setPayFilter, follow, setFollow, sort, setSort, coreOnly, setCoreOnly, chooseCoreOnly, view, setView } =
+  const { query, setQuery, status, setStatus, payFilter, setPayFilter, follow, setFollow, sort, setSort, coreOnly, setCoreOnly, chooseCoreOnly, view } =
     useOrderFilters();
   const quotesView = view === 'quotes';
   // Read on both sides: the Devis button counts the current quotes.
-  const quotes = useQuery({ queryKey: ['order-board', 'quotes'], queryFn: api.getQuotes });
+  const quotes = useQuery(quotesQuery);
   const [statsOpen, setStatsOpen] = useState(readStatsOpen);
   const [shown, setShown] = useState(PAGE);
   const [start, setStart] = useState<{ id: string; target: string; tick: number } | null>(null);
@@ -352,16 +352,28 @@ export function OrderBoardPage() {
     ? t('orders.syncing', { n: data?.sync.pending })
     : data?.computed_at && t('orders.updated', { when: formatRelativeTime(data.computed_at, 'system', t) });
   const chips = [...STATUSES, 'all', 'finished'] as StatusFilter[];
+  // One URL write, which useOrderFilters follows: the other side's opened document leaves with it
+  // (`?order=` on the Devis side, `?quote=` on the Commandes side).
+  const switchView = (next: 'orders' | 'quotes') => {
+    if (next === view) return;
+    setSearchParams(prev => {
+      const p = new URLSearchParams(prev);
+      p.delete(next === 'quotes' ? 'order' : 'quote');
+      if (next === 'quotes') p.set('view', 'quotes');
+      else p.delete('view');
+      return p;
+    }, { replace: true });
+  };
   const segCls = (on: boolean, tone: string) =>
     `btn-press inline-flex flex-1 items-center justify-center gap-1.5 rounded-md px-3.5 py-1.5 text-sm font-medium md:flex-none ${on ? tone : 'text-bambu-gray hover:text-white'}`;
   // Devis | Commandes, at every width. The quotes wear violet, the orders the board's green.
   const viewSwitch = (
     <div className="flex rounded-lg border border-bambu-dark-tertiary bg-bambu-dark-secondary p-0.5 md:inline-flex">
-      <button type="button" aria-pressed={quotesView} onClick={() => setView('quotes')} className={segCls(quotesView, 'bg-violet-500/20 text-violet-700 dark:text-violet-200')}>
+      <button type="button" aria-pressed={quotesView} onClick={() => switchView('quotes')} className={segCls(quotesView, 'bg-violet-500/20 text-violet-700 dark:text-violet-200')}>
         {t('orders.quotes.tab')}{' '}
-        <span className="text-xs opacity-70">{quotes.data?.ready ? filterQuotes(quotes.data.rows, { chip: 'current', text: '', coreOnly }).length : '–'}</span>
+        <span className="text-xs opacity-70">{quotes.data?.ready && !quotes.data.loading ? filterQuotes(quotes.data.rows, { chip: 'current', text: '', coreOnly }).length : '–'}</span>
       </button>
-      <button type="button" aria-pressed={!quotesView} onClick={() => setView('orders')} className={segCls(!quotesView, 'bg-bambu-green/15 text-white')}>
+      <button type="button" aria-pressed={!quotesView} onClick={() => switchView('orders')} className={segCls(!quotesView, 'bg-bambu-green/15 text-white')}>
         {t('orders.title')}
       </button>
     </div>

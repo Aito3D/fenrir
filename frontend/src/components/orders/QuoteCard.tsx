@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { useQuery } from '@tanstack/react-query';
 import { ChevronDown } from 'lucide-react';
 import { api } from '../../api/client';
-import type { OrderBoardResponse, QuoteLine, QuoteRow } from '../../api/client';
+import type { QuoteLine, QuoteRow } from '../../api/client';
 import { useAuth } from '../../contexts/AuthContext';
 import { formatMoney } from '../../utils/pricing';
 import { Card } from '../Card';
@@ -52,9 +52,6 @@ function QuoteSide({ row }: { row: QuoteRow }) {
     enabled: !!row.customer_id,
     staleTime: 60_000,
   });
-  // The Books web app address comes from the board's order links (`…#/salesorders/<id>`); no fetch of its own.
-  const board = useQuery<OrderBoardResponse>({ queryKey: ['order-board'], queryFn: api.getOrderBoard, enabled: false });
-  const app = board.data?.rows.find(r => r.zoho_url)?.zoho_url?.split('#/')[0];
   const fetchPdf = () => api.getQuotePdf(row.id);
   return (
     <div className="min-w-0 space-y-3 lg:self-start">
@@ -72,7 +69,7 @@ function QuoteSide({ row }: { row: QuoteRow }) {
         <DocumentRow
           label={t('aito.quoteSearchLabel')}
           number={row.number}
-          booksUrl={app ? `${app}#/quotes/${row.id}` : null}
+          booksUrl={row.zoho_url ?? null}
           booksLabel={t('aito.quoteOpenInZoho')}
           print={<PdfPrintButton variant="icon" fetchPdf={fetchPdf} label={t('aito.printQuote')} failureMessage={t('aito.printFailed')} />}
           download={<PdfDownloadButton variant="icon" fetchPdf={fetchPdf} label={t('aito.downloadQuote')} filename={row.number} failureMessage={t('aito.printFailed')} />}

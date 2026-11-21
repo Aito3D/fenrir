@@ -63,4 +63,13 @@ describe('QuoteCard', () => {
     render(<QuoteCard row={quote()} open onToggle={vi.fn()}><button type="button">Accept</button></QuoteCard>);
     expect(within(screen.getByTestId('quote-actions')).getByText('Accept')).toBeInTheDocument();
   });
+
+  it('opens the quote in Books from the row\'s own link, and shows no link without one', () => {
+    stub();
+    const { unmount } = render(<QuoteCard row={quote({ zoho_url: 'https://books.example/app/1#/quotes/e1' })} open onToggle={vi.fn()} />);
+    expect(screen.getByRole('link', { name: 'Open in Zoho Books' })).toHaveAttribute('href', 'https://books.example/app/1#/quotes/e1');
+    unmount();
+    render(<QuoteCard row={quote({ zoho_url: null })} open onToggle={vi.fn()} />);
+    expect(screen.queryByRole('link', { name: 'Open in Zoho Books' })).not.toBeInTheDocument();
+  });
 });

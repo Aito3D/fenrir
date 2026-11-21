@@ -175,12 +175,15 @@ export const withFinished = (open: OrderBoardRow[], finished: FinishedOrderRow[]
 export const isBoardReady = (r: OrderBoardResponse | undefined): boolean =>
   !!r && !!r.computed_at && !!r.stock_loaded_at;
 
+/** The slow fallback poll once nothing is computing: changes arrive as WebSocket pings. */
+export const SETTLED_POLL_MS = 180000;
+
 export const pollMs = (r: OrderBoardResponse | undefined): number => {
   if (!r) return 4000;
   if (r.sync.running || r.sync.pending > 0) return 4000;
   // Never computed: fast, unless nothing is going to compute it. Otherwise a slow fallback: a change to the board
   // arrives as an order_board_updated WebSocket ping.
-  return !r.computed_at && r.sync.enabled && r.sync.configured ? 4000 : 180000;
+  return !r.computed_at && r.sync.enabled && r.sync.configured ? 4000 : SETTLED_POLL_MS;
 };
 
 export const ageTone = (days: number): 'neutral' | 'warning' | 'danger' =>
