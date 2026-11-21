@@ -82,3 +82,40 @@ async def test_malformed_override_token_reads_as_not_configured(async_client):
     )
     assert r.status_code == 200
     assert r.json() == {"configured": False, "reachable": None, "error": None}
+
+
+async def _save_credential(db_session):
+    await set_setting(db_session, "heimdall_base_url", "http://pos.local:8081")
+    await set_setting(db_session, "heimdall_api_token", "hmd_live.84f32b71ac095ed2.s3cret")
+    await db_session.commit()
+
+
+@pytest.mark.asyncio
+async def test_a_typed_url_without_a_token_pings_the_saved_url(async_client, db_session):
+    await _save_credential(db_session)
+    seen = []
+    heimdall_service._transport = httpx.MockTransport(lambda r: seen.append(str(r.url)) or httpx.Response(200, json={}))
+    r = await async_client.post("/api/v1/heimdall/test", json={"base_url": "http://evil.example:8081"})
+    assert r.json() == {"configured": True, "reachable": True, "error": None}
+    assert seen == ["http://pos.local:8081/api/v1/ping"]
+
+
+@pytest.mark.asyncio
+async def test_a_typed_url_without_a_token_and_nothing_saved_is_unconfigured(async_client):
+    seen = []
+    heimdall_service._transport = httpx.MockTransport(lambda r: seen.append(str(r.url)) or httpx.Response(200, json={}))
+    r = await async_client.post("/api/v1/heimdall/test", json={"base_url": "http://evil.example:8081"})
+    assert r.json() == {"configured": False, "reachable": None, "error": None}
+    assert seen == []
+
+
+@pytest.mark.asyncio
+async def test_a_typed_token_without_a_url_signs_with_the_saved_credential(async_client, db_session):
+    await _save_credential(db_session)
+    seen = []
+    heimdall_service._transport = httpx.MockTransport(
+        lambda r: seen.append(r.headers["x-heimdall-key-id"]) or httpx.Response(200, json={})
+    )
+    r = await async_client.post("/api/v1/heimdall/test", json={"token": "hmd_live.ffffffffffffffff.newsecret"})
+    assert r.json() == {"configured": True, "reachable": True, "error": None}
+    assert seen == ["84f32b71ac095ed2"]

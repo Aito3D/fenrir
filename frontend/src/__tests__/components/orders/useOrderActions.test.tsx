@@ -158,11 +158,13 @@ describe('useOrderActions', () => {
     server.use(http.post('*/order-board/orders/so1/packages/p1/handover', () => HttpResponse.json({ board, outcome })));
     const { client, result } = setup();
     const old = { ...board, computed_at: 'old' } as OrderBoardResponse;
-    void client.fetchQuery({ queryKey: ['order-board'], queryFn: () => new Promise<OrderBoardResponse>(r => setTimeout(() => r(old), 200)) }).catch(() => undefined); // cancelled by the answer
+    let release: () => void = () => {};
+    const poll = client.fetchQuery({ queryKey: ['order-board'], queryFn: () => new Promise<OrderBoardResponse>(r => { release = () => r(old); }) }).catch(() => undefined); // cancelled by the answer
     await act(async () => {
       await result.current.handOver.mutateAsync({ id: 'so1', packageId: 'p1', mode: 'pickup', applyCredit: false });
     });
-    await new Promise(r => setTimeout(r, 300));
+    release(); // the stale poll answers after the board landed
+    await poll;
     expect(client.getQueryData(['order-board'])).toEqual(board);
   });
 
