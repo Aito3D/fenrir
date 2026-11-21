@@ -152,6 +152,19 @@ async def test_customers_with_auth_disabled_is_allowed(async_client, revenue_db)
 
 
 @pytest.mark.asyncio
+async def test_customers_clamps_range_to_history(async_client, revenue_db):
+    r = await async_client.get(
+        f"{URL}/customers", params={"from": "1000-01-01", "to": "9999-12-31", "granularity": "day"}
+    )
+    body = r.json()
+    assert (body["from"], body["to"]) == (
+        revenue_routes.REVENUE_HISTORY_START,
+        revenue_routes.org_today(datetime.now(timezone.utc)),
+    )
+    assert len(body["retention"]) < 5000
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize(
     ("params", "message"),
     [

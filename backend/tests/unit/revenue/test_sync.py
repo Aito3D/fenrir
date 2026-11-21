@@ -823,20 +823,79 @@ async def test_cash_runs_only_on_a_complete_cache_and_at_most_every_ttl(zoho, mo
     assert cash_kinds(zoho)[0] == "payments"
 
 
-async def test_payment_cursor_moves_per_page_and_a_capped_run_resumes_there(zoho, engine):
+def keyset_zoho(zoho, stamps, page_size=1):
+    """A Zoho listing sorted by last_modified_time: rows at or after `since`, `page_size` per page."""
+
     async def pages(since, page):
-        return [payment(f"{since}-{page}", f"2026-10-0{page % 10}T08:00:00-1000")], True
+        rows = sorted(
+            (payment(f"p{i}", t) for i, t in enumerate(stamps) if t >= since), key=lambda r: r["last_modified_time"]
+        )
+        chunk = rows[(page - 1) * page_size : page * page_size]
+        return chunk, len(rows) > page * page_size
 
     zoho.payment_pages = pages
+
+
+async def test_payment_cursor_moves_per_page_and_a_capped_run_resumes_there(zoho, engine):
+    stamps = [f"2026-10-{d:02d}T08:00:00-1000" for d in range(1, 30)]
+    keyset_zoho(zoho, stamps, page_size=2)
     await refresh_cash()
     calls = [c for c in zoho.cash_calls if c[0] == "payments"]
     assert len(calls) == sync.CASH_PAGE_CAP
+    assert {c[2] for c in calls} == {1}  # keyset: a moving `since`, always page 1
+    assert [c[1] for c in calls[1:]] == stamps[1 : sync.CASH_PAGE_CAP]
     payments, _, since = await cash_rows(engine)
-    assert len(payments) == sync.CASH_PAGE_CAP
-    assert since == "2026-10-00T08:00:00-1000"  # page 10's row
+    assert len(payments) == sync.CASH_PAGE_CAP + 1  # two rows per page, one repeated at each boundary
+    assert since == stamps[sync.CASH_PAGE_CAP]  # the last page's last row
     zoho.cash_calls.clear()
     await refresh_cash()
-    assert zoho.cash_calls[0] == ("payments", "2026-10-00T08:00:00-1000", 1)
+    assert zoho.cash_calls[0] == ("payments", stamps[sync.CASH_PAGE_CAP], 1)
+
+
+async def test_a_payment_edited_mid_listing_is_not_skipped(zoho, engine):
+    stamps = ["2026-10-01T08:00:00-1000", "2026-10-02T08:00:00-1000", "2026-10-03T08:00:00-1000"]
+    served: list[str] = []
+
+    async def pages(since, page):
+        rows = sorted(
+            (payment(f"p{i}", t) for i, t in enumerate(stamps) if t >= since), key=lambda r: r["last_modified_time"]
+        )
+        if not served:  # p0 is edited in Books after the first page was served
+            served.append("x")
+            stamps[0] = "2026-10-09T08:00:00-1000"
+        chunk = rows[(page - 1) * 1 : page * 1]
+        return chunk, len(rows) > page
+
+    zoho.payment_pages = pages
+    await refresh_cash()
+    assert {p["paymentId"] for p in (await cash_rows(engine))[0]} == {"p0", "p1", "p2"}
+
+
+async def test_a_page_sharing_one_timestamp_pages_by_offset_and_the_cursor_holds(zoho, engine):
+    same = "2026-10-05T08:00:00-1000"
+    rows = [payment(f"p{i}", same) for i in range(5)] + [payment("late", "2026-10-06T08:00:00-1000")]
+
+    async def pages(since, page):
+        rest = [r for r in rows if r["last_modified_time"] >= since]
+        return rest[(page - 1) * 2 : page * 2], len(rest) > page * 2
+
+    zoho.payment_pages = pages
+    await refresh_cash()
+    assert {p["paymentId"] for p in (await cash_rows(engine))[0]} == {r["payment_id"] for r in rows}
+    calls = [c[1:] for c in zoho.cash_calls if c[0] == "payments"]
+    assert calls[0][1] == 1 and calls[1] == (same, 1) and calls[2] == (same, 2)
+    assert len(calls) <= sync.CASH_PAGE_CAP
+
+
+async def test_a_listing_that_never_advances_stops_at_the_page_cap(zoho, engine):
+    same = "2026-10-05T08:00:00-1000"
+
+    async def pages(since, page):
+        return [payment(f"p{page}", same)], True
+
+    zoho.payment_pages = pages
+    await refresh_cash()
+    assert len([c for c in zoho.cash_calls if c[0] == "payments"]) == sync.CASH_PAGE_CAP
 
 
 async def test_a_payment_touched_again_forgets_its_applications(zoho, engine):
@@ -1035,3 +1094,46 @@ async def test_a_rate_limit_in_the_cash_step_reaches_the_loop(zoho, monkeypatch)
     await sync.run_revenue_sync_batch()
     with pytest.raises(ZohoRateLimited):
         await sync.run_revenue_sync_batch()
+
+
+async def test_a_refused_cash_detail_is_parked_and_the_step_still_completes(zoho, engine):
+    n = SYNC.cash_detail_budget + 1
+    ids = [f"p{i:02d}" for i in range(n)]
+
+    async def pages(since, page):
+        return [payment(pid, f"t{pid}", date=f"2026-10-{10 + i:02d}") for i, pid in enumerate(ids)], False
+
+    async def pay_detail(pid):
+        if pid == ids[-1]:  # newest first: asked first
+            raise ZohoRequestRejected("Zoho Books refused the request (HTTP 400)")
+        return {}
+
+    zoho.payment_pages, zoho.payment_detail = pages, pay_detail
+    await refresh_cash()
+    asked = [c[1] for c in zoho.cash_calls if c[0] == "payment"]
+    assert asked[0] == ids[-1] and len(asked) == SYNC.cash_detail_budget  # the parked read is the one that failed
+    async with store.snapshot(engine) as conn:
+        assert await store.get_setting(conn, store.CASH_SYNCED_KEY)
+    zoho.cash_calls.clear()
+    await refresh_cash()
+    asked = [c[1] for c in zoho.cash_calls if c[0] == "payment"]
+    assert ids[-1] not in asked  # parked, and it does not use up a slot of the budget
+
+
+async def test_a_5xx_invoice_detail_is_parked_while_the_next_one_is_read(zoho, engine):
+    async def unpaid(status, page):
+        return ([invoice("bad", 100), invoice("good", 50)] if status == "unpaid" else []), False
+
+    async def detail(iid):
+        if iid == "bad":
+            raise ZohoAmbiguous("Zoho Books error (HTTP 500)")
+        return {**invoice(iid, 50), "line_items": []}
+
+    zoho.unpaid_pages, zoho.invoice_detail = unpaid, detail
+    await refresh_cash()
+    assert {c[1] for c in zoho.cash_calls if c[0] == "invoice"} == {"bad", "good"}
+    assert "good" in (await cash_rows(engine))[1]
+    assert not sync._step_ready("i:bad")
+    zoho.cash_calls.clear()
+    await refresh_cash()
+    assert "bad" not in [c[1] for c in zoho.cash_calls if c[0] == "invoice"]

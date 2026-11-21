@@ -45,7 +45,7 @@ CEILING_POLL_S = 1.0
 DAY_RETRY_CAP_S = 6 * 3600
 # A 5xx can be one heavy day or Zoho itself: retried soon, so an outage that marks days one by one heals quickly.
 DAY_RETRY_CAP_5XX_S = 600
-STEP_RETRY_S = 6 * 3600  # a customer lookup or month check Zoho rejects (4xx)
+STEP_RETRY_S = 6 * 3600  # a customer lookup, month check or cash detail read Zoho rejects
 FAILED_DAYS_SHOWN = 5
 CASH_PAGE_CAP = 10  # 2 000 payments a run; a capped run resumes from the cursor
 UNPAID_STATUSES = ("unpaid", "overdue", "partially_paid")  # Books' statuses overlap: their union is safe
@@ -68,7 +68,8 @@ _last_call_at = float("-inf")
 _loop_task: asyncio.Task | None = None
 _lane = asyncio.Lock()
 _day_failures: dict[str, DayFailure] = {}
-_step_retry: dict[str, float] = {}  # "c:<customer id>" / "m:<month>" -> monotonic time it may run again
+# "c:<customer id>" / "m:<month>" / "p:<payment id>" / "i:<invoice id>" -> monotonic time it may run again
+_step_retry: dict[str, float] = {}
 _cash_at = float("-inf")
 _cash_error: str | None = None
 
@@ -218,13 +219,20 @@ async def _refresh_cash(db) -> None:
     today = org_today()
     async with store.snapshot() as conn:
         since = await store.get_setting(conn, store.PAYMENTS_SINCE_KEY) or cash.cursor_start(today)
-    for page in range(1, CASH_PAGE_CAP + 1):
+    page = 1
+    for _ in range(CASH_PAGE_CAP):
         rows, more = await _paced(zoho_service.list_customer_payments_page, db, since, page)
         rows = [r for r in rows if r.get("payment_id")]
         cursor = rows[-1].get("last_modified_time") if rows else None
         await store.save_payments(db, [_payment_row(r) for r in rows], cursor, _utcnow())
         if not more:
             break
+        # Keyset paging: a payment edited mid-run moves to the end of the list and would shift offsets. When a
+        # whole page shares one timestamp the cursor cannot advance, so that `since` goes on by page offset.
+        if cursor and cursor != since:
+            since, page = cursor, 1
+        else:
+            page += 1
     unpaid: dict[str, dict] = {}
     truncated = False
     for status in UNPAID_STATUSES:
@@ -245,12 +253,17 @@ async def _refresh_cash(db) -> None:
         payments = await store.read_payments(conn, window_start)
         invoices = await store.read_invoice_shares(conn)
     payment_ids, invoice_ids = cash.detail_queue(payments, invoices, classes, window_start)
-    payment_ids = payment_ids[: SYNC.cash_detail_budget]
+    # A document Zoho refuses is parked (like a refused contact) so it neither stalls the step nor eats the budget.
+    payment_ids = [i for i in payment_ids if _step_ready(f"p:{i}")][: SYNC.cash_detail_budget]
+    invoice_ids = [i for i in invoice_ids if _step_ready(f"i:{i}")]
     for payment_id in payment_ids:
         try:
             p = await _paced(zoho_service.get_customer_payment, db, payment_id)
         except ZohoNotFound:
             await store.delete_payment(db, payment_id)
+            continue
+        except (ZohoRequestRejected, ZohoAmbiguous):
+            _step_retry[f"p:{payment_id}"] = time.monotonic() + STEP_RETRY_S
             continue
         applications = [
             {"invoiceId": str(a.get("invoice_id") or ""), "amount": _num(a.get("amount_applied")) or 0.0}
@@ -268,6 +281,9 @@ async def _refresh_cash(db) -> None:
             }
         except ZohoNotFound:
             row = {**_invoice_row({"invoice_id": invoice_id}), "share": 0.0}  # gone from Books: stop asking
+        except (ZohoRequestRejected, ZohoAmbiguous):
+            _step_retry[f"i:{invoice_id}"] = time.monotonic() + STEP_RETRY_S
+            continue
         await store.save_invoice_detail(db, row, _utcnow())
     await store.save_cash_synced(db, _utcnow())
 
