@@ -33,6 +33,7 @@ from backend.app.services.order_board_actions.line_edit import edit_lines, searc
 from backend.app.services.order_board_actions.parcel import create_parcel, picklist_content
 from backend.app.services.order_board_actions.parcel_edit import edit_parcel, package_content
 from backend.app.services.order_board_actions.picklist import create_picklist, picklist_preview
+from backend.app.services.order_board_actions.quote_accept import accept_quote, create_order_from_quote, undo_accept
 from backend.app.services.order_board_actions.quotes import (
     QuoteNotStored,
     create_quote,
@@ -71,6 +72,9 @@ __all__ = [
     "edit_quote",
     "decline_quote",
     "reopen_quote",
+    "accept_quote",
+    "create_order_from_quote",
+    "undo_accept",
     "search_items",
     "edit_lines",
     "package_content",

@@ -36,6 +36,9 @@ _WRITES = [
     ("put", "/api/v1/order-board/quotes/e1", {"customer_id": "c1", "lines": [_LINE]}),
     ("post", "/api/v1/order-board/quotes/e1/decline", None),
     ("post", "/api/v1/order-board/quotes/e1/reopen", None),
+    ("post", "/api/v1/order-board/quotes/e1/accept", None),
+    ("post", "/api/v1/order-board/quotes/e1/order", None),
+    ("post", "/api/v1/order-board/quotes/e1/undo-accept", {"salesorder_id": "so1"}),
 ]
 
 

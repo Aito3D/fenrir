@@ -178,6 +178,14 @@ async def _create(
         sync.note_write(salesorder_id)
     # Remembered before any local write: a retry after a database failure must not confirm a second order.
     remember(client_ref, fingerprint, salesorder_id)
+    await store_new_order(db, created)
+    await _log(db, salesorder_id, "order.created", by)
+    return salesorder_id
+
+
+async def store_new_order(db: AsyncSession, created: dict) -> None:
+    """Put a just-confirmed order in the local copy (or adopt the copy a pass stored first), pending, and re-read it."""
+    salesorder_id = created["salesorder_id"]
     doc = await sync.find_stored(db, salesorder_id)  # a pass may have listed it already
     if doc is None:
         db.add(OrderBoardDoc(kind="salesorder", zoho_id=salesorder_id, header=created, pending=True))
@@ -189,6 +197,5 @@ async def _create(
     if doc is not None:
         doc.pending = True
         await db.commit()
+    number = created.get("salesorder_number") or salesorder_id
     await _best_effort_refresh(db, salesorder_id, number)  # a failure leaves it pending for the next pass
-    await _log(db, salesorder_id, "order.created", by)
-    return salesorder_id

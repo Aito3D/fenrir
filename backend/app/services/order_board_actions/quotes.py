@@ -160,9 +160,9 @@ def _redated_expiry(detail: dict) -> date:
     return date.today() + timedelta(days=days if days > 0 else _DEFAULT_VALIDITY_DAYS)
 
 
-async def _settle(db: AsyncSession, estimate_id: str, kind: str, by: str | None) -> None:
-    """After a Books write: re-read and store the quote, log the event, ping the open pages. The write stands even when
-    the re-read fails: the stored copy is then left pending for the next pass."""
+async def _settle(db: AsyncSession, estimate_id: str, kind: str | None, by: str | None) -> None:
+    """After a Books write: re-read and store the quote, log the event (if any), ping the open pages. The write stands
+    even when the re-read fails: the stored copy is then left pending for the next pass."""
     sync.note_write(estimate_id)
     try:
         with sync._busy_on_rate_limit(estimate_id):
@@ -175,5 +175,6 @@ async def _settle(db: AsyncSession, estimate_id: str, kind: str, by: str | None)
             if (doc := await sync.find_quote(db, estimate_id)) is not None:
                 doc.pending = True
                 await db.commit()
-    await _log(db, estimate_id, kind, by)
+    if kind is not None:
+        await _log(db, estimate_id, kind, by)
     await sync.announce_board_change(quotes=True)

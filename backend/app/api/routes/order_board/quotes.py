@@ -95,3 +95,53 @@ async def reopen_quote(
     await _run(order_board_actions.reopen_quote(db, estimate_id, by=_by(user)))
     _logged(user, estimate_id, "reopen_quote")
     return await _quotes_after(db, estimate_id)
+
+
+async def _quote_order_after(db: AsyncSession, salesorder_id: str) -> dict:
+    return {
+        "quotes": await order_board_sync.read_quotes(db),
+        "board": await order_board_sync.read_board(db),
+        "row": await order_board_sync.find_board_row(db, salesorder_id),
+        "salesorder_id": salesorder_id,
+    }
+
+
+@router.post("/quotes/{estimate_id}/accept")
+async def accept_quote(
+    estimate_id: str,
+    db: AsyncSession = Depends(get_db, scope="function"),
+    user: User | None = RequirePermissionIfAuthEnabled(Permission.ORDERS_UPDATE),
+) -> dict:
+    """Mark the quote accepted and create its sales order in Books."""
+    salesorder_id = await _run(order_board_actions.accept_quote(db, estimate_id, by=_by(user)))
+    _logged(user, estimate_id, "accept_quote")
+    return await _quote_order_after(db, salesorder_id)
+
+
+@router.post("/quotes/{estimate_id}/order")
+async def create_order_from_quote(
+    estimate_id: str,
+    db: AsyncSession = Depends(get_db, scope="function"),
+    user: User | None = RequirePermissionIfAuthEnabled(Permission.ORDERS_UPDATE),
+) -> dict:
+    """Create the sales order of a quote already accepted."""
+    salesorder_id = await _run(order_board_actions.create_order_from_quote(db, estimate_id, by=_by(user)))
+    _logged(user, estimate_id, "create_order_from_quote")
+    return await _quote_order_after(db, salesorder_id)
+
+
+class UndoAcceptBody(BaseModel):
+    salesorder_id: str = Field(min_length=1, max_length=64)
+
+
+@router.post("/quotes/{estimate_id}/undo-accept")
+async def undo_accept_quote(
+    estimate_id: str,
+    body: UndoAcceptBody,
+    db: AsyncSession = Depends(get_db, scope="function"),
+    user: User | None = RequirePermissionIfAuthEnabled(Permission.ORDERS_UPDATE),
+) -> dict:
+    """Delete the quote's new order in Books and mark the quote sent again."""
+    await _run(order_board_actions.undo_accept(db, estimate_id, body.salesorder_id, by=_by(user)))
+    _logged(user, estimate_id, "undo_accept_quote")
+    return {"quotes": await order_board_sync.read_quotes(db), "board": await order_board_sync.read_board(db)}
