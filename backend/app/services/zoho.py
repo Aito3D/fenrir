@@ -1074,6 +1074,10 @@ class ZohoService:
         """Every sales order's list row (no line items)."""
         return await self._list_all(db, "/salesorders", "salesorders")
 
+    async def list_estimates(self, db: AsyncSession) -> list[dict]:
+        """Every estimate's list row (no line items)."""
+        return await self._list_all(db, "/estimates", "estimates")
+
     async def list_purchaseorders(self, db: AsyncSession) -> list[dict]:
         """Every purchase order's list row (no line items)."""
         return await self._list_all(db, "/purchaseorders", "purchaseorders")
@@ -1470,6 +1474,28 @@ class ZohoService:
         2026-10-01 (a one-day window returned 33 rows)."""
         return await self._list_modified_since(db, "/estimates", "estimates", "estimate_id", since)
 
+    async def list_estimate_rows_modified_since(self, db: AsyncSession, since: str) -> tuple[list[dict], bool]:
+        """Full estimate list rows touched since ``since``, oldest first, and whether
+        ``_MAX_CHANGE_PAGES`` cut the listing short. Same query as ``_list_modified_since``."""
+        rows: list[dict] = []
+        for page in range(1, _MAX_CHANGE_PAGES + 1):
+            payload = await self._request(
+                db,
+                "GET",
+                "/estimates",
+                params={
+                    "last_modified_time": since,
+                    "sort_column": "last_modified_time",
+                    "sort_order": "A",
+                    "per_page": "200",
+                    "page": str(page),
+                },
+            )
+            rows += payload.get("estimates") or []
+            if not (payload.get("page_context") or {}).get("has_more_page"):
+                return rows, False
+        return rows, True
+
     async def list_customer_payments_modified_since(self, db: AsyncSession, since: str):
         """Customer payments touched since ``since`` (verified live, same day)."""
         return await self._list_modified_since(db, "/customerpayments", "customerpayments", "payment_id", since)
@@ -1562,6 +1588,17 @@ class ZohoService:
     async def void_salesorder(self, db: AsyncSession, salesorder_id: str) -> None:
         """Mark a sales order void. From Zoho's API reference, unverified against a live write."""
         await self._request(db, "POST", f"/salesorders/{_seg(salesorder_id)}/status/void")
+
+    async def delete_salesorder(self, db: AsyncSession, salesorder_id: str) -> None:
+        """Delete a sales order (verified live 2026-11-21)."""
+        await self._request(db, "DELETE", f"/salesorders/{_seg(salesorder_id)}")
+
+    async def salesorder_prefill_from_estimate(self, db: AsyncSession, estimate_id: str) -> dict:
+        """The sales order Books would draft from an estimate (verified live 2026-11-21)."""
+        payload = await self._request(
+            db, "GET", "/salesorders/editpage/fromestimate", params={"estimate_id": estimate_id}
+        )
+        return payload.get("salesorder") or {}
 
     async def mark_shipment_delivered(self, db: AsyncSession, shipment_id: str) -> None:
         """Mark a shipment delivered. Unverified against a live write (spec, "Not verified")."""
