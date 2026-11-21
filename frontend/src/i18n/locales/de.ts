@@ -13279,6 +13279,7 @@ export default {
       kindNew: 'neu',
       kindLost: 'nicht mehr verkauft',
       empty: 'Keine Verkäufe in beiden Zeiträumen',
+      noPrevious: 'Kein früherer Zeitraum gleicher Länge im Verlauf: Wählen Sie einen kürzeren Zeitraum.',
     },
     cohorts: {
       title: 'Kohorten nach Erstkauf',

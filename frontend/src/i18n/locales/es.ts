@@ -13287,6 +13287,7 @@ export default {
       kindNew: 'nuevo',
       kindLost: 'ya no se vende',
       empty: 'Sin ventas en ninguno de los dos periodos',
+      noPrevious: 'No hay un periodo anterior de la misma duración en el historial: elija un periodo más corto.',
     },
     cohorts: {
       title: 'Cohortes por primera compra',

@@ -52,8 +52,9 @@ export function RevenueBridge({ from, to, filterParams, version }: { from: strin
   const { data, error } = useRevenueResource<PvmResponse>(`/api/v1/revenue/pvm?from=${from}&to=${to}${filterParams}`, version);
   return (
     <Panel title={t('revenue.bridge.title')}
-      action={data ? <span className="text-[11px] text-bambu-gray">{t('revenue.bridge.versus', { from: dayMonth(data.previousFrom), to: dayMonth(data.previousTo) })}</span> : undefined}>
+      action={data?.comparable ? <span className="text-[11px] text-bambu-gray">{t('revenue.bridge.versus', { from: dayMonth(data.previousFrom), to: dayMonth(data.previousTo) })}</span> : undefined}>
       {error ? <p role="alert" className="text-sm text-status-error">{error}</p> : !data ? <Skeleton className="h-40 w-full" />
+        : !data.comparable ? <Empty>{t('revenue.bridge.noPrevious')}</Empty>
         : data.previous === 0 && data.current === 0 ? <Empty>{t('revenue.bridge.empty')}</Empty> : (
           <div className="grid items-start gap-3 lg:grid-cols-2">
             <Bridge data={data} />

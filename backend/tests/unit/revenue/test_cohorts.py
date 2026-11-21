@@ -68,3 +68,9 @@ def test_at_risk_is_ranked_by_twelve_month_revenue_and_capped_at_twenty():
     rows = cohorts(p)["atRisk"]
     assert len(rows) == 20
     assert rows[0]["customerName"] == "c24" and rows[0]["revenue12m"] == 372
+
+
+def test_nobody_is_chased_before_thirty_days_of_silence():
+    # Bought three days running, then quiet for 20 days: far over 1.5 x a 1-day rhythm, still too early to chase.
+    p = [("burst", d, 100) for d in ("2026-10-29", "2026-10-30", "2026-10-31")]
+    assert cohorts(p)["atRisk"] == []

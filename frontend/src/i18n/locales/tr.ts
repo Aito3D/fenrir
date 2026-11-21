@@ -13206,6 +13206,7 @@ export default {
       kindNew: 'yeni',
       kindLost: 'artık satılmıyor',
       empty: 'Her iki dönemde de satış yok',
+      noPrevious: 'Geçmişte aynı uzunlukta önceki bir dönem yok: daha kısa bir dönem seçin.',
     },
     cohorts: {
       title: 'İlk alışverişe göre kohortlar',

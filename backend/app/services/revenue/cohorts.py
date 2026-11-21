@@ -14,6 +14,7 @@ COHORT_MONTHS = 12
 LTV_DAYS = 365
 RISK_MIN_DAYS = 3
 RISK_FACTOR = 1.5
+RISK_MIN_SILENCE = 30  # days: nobody is chased sooner, whatever a burst of purchases says about their rhythm
 RISK_ROWS = 20
 
 
@@ -56,7 +57,7 @@ def build_cohorts(
         if len(days) >= RISK_MIN_DAYS:
             gap = statistics.median(days_between(a, b) - 1 for a, b in zip(days, days[1:], strict=False))
             since = days_between(days[-1], today) - 1
-            if gap >= 1 and since > RISK_FACTOR * gap:
+            if gap >= 1 and since > max(RISK_FACTOR * gap, RISK_MIN_SILENCE):
                 at_risk.append(
                     {
                         "customerName": names.get(customer, customer),

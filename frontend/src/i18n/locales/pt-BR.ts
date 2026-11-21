@@ -13264,6 +13264,7 @@ export default {
       kindNew: 'novo',
       kindLost: 'não vendido mais',
       empty: 'Sem vendas em nenhum dos períodos',
+      noPrevious: 'Não há período anterior de mesma duração no histórico: escolha um período mais curto.',
     },
     cohorts: {
       title: 'Coortes por primeira compra',

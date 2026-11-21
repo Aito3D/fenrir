@@ -13262,6 +13262,7 @@ export default {
       kindNew: '新增',
       kindLost: '已停售',
       empty: '兩個期間均無銷售',
+      noPrevious: '歷史記錄中沒有相同長度的上一期間：請選擇較短的期間。',
     },
     cohorts: {
       title: '依首次購買劃分的客群',

@@ -5,7 +5,7 @@ import type { PvmResponse } from '../../../components/revenue/lib/types';
 
 const json = (body: unknown) => new Response(JSON.stringify(body), { status: 200, headers: { 'Content-Type': 'application/json' } });
 const payload = (o: Partial<PvmResponse> = {}): PvmResponse => ({
-  from: '2026-11-01', to: '2026-11-20', previousFrom: '2026-10-12', previousTo: '2026-10-31',
+  comparable: true, from: '2026-11-01', to: '2026-11-20', previousFrom: '2026-10-12', previousTo: '2026-10-31',
   previous: 1_000_000, volume: 150_000, mix: -40_000, price: 60_000, new: 90_000, lost: -110_000, current: 1_150_000,
   items: [
     { name: 'PLA Basic', effect: 120_000, volume: 100_000, price: 20_000, kind: 'both' },
@@ -48,6 +48,12 @@ describe('RevenueBridge', () => {
     show(payload());
     expect((await screen.findByText('PLA Basic')).closest('div')).toHaveTextContent('+120.000 FCP');
     expect(screen.getByText('Kayak').closest('div')).toHaveTextContent('no longer sold');
+  });
+
+  it('says so when there is no earlier period in the history to compare with', async () => {
+    show(payload({ comparable: false }));
+    expect(await screen.findByText('No earlier period of the same length in the history: pick a shorter period.')).toBeInTheDocument();
+    expect(screen.queryByTestId('revenue-bridge')).toBeNull();
   });
 
   it('says so when neither period has sales', async () => {

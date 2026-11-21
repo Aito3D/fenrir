@@ -755,3 +755,12 @@ async def test_cohorts_need_view_customers(async_client, revenue_db, tokens):
     assert len(body["cohorts"]) == 12
     # c1 bought once, on 2025-03-10: older than a year, so it counts in the 12-month value.
     assert body["ltv"] == [{"segment": "inconnu", "customers": 1, "ltv12": 1000}]
+
+
+@pytest.mark.asyncio
+async def test_pvm_says_when_the_period_before_falls_outside_the_history(async_client, revenue_db, tokens):
+    body = (await async_client.get(f"{URL}/pvm?from=2024-01-01&to={DAY}", headers=tokens["read"])).json()
+    assert body["comparable"] is False
+    assert (body["new"], body["current"]) == (0, 1000)
+    month = (await async_client.get(f"{URL}/pvm?from={DAY[:7]}-01&to={DAY}", headers=tokens["read"])).json()
+    assert month["comparable"] is True

@@ -44,11 +44,13 @@ function Aging({ data }: { data: CashResponse }) {
       />
       <h3 className="pt-1 text-[13px] font-medium text-white">{t('revenue.forecast.title')}</h3>
       <div className="grid grid-cols-[repeat(auto-fit,minmax(9rem,1fr))] gap-2">
-        {forecast.map((w, i) => (
-          <Tile key={w.window} label={t(`revenue.forecast.${w.window}`)} value={formatFcp(w.invoices + w.orders)}
-            hint={i === 0 && w.orders > 0 ? t('revenue.forecast.split', { invoices: formatFcp(w.invoices), orders: formatFcp(w.orders) }) : undefined} />
+        {forecast.map((w) => (
+          <Tile key={w.window} label={t(`revenue.forecast.${w.window}`)} value={formatFcp(w.invoices + w.orders)} />
         ))}
       </div>
+      {forecast[0]?.orders > 0 && (
+        <p className={NOTE}>{`${t('revenue.forecast.d30')} : ${t('revenue.forecast.split', { invoices: formatFcp(forecast[0].invoices), orders: formatFcp(forecast[0].orders) })}`}</p>
+      )}
     </>
   );
 }

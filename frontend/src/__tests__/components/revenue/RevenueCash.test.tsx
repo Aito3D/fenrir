@@ -101,7 +101,7 @@ describe('RevenueCash', () => {
     expect(screen.getByText('Bob SARL').closest('div')).toHaveTextContent('91.000 FCP');
     expect(screen.getByText('of which 44.000 FCP late · 63 d late')).toBeInTheDocument();
     expect(screen.getByText('Within 30 d').closest('div')!.parentElement).toHaveTextContent('1.110.000 FCP');
-    expect(screen.getByText('Invoices 210.000 FCP · order book 900.000 FCP')).toBeInTheDocument();
+    expect(screen.getByText('Within 30 d : Invoices 210.000 FCP · order book 900.000 FCP')).toBeInTheDocument();
     expect(screen.getByText('In 31–60 d').closest('div')!.parentElement).toHaveTextContent('55.000 FCP');
   });
 

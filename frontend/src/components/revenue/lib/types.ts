@@ -407,6 +407,8 @@ export interface ResultResponse {
 }
 
 export interface PvmResponse {
+  /** False when the period before starts before the history: the figures are then all zero but `current`. */
+  comparable: boolean;
   from: string;
   to: string;
   previousFrom: string;

@@ -13484,6 +13484,7 @@ export default {
       kindNew: 'nowa',
       kindLost: 'już niesprzedawana',
       empty: 'Brak sprzedaży w obu okresach',
+      noPrevious: 'Brak wcześniejszego okresu o tej samej długości w historii: wybierz krótszy okres.',
     },
     cohorts: {
       title: 'Kohorty według pierwszego zakupu',

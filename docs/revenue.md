@@ -210,6 +210,8 @@ with the one of the same length just before it, per item (quantity and HT).
 - The volume parts are cut in two: `volume` = change in total units × the old average price; `mix` = the rest (units
   moving between cheap and dear items).
 - Anything else is `new` or `lost`: an item sold in one period only, or a line without quantity (credit note).
+- When the period before would start before the history (the default all-time range), `comparable` is `false` and
+  the panel says so instead of calling everything new.
 - `previous + volume + mix + price + new + lost = current`; mix takes the rounding remainder. `items` are the ten
   largest effects.
 
@@ -226,7 +228,8 @@ cached history, identified customers only (no customer id and the walk-in accoun
   month +k+1 (`null` while that month is ahead), and HT per customer to date.
 - `ltv`: per segment, the mean HT of the 365 days following a first purchase, over customers first seen at least a
   year ago.
-- `atRisk`: customers with at least 3 purchase days whose silence exceeds 1.5 × their median gap between purchases;
+- `atRisk`: customers with at least 3 purchase days whose silence exceeds 1.5 × their median gap between purchases
+  and 30 days;
   the 20 with the highest HT over the last 365 days.
 
 ## Quote funnel

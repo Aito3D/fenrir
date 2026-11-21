@@ -13336,6 +13336,7 @@ errors: {
       kindNew: 'ny',
       kindLost: 'säljs inte längre',
       empty: 'Ingen försäljning i någon av perioderna',
+      noPrevious: 'Ingen tidigare period av samma längd i historiken: välj en kortare period.',
     },
     cohorts: {
       title: 'Kohorter efter första köp',

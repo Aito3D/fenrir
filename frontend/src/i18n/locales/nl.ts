@@ -13303,6 +13303,7 @@ export default {
       kindNew: 'nieuw',
       kindLost: 'niet meer verkocht',
       empty: 'Geen verkopen in beide periodes',
+      noPrevious: 'Geen eerdere periode van dezelfde lengte in de historie: kies een kortere periode.',
     },
     cohorts: {
       title: 'Cohorten per eerste aankoop',

@@ -540,16 +540,22 @@ async def get_pvm(
     flags = memo.caller_flags(user)
     filters = _filters(flags, items, brand, kind, segment)
     prev_to = add_days(from_, -1)
-    prev_from = max(add_days(from_, -days_between(from_, to)), REVENUE_HISTORY_START)
+    prev_from = add_days(from_, -days_between(from_, to))
+    # A period before the history would read as "everything is new".
+    comparable = prev_from >= REVENUE_HISTORY_START
 
     async def build(conn, _now, _status):
-        ctx = await _context(conn, min(prev_from, from_), to)
+        ctx = await _context(conn, prev_from if comparable else from_, to)
 
         def rows(a: str, b: str) -> list[dict]:
             return _breakdown(ctx, [x for x in ctx["lines"] if a <= x.day <= b], filters)
 
-        bridge = analysis.price_volume_mix(rows(from_, to), rows(prev_from, prev_to))
-        return {"from": from_, "to": to, "previousFrom": prev_from, "previousTo": prev_to, **bridge}
+        cur = rows(from_, to)
+        bridge = analysis.price_volume_mix(cur, rows(prev_from, prev_to) if comparable else cur)
+        if not comparable:
+            bridge["items"] = []
+        period = {"from": from_, "to": to, "previousFrom": prev_from, "previousTo": prev_to}
+        return {"comparable": comparable, **period, **bridge}
 
     return await _respond(request, user, build, flags=flags, now=datetime.now(timezone.utc))
 

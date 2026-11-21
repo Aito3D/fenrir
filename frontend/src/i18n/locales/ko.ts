@@ -12861,6 +12861,7 @@ export default {
       kindNew: '신규',
       kindLost: '판매 중단',
       empty: '두 기간 모두 매출이 없습니다',
+      noPrevious: '기록에 같은 길이의 이전 기간이 없습니다. 더 짧은 기간을 선택하세요.',
     },
     cohorts: {
       title: '첫 구매별 코호트',

@@ -71,8 +71,8 @@ permission-stripping pattern, panel in `frontend/src/components/revenue/`, i18n 
 
 ### 5. Quote funnel (Évolution, beside the order book)
 
-- Aito cards with `quote_sent_at` in the last 12 months, trashed cards included (a declined quote is often trashed;
-  use `quote_status_before_trash` when set).
+- Aito cards with `quote_sent_at` in the last 12 months, trashed cards included: trashing a card declines its quote in Books, so it counts
+  as declined (corrected 2026-11-21 on real data; `quote_status_before_trash` only serves a restore).
 - Counts and totals: sent → accepted / declined / expired / still awaiting. Conversion in count and in value, both
   over decided quotes, with `n` shown.
 - Median days `quote_sent_at → quote_accepted_at`.

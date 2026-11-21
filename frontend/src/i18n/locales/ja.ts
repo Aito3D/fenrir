@@ -13278,6 +13278,7 @@ export default {
       kindNew: '新規',
       kindLost: '販売終了',
       empty: 'どちらの期間にも売上がありません',
+      noPrevious: '履歴に同じ長さの前期間がありません。より短い期間を選んでください。',
     },
     cohorts: {
       title: '初回購入月別コホート',

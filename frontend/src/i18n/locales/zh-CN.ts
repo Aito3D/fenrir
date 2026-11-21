@@ -13262,6 +13262,7 @@ export default {
       kindNew: '新增',
       kindLost: '已停售',
       empty: '两个期间均无销售',
+      noPrevious: '历史记录中没有相同长度的上一期间：请选择更短的期间。',
     },
     cohorts: {
       title: '按首次购买划分的客户群',
