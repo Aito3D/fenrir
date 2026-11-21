@@ -31,6 +31,8 @@ def quote(n: int, *, status="sent", age=3, item="A", modified="2026-11-01T08:00:
         "total": 500.0,
         "currency_code": "XPF",
         "reference_number": "",
+        "is_inclusive_tax": True,
+        "discount_type": "item_level",
         "last_modified_time": modified,
         "line_items": [{"line_item_id": f"ql{n}", "item_id": item, "name": "Thing", "quantity": 1, "rate": 500}],
         "salesorders": list(salesorders),

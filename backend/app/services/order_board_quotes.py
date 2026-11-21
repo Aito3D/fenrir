@@ -39,8 +39,12 @@ def is_quote_candidate(header: dict, today: date, max_age_days: int, aito_quote_
 
 
 def editable_here(detail: dict) -> bool:
-    """Every line is a stocked item, so the board can edit it."""
-    return all(line.get("item_id") for line in detail.get("line_items") or [])
+    """Tax-inclusive with item-level discounts (what the board sends) and every line a stocked item."""
+    return (
+        detail.get("is_inclusive_tax") is True
+        and detail.get("discount_type") == "item_level"
+        and all(line.get("item_id") for line in detail.get("line_items") or [])
+    )
 
 
 def held_by_orders(board_rows: list[dict]) -> dict[str, float]:

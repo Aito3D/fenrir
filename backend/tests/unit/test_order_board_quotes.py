@@ -20,7 +20,12 @@ def header(**kw):
 
 
 def detail(**kw):
-    return {"line_items": [{"line_item_id": "l1", "item_id": "i1", "name": "N", "sku": "S", "quantity": 2.5}], **kw}
+    return {
+        "is_inclusive_tax": True,
+        "discount_type": "item_level",
+        "line_items": [{"line_item_id": "l1", "item_id": "i1", "name": "N", "sku": "S", "quantity": 2.5}],
+        **kw,
+    }
 
 
 def test_state_other_status_is_none():
@@ -67,7 +72,13 @@ def test_candidate_rules():
 
 def test_editable_here():
     assert editable_here(detail())
-    assert not editable_here({"line_items": [{"item_id": "i1"}, {"item_id": ""}]})
+    assert not editable_here(detail(line_items=[{"item_id": "i1"}, {"item_id": ""}]))
+
+
+def test_editable_here_needs_inclusive_tax_and_item_level_discount():
+    assert not editable_here(detail(is_inclusive_tax=False))
+    assert not editable_here(detail(is_inclusive_tax=None))
+    assert not editable_here(detail(discount_type="entity_level"))
 
 
 def test_quote_row_accepted_hidden_without_detail_or_when_converted():

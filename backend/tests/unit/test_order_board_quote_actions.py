@@ -62,7 +62,17 @@ def books(zoho, monkeypatch):  # noqa: F811
         zoho.sent.append(("status", estimate_id, status))
         zoho.estimates[estimate_id] = {**zoho.estimates[estimate_id], "status": status}
 
-    for fn in (list_items_by_ids, create_estimate, update_estimate_lines, update_estimate_fields, set_estimate_status):
+    async def list_contact_persons(db, contact_id):
+        return []
+
+    for fn in (
+        list_items_by_ids,
+        create_estimate,
+        update_estimate_lines,
+        update_estimate_fields,
+        set_estimate_status,
+        list_contact_persons,
+    ):
         monkeypatch.setattr(zoho_service, fn.__name__, fn)
     return zoho
 
@@ -168,6 +178,63 @@ async def test_edit_new_line_takes_the_item_rate(db_session, books):
     [(_, _, sent_lines, customer_id)] = books.sent
     assert sent_lines[1] == {"item_id": "B", "quantity": 2, "rate": 3000.0}
     assert customer_id == "c2"
+
+
+@pytest.fixture
+def books_http(books, monkeypatch):
+    """The real update_estimate_lines and list_contact_persons over a fake ``_request``: the bodies Books would get."""
+    books.requests = []
+    books.persons = {"c2": [{"contact_person_id": "p1"}, {"contact_person_id": "p2", "is_primary_contact": True}]}
+    real = type(zoho_service)
+
+    async def request(db, method, path, **kw):
+        books.requests.append((method, path, kw.get("json")))
+        if method == "GET":
+            return {"contact": {"contact_persons": books.persons.get(path.rsplit("/", 1)[-1], [])}}
+        return {"estimate": books.estimates[path.rsplit("/", 1)[-1]]}
+
+    monkeypatch.setattr(zoho_service, "_request", request)
+    for name in ("update_estimate_lines", "list_contact_persons"):
+        monkeypatch.setattr(zoho_service, name, getattr(real, name).__get__(zoho_service))
+    return books
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("persons", "contact_persons"), [(None, ["p2"]), ([], None), ([{"contact_person_id": "p1"}], ["p1"])]
+)
+async def test_edit_to_another_customer_moves_the_contact_person(db_session, books_http, persons, contact_persons):
+    if persons is not None:
+        books_http.persons["c2"] = persons
+    await _stored(db_session, books_http, _with_line(1))
+    await actions.edit_quote(db_session, "e1", "c2", [{"line_id": "ql1", "item_id": "A", "quantity": 1}], by=None)
+    [put] = [r for r in books_http.requests if r[0] == "PUT"]
+    assert put[2]["customer_id"] == "c2"
+    assert put[2].get("contact_persons") == contact_persons
+
+
+@pytest.mark.asyncio
+async def test_edit_for_the_same_customer_reads_no_contact(db_session, books_http):
+    await _stored(db_session, books_http, _with_line(1))
+    await actions.edit_quote(db_session, "e1", "c1", [{"line_id": "ql1", "item_id": "A", "quantity": 1}], by=None)
+    [(method, _, body)] = books_http.requests
+    assert method == "PUT" and "contact_persons" not in body and "customer_id" not in body
+
+
+@pytest.mark.asyncio
+async def test_edit_kept_line_naming_another_item_is_refused(db_session, books):
+    await _stored(db_session, books, _with_line(1))
+    with pytest.raises(actions.OrderActionRefused, match="unknown_line"):
+        await actions.edit_quote(db_session, "e1", "c1", [{"line_id": "ql1", "item_id": "B", "quantity": 1}], by=None)
+    assert books.sent == []
+
+
+@pytest.mark.asyncio
+async def test_edit_refused_on_a_tax_exclusive_quote(db_session, books):
+    await _stored(db_session, books, {**_with_line(1), "is_inclusive_tax": False})
+    with pytest.raises(actions.OrderActionRefused, match="quote_not_editable"):
+        await actions.edit_quote(db_session, "e1", "c1", [{"line_id": "ql1", "item_id": "A", "quantity": 1}], by=None)
+    assert books.sent == []
 
 
 @pytest.mark.asyncio

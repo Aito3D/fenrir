@@ -74,7 +74,11 @@ async def edit_quote(
             if line_id is None:
                 new.append(entry)
                 continue
-            if line_id not in raws or any(k.get("line_item_id") == line_id for k in kept):
+            if (
+                line_id not in raws
+                or raws[line_id].get("item_id") != entry.get("item_id")
+                or any(k.get("line_item_id") == line_id for k in kept)
+            ):
                 raise OrderActionRefused("unknown_line")
             raw = raws[line_id]
             q = checked_quantity(entry.get("quantity"))
@@ -92,13 +96,17 @@ async def edit_quote(
         redate = None
         if quote_state(detail, date.today()) == "expired":
             redate = {"date": date.today().isoformat(), "expiry_date": _redated_expiry(detail).isoformat()}
+        moved_to = customer_id if customer_id != detail.get("customer_id") else None
+        contact_person_id = None
+        if moved_to is not None:  # the old customer's contact person cannot stay on the quote
+            with sync._busy_on_rate_limit(estimate_id):
+                persons = await zoho_service.list_contact_persons(db, moved_to)
+            primary = next((p for p in persons if p["is_primary"]), persons[0] if persons else None)
+            contact_person_id = (primary or {}).get("contact_person_id") or None
         sync.note_write(estimate_id)
         with sync._busy_on_rate_limit(estimate_id):
             await zoho_service.update_estimate_lines(
-                db,
-                estimate_id,
-                body_lines,
-                customer_id=customer_id if customer_id != detail.get("customer_id") else None,
+                db, estimate_id, body_lines, customer_id=moved_to, contact_person_id=contact_person_id
             )
             logger.info("Order board write: quote=%s step=lines", estimate_id)
             if redate is not None:
