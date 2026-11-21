@@ -162,6 +162,86 @@ Reads: `GET /api/v1/revenue/pipeline` (`revenue:read`):
 }
 ```
 
+## Result and break-even
+
+« Résultat d'exploitation » in Évolution (unfiltered page, `revenue:view_margin`). Zero Zoho calls.
+
+- **Fixed costs** are typed by hand under ⋯ → « Charges fixes » (`{label, monthly}`, the `revenue_fixed_costs` row of
+  `settings`). Type the 3D part only: the Zoho org is shared with the sailing business. Reading takes `view_margin`,
+  saving `view_margin` + `manage_targets`, like labour.
+- **Per month** (last 12): `result = HT − variable − labour − fixed`. `variable` is the bucket's item costs plus the
+  print log's filament, energy and wear; `labour` is the labour list. The current month counts fixed costs for the days
+  gone only (up to yesterday), as labour already does.
+- **Break-even** of the current month: `(fixed + labour of the full month) ÷ rate`, with
+  `rate = (HT − variable) ÷ HT`. Labour of the full month is the labour so far scaled to the month (last month's on the
+  1st). A month with no sale yet borrows the rate of the three closed months before. `breakEven` is `null` when the rate
+  is zero or negative (costs above sales) or when there is no charge at all.
+- `day` is the day the running HT crossed the amount; when not crossed yet, the day the current daily average would
+  reach it (`projected: true`), or `null` when that falls after the month's end.
+
+Reads: `GET /api/v1/revenue/result`, `GET|PUT /api/v1/revenue/fixed-costs`.
+
+```
+{"fixedMonthly": n,
+ "months": [{"month": "2026-11", "ht": n, "variable": n, "labor": n, "fixed": n, "result": n}],
+ "breakEven": {"amount": n, "reached": 0.6, "day": "2026-11-25" | null, "projected": true} | null}
+```
+
+## Aged receivables and expected cash
+
+Three more keys on `GET /api/v1/revenue/cash`, from the same open invoices and 3D shares as « Reste dû »:
+
+- `aging.buckets`: the 3D part of each open balance by days overdue: `notDue` (also invoices without a due date),
+  `d30` (1-30), `d60` (31-60), `d90` (61-90), `over`. Invoices whose share is unknown stay in `outstanding.unknown`.
+  `aging.byCustomer` (needs `view_customers`): the ten customers owing the most overdue.
+- `dso`: outstanding ÷ in-scope TTC invoiced in the last 90 days × 90; `null` when nothing was invoiced.
+- `forecast`: cash expected within 30 days, in 31-60 and in 61-90, from due dates. Overdue and undated balances go in
+  the first window, and so does the accepted, not yet invoiced order book (quote total less deposits paid), which has
+  no date of its own: `{window, invoices, orders}`.
+
+Only open invoices are cached, so there is no history of who paid late in the past.
+
+## Price / volume / mix
+
+« Pourquoi le CA a bougé » in Produits: `GET /api/v1/revenue/pvm?from=&to=` (+ the page's filters) compares the period
+with the one of the same length just before it, per item (quantity and HT).
+
+- Items sold with a quantity in both periods: `(q1 − q0) × p0` is their volume part, `(p1 − p0) × q1` their price part.
+- The volume parts are cut in two: `volume` = change in total units × the old average price; `mix` = the rest (units
+  moving between cheap and dear items).
+- Anything else is `new` or `lost`: an item sold in one period only, or a line without quantity (credit note).
+- `previous + volume + mix + price + new + lost = current`; mix takes the rounding remainder. `items` are the ten
+  largest effects.
+
+Units of different items are added together to get the average price, so `volume` vs `mix` is only as meaningful as the
+catalogue is homogeneous; `price`, `new` and `lost` do not depend on it.
+
+## Cohorts and customers to chase
+
+Under the Clients view (unfiltered page, `revenue:view_customers`): `GET /api/v1/revenue/cohorts`, over the whole
+cached history, identified customers only (no customer id and the walk-in account are left out).
+
+- A **purchase day** is a day whose in-scope lines for the customer net above zero.
+- `cohorts`: the last 12 months of first purchases: size, `retention[k]` = % of the cohort with a purchase day in
+  month +k+1 (`null` while that month is ahead), and HT per customer to date.
+- `ltv`: per segment, the mean HT of the 365 days following a first purchase, over customers first seen at least a
+  year ago.
+- `atRisk`: customers with at least 3 purchase days whose silence exceeds 1.5 × their median gap between purchases;
+  the 20 with the highest HT over the last 365 days.
+
+## Quote funnel
+
+« Devis envoyés, 12 derniers mois » beside the order book: `GET /api/v1/revenue/funnel`, from the Aito board (local
+database). Cards whose quote was sent (`quote_sent_at`) in the last 365 days, trashed cards included and read by their
+status before the trash.
+
+- `accepted` (accepted or invoiced), `declined`, `expired`, `awaiting` (sent or viewed); `sent` is the four together.
+- `conversion`: accepted ÷ decided (accepted + declined + expired), in count and in value, with `decided` so a rate on
+  a handful of quotes reads as such.
+- `medianDaysToAccept`: from sent to accepted.
+- `bands`: the same rate under 10 000, 10 000 to 50 000, and 50 000 XPF TTC and more. A quote without a total counts
+  in the counts and in `missingTotal`, in no amount and no band.
+
 ## Tables
 
 New tables come from `create_all` (no migration); they work on SQLite and PostgreSQL.
