@@ -2,7 +2,7 @@ import type { OrderItemHit } from '../../api/client';
 
 /** Text helpers of the item search: the colour dot, the matched words and the sellable quantity of a result. */
 
-const fold = (s: string) => s.normalize('NFD').replace(/\p{M}/gu, '').toLowerCase();
+export const fold = (s: string) => s.normalize('NFD').replace(/\p{M}/gu, '').toLowerCase();
 
 // shortcut: the basic colour words of the shop's item names (French and English), not the full colour catalogue; extend when a name shows no dot.
 const COLOUR: Record<string, string> = {

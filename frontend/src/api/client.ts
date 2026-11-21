@@ -5508,6 +5508,22 @@ export interface OrderPackageContent { id: string; number: string; version: stri
 export type OrderEditResult = { board: OrderBoardResponse; row: OrderBoardRow | null };
 export interface CounterOrderLine { item_id: string; quantity: number; discount?: string }
 
+export type QuoteState = 'draft' | 'sent' | 'accepted' | 'expired' | 'declined';
+export interface QuoteLine {
+  id: string; item_id: string | null; name: string; sku: string; quantity: number; rate: number;
+  discount: string | null; total: number; available: number | null;
+}
+export interface QuoteRow {
+  id: string; number: string; customer: string; customer_id: string; date: string; expiry_date: string;
+  state: QuoteState; total: number | null; currency: string; reference: string; age_days: number;
+  is_core: boolean | null; editable: boolean; has_draft_order: boolean; modified: string; lines: QuoteLine[] | null;
+}
+export interface QuoteOrderResult {
+  quotes: QuotesResponse; board: OrderBoardResponse; row: OrderBoardRow | null; salesorder_id: string;
+}
+export interface QuotesResponse { rows: QuoteRow[]; loading: number; ready: boolean }
+export interface QuoteLineInput { line_id?: string; item_id: string; quantity: number; discount?: string }
+
 /** What the opened panel needs: a board row, or a finished order fetched on demand. */
 export type OrderPanelRow = Omit<OrderBoardRow, 'status'>;
 export type FinishedOrderDetail = OrderPanelRow & { status: 'finished' };
@@ -10593,6 +10609,40 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ to }),
     }),
+  getQuotes: () => request<QuotesResponse>('/order-board/quotes'),
+  createQuote: (body: { customer_id: string; client_ref: string; lines: QuoteLineInput[] }) =>
+    request<{ quotes: QuotesResponse; estimate_id: string }>('/order-board/quotes', { method: 'POST', body: JSON.stringify(body) }),
+  editQuote: (id: string, body: { customer_id: string; lines: QuoteLineInput[] }) =>
+    request<{ quotes: QuotesResponse; estimate_id: string }>(`/order-board/quotes/${encodeURIComponent(id)}`, { method: 'PUT', body: JSON.stringify(body) }),
+  declineQuote: (id: string) =>
+    request<{ quotes: QuotesResponse; estimate_id: string }>(`/order-board/quotes/${encodeURIComponent(id)}/decline`, { method: 'POST' }),
+  reopenQuote: (id: string) =>
+    request<{ quotes: QuotesResponse; estimate_id: string }>(`/order-board/quotes/${encodeURIComponent(id)}/reopen`, { method: 'POST' }),
+  acceptQuote: (id: string) =>
+    request<QuoteOrderResult>(`/order-board/quotes/${encodeURIComponent(id)}/accept`, { method: 'POST' }),
+  createOrderFromQuote: (id: string) =>
+    request<QuoteOrderResult>(`/order-board/quotes/${encodeURIComponent(id)}/order`, { method: 'POST' }),
+  undoAcceptQuote: (id: string, salesorder_id: string) =>
+    request<{ quotes: QuotesResponse; board: OrderBoardResponse }>(`/order-board/quotes/${encodeURIComponent(id)}/undo-accept`, {
+      method: 'POST',
+      body: JSON.stringify({ salesorder_id }),
+    }),
+  getQuotePdf: (id: string): Promise<Blob> => orderBoardBlob(`/order-board/quotes/${encodeURIComponent(id)}/pdf`),
+  getQuoteEmail: (id: string) =>
+    request<Omit<AitoInvoiceEmailContent, 'invoice_id' | 'invoice_number'> & { document_id: string; document_number: string }>(
+      `/order-board/quotes/${encodeURIComponent(id)}/email`,
+    ),
+  sendQuoteEmail: (id: string, to: string) =>
+    request<{ quotes: QuotesResponse }>(`/order-board/quotes/${encodeURIComponent(id)}/email`, { method: 'POST', body: JSON.stringify({ to }) }),
+  getQuoteEvents: (id: string, params: { depth: AitoHistoryDepth; cursor?: AitoEventCursor; limit?: number }) => {
+    const search = new URLSearchParams({ depth: params.depth });
+    if (params.cursor) {
+      search.set('before', String(params.cursor.id));
+      search.set('before_at', params.cursor.occurredAt);
+    }
+    if (params.limit !== undefined) search.set('limit', String(params.limit));
+    return request<{ events: OrderEvent[]; has_more: boolean }>(`/order-board/quotes/${encodeURIComponent(id)}/events?${search}`);
+  },
   syncOrder: (id: string) =>
     request<{ changes: OrderSyncChange[]; board: OrderBoardResponse }>(`/order-board/orders/${encodeURIComponent(id)}/sync`, { method: 'POST' }),
   getOrderCustomerCredit: (id: string) => request<{ credit: number | null }>(`/order-board/orders/${encodeURIComponent(id)}/customer-credit`),
