@@ -8,6 +8,7 @@ import { useRevenueResource } from './useRevenueResource';
 
 const NOTE = 'text-[11px] text-bambu-gray';
 const dayMonth = (day: string) => `${day.slice(8, 10)}/${day.slice(5, 7)}`;
+const DASH = '—';
 
 /** « Do I make money? »: revenue minus every cost per month, and the sales the month needs to cover its charges. */
 export function RevenueResult({ version }: { version: unknown }) {
@@ -19,24 +20,30 @@ export function RevenueResult({ version }: { version: unknown }) {
     <Panel title={t('revenue.result.title')}>
       {error ? <p role="alert" className="text-sm text-status-error">{error}</p> : !data ? <Skeleton className="h-32 w-full" /> : (
         <div className="space-y-2">
-          {be && month ? (
+          {month && !month.partial && (
             <div className="grid grid-cols-[repeat(auto-fit,minmax(13.5rem,1fr))] gap-2">
               <Tile label={t('revenue.result.month')} value={formatFcp(month.result)} tone={month.result < 0 ? 'alert' : undefined} />
-              <Tile label={t('revenue.result.breakEven')} value={formatFcp(be.amount)} />
-              <Tile label={t('revenue.result.reached')} value={`${Math.round(be.reached * 100)} %`}
-                hint={be.day === null ? t('revenue.result.notThisMonth') : t(be.projected ? 'revenue.result.expectedOn' : 'revenue.result.reachedOn', { day: dayMonth(be.day) })} />
+              {be && (
+                <>
+                  <Tile label={t('revenue.result.breakEven')} value={formatFcp(be.amount)} />
+                  <Tile label={t('revenue.result.reached')} value={`${Math.round(be.reached * 100)} %`}
+                    hint={be.day === null ? t('revenue.result.notThisMonth') : t(be.projected ? 'revenue.result.expectedOn' : 'revenue.result.reachedOn', { day: dayMonth(be.day) })} />
+                </>
+              )}
             </div>
-          ) : (
-            <Empty>{t('revenue.result.noRate')}</Empty>
           )}
+          {!be && <Empty>{t('revenue.result.noRate')}</Empty>}
           {data.fixedMonthly === 0 && <p className={NOTE}>{t('revenue.result.noFixed')}</p>}
+          {data.costsSince && data.months.some((m) => m.partial) && (
+            <p className={NOTE}>{t('revenue.result.partial', { day: `${dayMonth(data.costsSince)}/${data.costsSince.slice(0, 4)}` })}</p>
+          )}
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[560px] text-[13px] tabular-nums">
+            <table aria-label={t('revenue.result.title')} className="w-full min-w-[620px] text-[13px] tabular-nums">
               <thead className="text-xs text-bambu-gray">
                 <tr>
                   <th className="px-2 py-1 text-left font-normal">{t('revenue.result.colMonth')}</th>
-                  {(['colRevenue', 'colVariable', 'colLabor', 'colFixed', 'colResult'] as const).map((k) => (
-                    <th key={k} className="px-2 py-1 text-right font-normal">{t(`revenue.result.${k}`)}</th>
+                  {(['colRevenue', 'colVariable', 'colLabor', 'colFixed', 'colResult', 'colCoverage'] as const).map((k) => (
+                    <th key={k} scope="col" className="px-2 py-1 text-right font-normal">{t(`revenue.result.${k}`)}</th>
                   ))}
                 </tr>
               </thead>
@@ -45,10 +52,13 @@ export function RevenueResult({ version }: { version: unknown }) {
                   <tr key={m.month} className="border-t border-bambu-dark-tertiary">
                     <td className="px-2 py-1 text-left text-bambu-gray-light">{bucketLabel(m.month, 'month')}</td>
                     <td className="px-2 py-1 text-right text-white">{formatFcp(m.ht)}</td>
-                    <td className="px-2 py-1 text-right text-bambu-gray-light">{formatFcp(m.variable)}</td>
-                    <td className="px-2 py-1 text-right text-bambu-gray-light">{formatFcp(m.labor)}</td>
+                    <td className="px-2 py-1 text-right text-bambu-gray-light">{m.partial ? DASH : formatFcp(m.variable)}</td>
+                    <td className="px-2 py-1 text-right text-bambu-gray-light">{m.partial ? DASH : formatFcp(m.labor)}</td>
                     <td className="px-2 py-1 text-right text-bambu-gray-light">{formatFcp(m.fixed)}</td>
-                    <td className={`px-2 py-1 text-right font-medium ${m.result < 0 ? 'text-status-error' : 'text-white'}`}>{formatFcp(m.result)}</td>
+                    <td className={`px-2 py-1 text-right font-medium ${!m.partial && m.result < 0 ? 'text-status-error' : 'text-white'}`}>{m.partial ? DASH : formatFcp(m.result)}</td>
+                    <td className={`px-2 py-1 text-right ${m.coverage !== null && m.coverage < 0.8 && !m.partial ? 'text-amber-700 dark:text-amber-400' : 'text-bambu-gray'}`}>
+                      {m.partial || m.coverage === null ? DASH : `${Math.round(m.coverage * 100)} %`}
+                    </td>
                   </tr>
                 ))}
               </tbody>

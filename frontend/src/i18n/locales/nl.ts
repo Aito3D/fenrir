@@ -13267,6 +13267,8 @@ export default {
       colLabor: 'Personeelskosten',
       colFixed: 'Vaste kosten',
       colResult: 'Resultaat',
+      partial: 'Print- en arbeidskosten worden bijgehouden sinds {{day}}: geen resultaat daarvoor.',
+      colCoverage: 'Kosten bekend',
     },
     aging: {
       title: 'Openstaand naar ouderdom',

@@ -32,7 +32,7 @@ from backend.app.services.revenue import (
 )
 from backend.app.services.revenue.config import REVENUE_GRANULARITIES, REVENUE_HISTORY_START
 from backend.app.services.revenue.customers import customer_display_name
-from backend.app.services.revenue.dates import add_days, days_between, is_valid_day, org_today
+from backend.app.services.revenue.dates import add_days, days_between, days_in_month, is_valid_day, org_today
 from backend.app.services.revenue.insights import attach_targets, calendar_days, yoy_pivot
 from backend.app.services.revenue.scope import ITEM_ID_RE, build_review_list
 from backend.app.services.revenue.series import LineFilters, js_round
@@ -768,7 +768,13 @@ async def get_result(
             )
 
         fixed = production.fixed_monthly(await production.read_fixed_costs(conn))
-        return result.build_result(buckets("month", start), buckets("day", f"{today[:7]}-01"), fixed, today)
+        month_start = f"{today[:7]}-01"
+        next_month = add_days(month_start, days_in_month(int(today[:4]), int(today[5:7])))
+        # The whole month's labour, days still to come included.
+        labor = sum(production.labor_by_day(await production.read_labor(conn), next_month, month_start).values())
+        return result.build_result(
+            buckets("month", start), buckets("day", month_start), fixed, today, labor, costs.first_day
+        )
 
     return await _respond(request, user, build, now=now, extra_stamp=stamp)
 

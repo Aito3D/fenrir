@@ -732,9 +732,56 @@ async def test_result_needs_margin_and_carries_twelve_months(async_client, reven
     url = f"{URL}/result"
     assert (await async_client.get(url, headers=tokens["read"])).status_code == 403
     body = (await async_client.get(url, headers=tokens["read_margin"])).json()
-    assert set(body) == {"fixedMonthly", "months", "breakEven"}
+    assert set(body) == {"fixedMonthly", "months", "costsSince", "breakEven"}
     assert len(body["months"]) == 12
-    assert set(body["months"][0]) == {"month", "ht", "variable", "labor", "fixed", "result"}
+    assert set(body["months"][0]) == {"month", "ht", "variable", "labor", "fixed", "result", "coverage", "partial"}
+
+
+@pytest.mark.asyncio
+async def test_result_etag_moves_when_the_fixed_costs_change(async_client, revenue_db, tokens):
+    url = f"{URL}/result"
+    etag = (await async_client.get(url, headers=tokens["labor"])).headers["etag"]
+    assert (await async_client.get(url, headers={**tokens["labor"], "If-None-Match": etag})).status_code == 304
+    body = {"costs": [{"label": "Loyer", "monthly": 90000}]}
+    assert (await async_client.put(f"{URL}/fixed-costs", json=body, headers=tokens["labor"])).status_code == 200
+    again = await async_client.get(url, headers={**tokens["labor"], "If-None-Match": etag})
+    assert again.status_code == 200 and again.json()["fixedMonthly"] == 90000
+
+
+@pytest.mark.asyncio
+async def test_cohorts_leave_out_sales_without_a_customer_and_the_walk_in_account(async_client, revenue_db, tokens):
+    from backend.app.services.revenue.config import REVENUE_PASSAGE_CUSTOMER_IDS
+
+    async with async_sessionmaker(revenue_db, expire_on_commit=False)() as db:
+        lines = [
+            RevenueLine(day="2025-03-11", item_id="i1", customer_id=c, name="PLA", sku="P1", quantity=1, amount=500)
+            for c in ("", REVENUE_PASSAGE_CUSTOMER_IDS[0])
+        ]
+        await store.write_day(db, "2025-03-11", lines, True, NOW, 2)
+    body = (await async_client.get(f"{URL}/cohorts", headers=tokens["read_customers"])).json()
+    assert body["ltv"] == [{"segment": "inconnu", "customers": 1, "ltv12": 1000}]
+
+
+@pytest.mark.asyncio
+async def test_funnel_shape_and_etag_follow_the_board(async_client, revenue_db, tokens, db_session):
+    from datetime import timedelta
+
+    from backend.app.models.aito_project import AitoProject
+
+    url = f"{URL}/funnel"
+    first = await async_client.get(url, headers=tokens["read"])
+    assert first.json()["sent"] == {"count": 0, "total": 0}
+    sent = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(days=3)
+    db_session.add(
+        AitoProject(
+            description="Logo", board_column="print", quote_status="accepted", quote_total=12000, quote_sent_at=sent
+        )
+    )
+    await db_session.commit()
+    again = await async_client.get(url, headers={**tokens["read"], "If-None-Match": first.headers["etag"]})
+    assert again.status_code == 200
+    assert again.json()["accepted"] == {"count": 1, "total": 12000}
+    assert again.json()["bands"][1] == {"band": "medium", "decided": 1, "accepted": 1, "conversion": 100.0}
 
 
 @pytest.mark.asyncio

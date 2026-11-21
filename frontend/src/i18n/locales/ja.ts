@@ -13242,6 +13242,8 @@ export default {
       colLabor: '人件費',
       colFixed: '固定費',
       colResult: '損益',
+      partial: '印刷費と人件費は{{day}}から記録されています。それ以前の損益は表示されません。',
+      colCoverage: '原価判明分',
     },
     aging: {
       title: '年齢別の未回収額',

@@ -13228,6 +13228,8 @@ export default {
       colLabor: 'Mão de obra',
       colFixed: 'Custos fixos',
       colResult: 'Resultado',
+      partial: 'Os custos de impressão e mão de obra são registrados desde {{day}}: sem resultado antes disso.',
+      colCoverage: 'Custo conhecido',
     },
     aging: {
       title: 'A receber por idade',

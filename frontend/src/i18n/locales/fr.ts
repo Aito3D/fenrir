@@ -13228,6 +13228,8 @@ export default {
       colLabor: 'Main-d\'œuvre',
       colFixed: 'Charges fixes',
       colResult: 'Résultat',
+      partial: 'Les coûts d\'impression et de main-d\'œuvre sont suivis depuis le {{day}} : pas de résultat avant.',
+      colCoverage: 'Coût connu',
     },
     aging: {
       title: 'Créances par ancienneté',

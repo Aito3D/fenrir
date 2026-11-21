@@ -13448,6 +13448,8 @@ export default {
       colLabor: 'Koszty pracy',
       colFixed: 'Koszty stałe',
       colResult: 'Wynik',
+      partial: 'Koszty druku i pracy są śledzone od {{day}}: brak wyniku przed tą datą.',
+      colCoverage: 'Znany koszt',
     },
     aging: {
       title: 'Należności według wieku',

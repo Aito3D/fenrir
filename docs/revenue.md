@@ -173,17 +173,25 @@ Reads: `GET /api/v1/revenue/pipeline` (`revenue:read`):
   print log's filament, energy and wear; `labour` is the labour list. The current month counts fixed costs for the days
   gone only (up to yesterday), as labour already does.
 - **Break-even** of the current month: `(fixed + labour of the full month) ÷ rate`, with
-  `rate = (HT − variable) ÷ HT`. Labour of the full month is the labour so far scaled to the month (last month's on the
-  1st). A month with no sale yet borrows the rate of the three closed months before. `breakEven` is `null` when the rate
+  `rate = (HT − variable) ÷ HT`. Labour of the full month is the labour list over every working day of the month, days
+  to come included (scaling the days gone would swing with week-ends). A month with no sale yet borrows the rate of the three closed months before. `breakEven` is `null` when the rate
   is zero or negative (costs above sales) or when there is no charge at all.
 - `day` is the day the running HT crossed the amount; when not crossed yet, the day the current daily average would
   reach it (`projected: true`), or `null` when that falls after the month's end.
+
+- **What the result does not know.** Print and labour costs exist since `costsSince` (the print log's first day,
+  July 2026): earlier months are `partial` and the panel prints no result for them, since their services would count
+  at full margin. `coverage` is the share of a month's HT whose cost is known; goods without a Zoho cost count at full
+  margin too, so a low coverage means an optimistic result. Fixed costs have no start date: today's list is charged
+  to all twelve months.
 
 Reads: `GET /api/v1/revenue/result`, `GET|PUT /api/v1/revenue/fixed-costs`.
 
 ```
 {"fixedMonthly": n,
- "months": [{"month": "2026-11", "ht": n, "variable": n, "labor": n, "fixed": n, "result": n}],
+ "months": [{"month": "2026-11", "ht": n, "variable": n, "labor": n, "fixed": n, "result": n,
+             "coverage": 0.82 | null, "partial": false}],
+ "costsSince": "2026-07-01" | null,
  "breakEven": {"amount": n, "reached": 0.6, "day": "2026-11-25" | null, "projected": true} | null}
 ```
 
@@ -236,7 +244,8 @@ cached history, identified customers only (no customer id and the walk-in accoun
 
 « Devis envoyés, 12 derniers mois » beside the order book: `GET /api/v1/revenue/funnel`, from the Aito board (local
 database). Cards whose quote was sent (`quote_sent_at`) in the last 365 days, trashed cards included: binning a
-card declines its quote in Books, so it counts as declined.
+card declines its quote in Books, so it counts as declined (a card binned as a duplicate or a mistake lowers the
+rate too; until the quote sync has run, a binned card still counts as awaiting).
 
 - `accepted` (accepted or invoiced), `declined`, `expired`, `awaiting` (sent or viewed); `sent` is the four together.
 - `conversion`: accepted ÷ decided (accepted + declined + expired), in count and in value, with `decided` so a rate on

@@ -12825,6 +12825,8 @@ export default {
       colLabor: '인건비',
       colFixed: '고정비',
       colResult: '손익',
+      partial: '인쇄비와 인건비는 {{day}}부터 기록됩니다. 그 이전의 손익은 표시되지 않습니다.',
+      colCoverage: '원가 파악 비율',
     },
     aging: {
       title: '연령별 미수금',

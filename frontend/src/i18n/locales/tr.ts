@@ -13170,6 +13170,8 @@ export default {
       colLabor: 'İşçilik',
       colFixed: 'Sabit giderler',
       colResult: 'Sonuç',
+      partial: 'Baskı ve işçilik maliyetleri {{day}} tarihinden beri izleniyor: öncesi için sonuç yok.',
+      colCoverage: 'Bilinen maliyet',
     },
     aging: {
       title: 'Vadeye göre alacaklar',

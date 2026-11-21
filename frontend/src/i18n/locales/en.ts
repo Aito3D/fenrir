@@ -13299,6 +13299,8 @@ export default {
       colLabor: 'Labour',
       colFixed: 'Fixed costs',
       colResult: 'Result',
+      partial: 'Print and labour costs are tracked since {{day}}: no result before that.',
+      colCoverage: 'Cost known',
     },
     aging: {
       title: 'Owed by age',

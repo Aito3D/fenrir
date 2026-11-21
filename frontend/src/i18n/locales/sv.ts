@@ -13300,6 +13300,8 @@ errors: {
       colLabor: 'Personalkostnader',
       colFixed: 'Fasta kostnader',
       colResult: 'Resultat',
+      partial: 'Utskrifts- och arbetskostnader följs sedan {{day}}: inget resultat före det.',
+      colCoverage: 'Känd kostnad',
     },
     aging: {
       title: 'Utestående efter ålder',

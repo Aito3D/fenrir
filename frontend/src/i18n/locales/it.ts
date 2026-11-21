@@ -13228,6 +13228,8 @@ export default {
       colLabor: 'Manodopera',
       colFixed: 'Costi fissi',
       colResult: 'Risultato',
+      partial: 'I costi di stampa e manodopera sono tracciati dal {{day}}: nessun risultato prima.',
+      colCoverage: 'Costo noto',
     },
     aging: {
       title: 'Crediti per anzianità',

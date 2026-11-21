@@ -13251,6 +13251,8 @@ export default {
       colLabor: 'Mano de obra',
       colFixed: 'Costes fijos',
       colResult: 'Resultado',
+      partial: 'Los costes de impresión y de mano de obra se registran desde el {{day}}: sin resultado antes.',
+      colCoverage: 'Coste conocido',
     },
     aging: {
       title: 'Deuda por antigüedad',

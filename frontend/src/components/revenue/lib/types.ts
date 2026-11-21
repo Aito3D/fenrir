@@ -397,11 +397,17 @@ export interface ResultMonth {
   labor: number;
   fixed: number;
   result: number;
+  /** Share of the HT whose cost is known (0–1); null without sales. */
+  coverage: number | null;
+  /** Before print and labour costs were tracked: the result would count services at full margin. */
+  partial: boolean;
 }
 
 export interface ResultResponse {
   fixedMonthly: number;
   months: ResultMonth[];
+  /** First day print and labour costs exist; null when there are none yet. */
+  costsSince: string | null;
   /** Null when no contribution rate can be computed (no sales, costs above sales, or no charges). */
   breakEven: { amount: number; reached: number; day: string | null; projected: boolean } | null;
 }

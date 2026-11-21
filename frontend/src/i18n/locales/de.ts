@@ -13243,6 +13243,8 @@ export default {
       colLabor: 'Personalkosten',
       colFixed: 'Fixkosten',
       colResult: 'Ergebnis',
+      partial: 'Druck- und Personalkosten werden seit dem {{day}} erfasst: davor kein Ergebnis.',
+      colCoverage: 'Kosten bekannt',
     },
     aging: {
       title: 'Forderungen nach Alter',

@@ -13226,6 +13226,8 @@ export default {
       colLabor: '人工成本',
       colFixed: '固定成本',
       colResult: '结果',
+      partial: '打印与人工成本自 {{day}} 起记录：此前不显示损益。',
+      colCoverage: '已知成本占比',
     },
     aging: {
       title: '应收账龄',
