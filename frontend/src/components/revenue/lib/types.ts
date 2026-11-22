@@ -45,6 +45,8 @@ export interface RevenueBucket {
   quantity: number;
   evolution: { ht: number | null; ttc: number | null };
   yearAgo: Money | null;
+  /** The whole bucket before this one, sent on the first column only (null elsewhere, or when not fully fetched). */
+  previousTotal?: Money | null;
   elapsedDays: number | null;
   cumulative: Money;
   partial: boolean;
@@ -169,6 +171,8 @@ export interface MoversResult {
   previous: DayRange;
   items: { up: Mover[]; down: Mover[] };
   brands: { up: Mover[]; down: Mover[] };
+  /** Absent without revenue:view_customers. */
+  customerMovers?: { up: Mover[]; down: Mover[] };
   totals: { current: number; previous: number };
 }
 
@@ -272,7 +276,16 @@ export type AgingBucket = 'notDue' | 'd30' | 'd60' | 'd90' | 'over';
 
 export interface CashResponse {
   months: CashMonth[];
-  outstanding: { total: number; overdue: number; invoices: number; unknown: number };
+  outstanding: {
+    total: number;
+    overdue: number;
+    invoices: number;
+    unknown: number;
+    /** The forecast's parts: due within 30 days (or on receipt), overdue up to 90 days, overdue longer. */
+    dueSoon: number;
+    lateRecent: number;
+    lateOld: number;
+  };
   /** Absent without revenue:view_customers. */
   topOverdue?: Array<{ number: string; customerName: string; dueDate: string; daysOverdue: number; balance: number }>;
   /** What is owed by how late it is; `byCustomer` is absent without revenue:view_customers. */

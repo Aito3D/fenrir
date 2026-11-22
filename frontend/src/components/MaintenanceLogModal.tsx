@@ -95,12 +95,12 @@ export function MaintenanceLogModal({ printerId, printerName, onClose }: Mainten
   };
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={confirming ? undefined : onClose}>
+    <div className="animate-overlay-in fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={confirming ? undefined : onClose}>
       <div
         role="dialog"
         aria-modal="true"
         aria-labelledby="maintenance-log-title"
-        className="bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-lg w-full max-w-3xl max-h-[85vh] flex flex-col"
+        className="animate-modal-in bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-lg w-full max-w-3xl max-h-[85vh] flex flex-col"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}

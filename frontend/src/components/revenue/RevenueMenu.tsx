@@ -96,7 +96,7 @@ export function RevenueMenu(p: {
         <>
           <div className="fixed inset-0 z-10" onClick={() => { setOpen(false); setConfirm(false); }} />
           <div ref={menu} role="menu" aria-label={t('revenue.menu.more')} onKeyDown={onKeyDown}
-            className={`absolute ${alignLeft ? 'left-0' : 'right-0'} top-full z-20 mt-1 w-60 rounded-lg border border-bambu-dark-tertiary bg-bambu-dark-secondary p-1.5 shadow-xl`}>
+            className={`absolute ${alignLeft ? 'left-0 origin-top-left' : 'right-0 origin-top-right'} animate-pop-in top-full z-20 mt-1 w-60 rounded-lg border border-bambu-dark-tertiary bg-bambu-dark-secondary p-1.5 shadow-xl`}>
             {confirm ? (
               <>
                 <p id={questionId} className="px-2.5 py-1.5 text-sm text-amber-700 dark:text-amber-400">{t('revenue.sync.rebuildConfirm')}</p>

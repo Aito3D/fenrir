@@ -46,6 +46,7 @@ class SyncConfig:
     min_call_gap_s: float = 0.7
     call_ceiling: int = 20  # Order Board stops at 30; staying below keeps its lane fed during a back-fill
     daily_budget_floor: int = 5000
+    budget_probe_after_s: int = 3600  # a low daily_remaining reading this old is not trusted: one call probes the reset
     cash_ttl_s: int = 600
     cash_detail_budget: int = 20
 

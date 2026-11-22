@@ -212,9 +212,9 @@ describe('RevenueAnalysis', () => {
     const title = await screen.findByText('Not sold for 90 days');
     const panel = title.closest('section') as HTMLElement;
     expect(within(panel).getByText('Résine grise 1 L')).toBeInTheDocument();
-    expect(within(panel).getByText('Elegoo · RES-1')).toBeInTheDocument();
+    // The last sale leads the line under the name, so the amount keeps the right edge to itself.
+    expect(within(panel).getByText('last sale Jul 2, 2026 · Elegoo · RES-1')).toBeInTheDocument();
     expect(within(panel).getAllByText('45.000 FCP')).toHaveLength(2);
-    expect(within(panel).getByText('last sale Jul 2, 2026')).toBeInTheDocument();
     expect(within(panel).getAllByText(/last sale/)).toHaveLength(1);
     expect(within(panel).queryByRole('link')).toBeNull();
     expect(document.querySelector('a')).toBeNull();

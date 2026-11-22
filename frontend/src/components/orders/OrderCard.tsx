@@ -55,6 +55,8 @@ export function OrderCard({
   startTick,
   selected,
   onSelect,
+  fresh,
+  leaving,
 }: {
   row: OrderBoardRow;
   open: boolean;
@@ -70,6 +72,10 @@ export function OrderCard({
   selected?: boolean;
   /** Given on a list whose rows can be ticked for the batch prep sheet; the box shows only while something is left to prepare. */
   onSelect?: (on: boolean) => void;
+  /** Just created: the row flashes once on mount. */
+  fresh?: boolean;
+  /** Gone from the board (handed over): the card holds a beat, then folds away. */
+  leaving?: boolean;
 }) {
   const { t } = useTranslation();
   const phone = useIsMobile();
@@ -90,15 +96,20 @@ export function OrderCard({
   const age = t('orders.age', { n: row.age_days });
   // While the panel's hand-over bar is open, a prep step on the row icon would only read Books and do nothing.
   const [handingOff, setHandingOff] = useState(false);
-  // A saved edit flashes the row once, the way a new invoice flashes in its card.
-  const [edited, setEdited] = useState(false);
+  // A saved edit (or a new order) flashes the row once.
+  const [edited, setEdited] = useState(!!fresh);
 
   return (
-    <Card id={`order-${row.id}`} className="overflow-clip">
+    // Always wrapped, so a leaving card keeps its instance (and its panel) while it folds; grid rows 1fr → 0fr collapse the height.
+    <div
+      inert={leaving || undefined}
+      className={`grid transition-[grid-template-rows,opacity] duration-300 ease-(--ease-signature) motion-reduce:duration-150 motion-reduce:ease-linear ${leaving ? 'grid-rows-[0fr] opacity-0 delay-[400ms]' : 'grid-rows-[1fr]'}`}
+    >
+    <Card id={`order-${row.id}`} className="min-h-0 overflow-clip">
       <div
         data-fresh={edited || undefined}
         onAnimationEnd={e => { if (e.target === e.currentTarget) setEdited(false); }}
-        className={`relative flex items-stretch ${edited ? 'bg-bambu-green/10 motion-safe:animate-[pulse_1s_ease-in-out_2]' : ''}`}
+        className={`relative flex items-stretch ${edited ? 'animate-row-flash' : ''}`}
       >
         {/* Beside the row button, not inside it: ticking must not open the order. The empty slot keeps the columns aligned. */}
         {onSelect && !phone && (
@@ -151,7 +162,7 @@ export function OrderCard({
             </span>
           </span>
           <span
-            className={`inline-flex items-center gap-1.5 justify-self-end rounded-full px-2.5 py-1 text-xs [grid-area:status] lg:justify-self-start lg:[grid-area:auto] ${tone.soft} ${tone.text}`}
+            className={`inline-flex items-center gap-1.5 justify-self-end rounded-full px-2.5 py-1 text-xs transition-[background-color,color] duration-200 ease-(--ease-signature) [grid-area:status] lg:justify-self-start lg:[grid-area:auto] ${tone.soft} ${tone.text}`}
           >
             <Icon aria-hidden="true" className="h-3.5 w-3.5" />
             {t(meta.label)}
@@ -177,5 +188,6 @@ export function OrderCard({
       )}
       {open && !phone && <OrderLinesPanel row={row} others={others} onGoto={onGoto} start={start} startTick={startTick} onHandoverOpen={setHandingOff} onEdited={() => setEdited(true)} />}
     </Card>
+    </div>
   );
 }

@@ -519,29 +519,35 @@ export function RevenuePage() {
         </Empty>
       ) : (
         <section
+          key={view}
           role="tabpanel"
           id={segmentPanelId('revenue-view', view)}
           aria-labelledby={segmentTabId('revenue-view', view)}
-          data-slot={`revenue-view-${view}`} className="grid gap-3">
+          data-slot={`revenue-view-${view}`} className="grid gap-3 animate-rise-sm">
           {view === 'evolution' && data && (
             <>
               <RevenueFinding payload={data} taxMode={active.taxMode} />
               <Split stretch>
-                <RevenueHero payload={data} taxMode={active.taxMode} canMargin={can.margin} />
+                <RevenueHero payload={data} taxMode={active.taxMode} canMargin={can.margin} onSetTarget={can.targets && unfiltered && !targetsOpen ? toggleTargets : undefined} />
                 {lastBucket && (
                   <RevenuePace monthKey={(lastBucket.end > today ? today : lastBucket.end).slice(0, 7)} filterParams={filterParams} taxMode={active.taxMode} version={data} />
                 )}
               </Split>
-              {/* Whole-business figures: a filtered page would show numbers that ignore its filter. */}
-              {unfiltered && can.margin && <RevenueResult version={data} />}
-              {unfiltered && <RevenueCash version={data} />}
               <RevenueChart payload={data} controls={active} can={can} onStack={(stack) => setControls({ stack })}
                 onDrill={data.granularity !== 'day' ? drill : undefined} drillDepth={drillStack.length} onBack={drillBack} today={today} />
-              <Split>
-                <RevenueTable buckets={data.buckets} granularity={data.granularity} taxMode={active.taxMode} canMargin={can.margin} filterParams={filterParams} version={data}
+              {/* Whole-business figures: a filtered page would show numbers that ignore its filter. */}
+              {unfiltered && can.margin && <RevenueResult version={data} />}
+              {(() => {
+                const table = (
+                  <RevenueTable buckets={data.buckets} granularity={data.granularity} taxMode={active.taxMode} canMargin={can.margin} filterParams={filterParams} version={data}
                   checks={actualByMonth ? checks.data?.checks : undefined} onRefetch={can.sync ? (m, l) => void refetchMonth(m, l) : undefined} />
-                <RevenueMovers granularity={data.granularity} bucketKey={lastBucket?.key ?? null} bucketLabel={lastBucket?.label ?? ''} filterParams={filterParams} version={data} today={today} />
-              </Split>
+                );
+                const movers = (
+                  <RevenueMovers granularity={data.granularity} bucketKey={lastBucket?.key ?? null} bucketLabel={lastBucket?.label ?? ''} filterParams={filterParams} version={data} today={today} />
+                );
+                // Unfiltered: one two-column block, so the tall cash panel leaves no hole beside the shorter order book.
+                return unfiltered ? <RevenueCash version={data} below={table} aside={movers} /> : <Split>{table}{movers}</Split>;
+              })()}
             </>
           )}
           {view === 'clients' && can.customers && data && (

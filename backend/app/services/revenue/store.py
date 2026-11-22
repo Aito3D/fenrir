@@ -8,12 +8,13 @@ from contextlib import asynccontextmanager
 from datetime import datetime
 from typing import Any, cast
 
-from sqlalchemy import CursorResult, and_, delete, func, insert, select, update
+from sqlalchemy import CursorResult, and_, delete, func, insert, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine, AsyncSession
 
 from backend.app.core import database
-from backend.app.models.calculator import CalculatorDefaults, CalculatorPrinter
+from backend.app.models.calculator import CalculatorDefaults, CalculatorFilament, CalculatorPrinter
 from backend.app.models.print_log import PrintLogEntry
+from backend.app.models.printer import Printer
 from backend.app.models.revenue import (
     RevenueAnnotation,
     RevenueCustomer,
@@ -28,7 +29,7 @@ from backend.app.models.revenue import (
 )
 from backend.app.models.settings import Settings
 from backend.app.services.revenue.customers import RevenueCustomerFacts
-from backend.app.services.revenue.scope import RevenueDecision, ScopeItem, unit_cost_of
+from backend.app.services.revenue.scope import RevenueDecision, ScopeItem, service_nature, unit_cost_of
 from backend.app.services.revenue.series import RevenueLine
 from backend.app.services.revenue.sync_plan import DayRow
 
@@ -78,9 +79,20 @@ async def read_days(conn: AsyncConnection, from_: str, to: str) -> list[DayRow]:
     return [_day_row(r) for r in rows]
 
 
+def _internal_customers():
+    """The shop's own production line (« O'SEA - Aito 3D »): stock it took on zero invoices is a transfer, not a sale,
+    and the farm's real consumption is already in the services' print-log cost."""
+    name = func.lower(RevenueCustomer.name)
+    return select(RevenueCustomer.customer_id).where(or_(name.like("%aito 3d%"), name.like("%aito3d%")))
+
+
 async def read_lines(conn: AsyncConnection, from_: str, to: str) -> list[RevenueLine]:
     t = RevenueDayLine
-    rows = await conn.execute(select(t).where(t.day >= from_, t.day <= to).order_by(t.day, t.item_id, t.customer_id))
+    rows = await conn.execute(
+        select(t)
+        .where(t.day >= from_, t.day <= to, t.customer_id.not_in(_internal_customers()))
+        .order_by(t.day, t.item_id, t.customer_id)
+    )
     return [
         RevenueLine(
             day=r.day,
@@ -305,7 +317,9 @@ async def customer_item_first_lines(conn: AsyncConnection) -> list[RevenueLine]:
     """Each identified customer's first day per item over the whole cache; scope and filters are folded in Python."""
     t = RevenueDayLine
     rows = await conn.execute(
-        select(t.customer_id, t.item_id, func.min(t.day)).where(t.customer_id != "").group_by(t.customer_id, t.item_id)
+        select(t.customer_id, t.item_id, func.min(t.day))
+        .where(t.customer_id != "", t.customer_id.not_in(_internal_customers()))
+        .group_by(t.customer_id, t.item_id)
     )
     return [RevenueLine(day=d, item_id=i, customer_id=c, name="", sku="", quantity=0, amount=0) for c, i, d in rows]
 
@@ -339,7 +353,7 @@ async def read_scope_items(conn: AsyncConnection) -> dict[str, ScopeItem]:
             name=r.name,
             sku=r.sku,
             brand=_blank_to_none(r.brand),
-            nature=_blank_to_none(r.nature),
+            nature=service_nature(r.name, r.item_type, _blank_to_none(r.nature)),
             item_type=r.item_type,
             tax_percentage=r.tax_percentage,
             unit_cost=unit_cost_of(r.purchase_rate, r.dealer_price),
@@ -389,10 +403,12 @@ async def revenue_data_stamp(conn: AsyncConnection) -> str:
         (RevenueAnnotation, RevenueAnnotation.created_at),
         (RevenueItem, RevenueItem.fetched_at),
         (RevenueMonthCheck, RevenueMonthCheck.checked_at),
-        # The services' margin reads the print log and the calculator's machine rates.
+        # The services' margin reads the print log, the calculator's machine rates, filament prices and printer names.
         (PrintLogEntry, PrintLogEntry.completed_at),
         (CalculatorPrinter, CalculatorPrinter.updated_at),
         (CalculatorDefaults, CalculatorDefaults.updated_at),
+        (CalculatorFilament, CalculatorFilament.updated_at),
+        (Printer, Printer.updated_at),
     ):
         n, at = (await conn.execute(select(func.count(), func.max(col)).select_from(model))).one()
         parts.append(f"{n}@{at or ''}")

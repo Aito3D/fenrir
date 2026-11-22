@@ -12807,6 +12807,15 @@ export default {
   },
   revenue: {
     cash: {
+      allOverdue: 'Gecikmiş',
+      forecast: {
+        title: '30 gün içinde beklenen',
+        dueSoon: '30 gün içinde vadesi gelen faturalar',
+        lateRecent: '90 günden az gecikmiş',
+        toInvoice: 'Ardından faturalanacak',
+        toInvoiceNote: 'kabul edilen siparişler, avanslar hariç',
+        lateOld: '90 günden fazla gecikmiş {{amount}} sayılmadı',
+      },
       title: 'Nakit',
       invoiced: 'Faturalanan (KDV dahil)',
       collected: 'Tahsil edilen',
@@ -12929,8 +12938,8 @@ export default {
       monthReloading: '{{month}} temizlendi, Zoho\'dan yeniden yükleniyor.',
     },
     hero: {
+      setTarget: 'Hedef belirle',
       partial: '{{period}} · devam ediyor, {{total}} günün {{day}}. günü',
-      projection: 'Tahmin ≈ {{amount}}',
       target: 'Vergisiz hedef {{amount}}',
       vs: '{{what}} ile kıyasla',
       toDate: '{{range}} (bugüne kadar)',
@@ -12940,7 +12949,6 @@ export default {
       paceLastYear: 'geçen yılın temposuyla',
       paceCurrent: 'mevcut tempoyla',
       margin: 'Vergisiz brüt marj',
-      cumulative: 'Kümülatif',
       previous: {
         day: 'Önceki gün',
         week: 'Önceki hafta',
@@ -13012,6 +13020,8 @@ export default {
       other: 'Diğer',
       cumulative: 'Kümülatif',
       projection: 'Tahmin',
+      trend: 'Eğilim',
+      trendSlope: { day: '{{slope}} / gün', week: '{{slope}} / hafta', month: '{{slope}} / ay', year: '{{slope}} / yıl' },
       target: 'Hedef',
       inProgress: 'devam ediyor',
       missingDays: 'Eksik gün: {{n}}',
@@ -13042,6 +13052,7 @@ export default {
       failed: 'Not kaydedilmedi',
     },
     table: {
+      unit: 'Tutarlar FCP cinsinden',
       title: 'Döneme göre ayrıntı',
       period: 'Dönem',
       ht: 'Ciro HT',
@@ -13060,6 +13071,8 @@ export default {
       empty: 'Bu dönemde Aito3D satışı yok.',
     },
     movers: {
+      dimension: 'Gösterilen liste',
+      customers: 'Müşteriler',
       title: 'Hareketler',
       compareTitle: 'İki dönemi karşılaştır',
       compare: '⇄ İki dönemi karşılaştır',

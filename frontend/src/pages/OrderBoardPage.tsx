@@ -282,6 +282,34 @@ export function OrderBoardPage() {
   const keepOpen = phone && !!openId && !listed.some(e => (e.open ? e.open.id : e.fin.id) === openId);
   const kept = keepOpen ? withFinished(all.filter(r => r.id === openId), (finishedQuery.data?.rows ?? []).filter(r => r.id === openId)) : [];
   const rendered = kept.length ? [...listed, ...kept] : listed;
+  // The open order, remembered with the entry after it: when the board drops it (handed over), its card holds in place and folds away.
+  const [freshId, setFreshId] = useState<string | null>(null);
+  const entryId = (e: (typeof rendered)[number]) => (e.open ? e.open.id : e.fin.id);
+  const openRow = openId ? all.find(r => r.id === openId) : undefined;
+  const [lastOpen, setLastOpen] = useState<{ row: OrderBoardRow; before: string | null } | null>(null);
+  const [leaving, setLeaving] = useState<{ row: OrderBoardRow; before: string | null } | null>(null);
+  const openAt = openRow ? rendered.findIndex(e => entryId(e) === openRow.id) : -1;
+  if (openRow && openAt >= 0) {
+    const before = rendered[openAt + 1] ? entryId(rendered[openAt + 1]) : null;
+    if (lastOpen?.row !== openRow || lastOpen.before !== before) setLastOpen({ row: openRow, before });
+  } else if (lastOpen && ready) {
+    setLastOpen(null);
+    // Only a card that was on screen and left the board itself; a filter hiding it just hides it.
+    if (!openRow && lastOpen.row.id === openId && !phone) setLeaving(lastOpen);
+  }
+  useEffect(() => {
+    if (!leaving) return;
+    const id = setTimeout(() => setLeaving(null), 750); // the 400ms hold + 300ms fold, and a beat
+    return () => clearTimeout(id);
+  }, [leaving]);
+  // The batch bar leaves the way it came: shown on, faded, then unmounted.
+  const [batchShown, setBatchShown] = useState(0);
+  if (batch.length > 0 && batch.length !== batchShown) setBatchShown(batch.length);
+  useEffect(() => {
+    if (batch.length > 0 || !batchShown) return;
+    const id = setTimeout(() => setBatchShown(0), 170); // a beat past .animate-fade-out-sm's 150ms
+    return () => clearTimeout(id);
+  }, [batch.length, batchShown]);
   const tileCounts = countByStatus(searched);
   tileCounts.finished = finishedSearched.length;
   // Orders counted under "To order" that sit under Partial: the tiles add up to more than the total because of them.
@@ -304,6 +332,7 @@ export function OrderBoardPage() {
     }
     const id = result.salesorder_id;
     queryClient.setQueryData(BOARD_KEY, result.board);
+    setFreshId(id);
     if (coreOnly && result.board.rows.find(r => r.id === id)?.is_core === false) setCoreOnly(false);
     setOrder(id, true);
     scrollTarget.current = { id, block: 'start' };
@@ -487,13 +516,21 @@ export function OrderBoardPage() {
     list = <Notice icon={SearchX} title={t('orders.empty.noResults')} />;
   } else {
     // An opened order always renders, even past the page: a `?order=` link or "Also open" may target one further down.
-    list = rendered.filter((e, i) => i < shown || (e.open ? e.open.id : e.fin.id) === openId).map(({ open: row, fin }) => !row ? (
+    const page = rendered.filter((e, i) => i < shown || entryId(e) === openId);
+    // The handed-over card, back at its place (before the entry that followed it) while it folds away.
+    if (leaving && !page.some(e => entryId(e) === leaving.row.id)) {
+      const at = page.findIndex(e => entryId(e) === leaving.before);
+      page.splice(at < 0 ? page.length : at, 0, { ...leaving.row, open: leaving.row });
+    }
+    list = page.map(({ open: row, fin }) => !row ? (
       <FinishedOrderCard key={fin.id} row={fin} open={openId === fin.id} onToggle={() => toggleOpen(fin.id)} />
     ) : (
       <OrderCard
         key={row.id}
         row={row}
-        open={openId === row.id}
+        leaving={leaving?.row.id === row.id}
+        fresh={freshId === row.id}
+        open={openId === row.id || leaving?.row.id === row.id}
         onToggle={() => toggleOpen(row.id)}
         others={otherOpenOrders(byCustomer.get(row.customer_id) ?? [], row).map(o => ({ id: o.id, number: o.number }))}
         onGoto={goto}
@@ -678,11 +715,11 @@ export function OrderBoardPage() {
       </div>
       )}
 
-      {!quotesView && batch.length > 0 && (
-        <div data-testid="orders-batch" className="animate-rise-sm sticky top-2 z-10 mb-3 flex flex-wrap items-center gap-2 rounded-lg border border-bambu-green/50 bg-bambu-dark-secondary px-3 py-2">
+      {!quotesView && batchShown > 0 && (
+        <div data-testid="orders-batch" inert={!batch.length || undefined} className={`${batch.length ? 'animate-rise-sm' : 'animate-fade-out-sm'} sticky top-2 z-10 mb-3 flex flex-wrap items-center gap-2 rounded-lg border border-bambu-green/50 bg-bambu-dark-secondary px-3 py-2`}>
           <Button size="sm" onClick={printSelected} disabled={printingBatch}>
             {printingBatch ? <Loader2 aria-hidden="true" className="h-4 w-4 animate-spin" /> : <Printer aria-hidden="true" className="h-4 w-4" />}
-            {t('orders.prep.batch', { n: batch.length })}
+            {t('orders.prep.batch', { n: batch.length || batchShown })}
           </Button>
           <Button variant="secondary" size="sm" onClick={() => setTicked(new Set())} disabled={printingBatch}>
             {t('orders.prep.batchClear')}

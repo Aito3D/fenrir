@@ -12865,6 +12865,15 @@ export default {
   },
   revenue: {
     cash: {
+      allOverdue: 'Scaduto',
+      forecast: {
+        title: 'Previsto entro 30 giorni',
+        dueSoon: 'Fatture in scadenza entro 30 gg',
+        lateRecent: 'Scadute da meno di 90 gg',
+        toInvoice: 'Poi, da fatturare',
+        toInvoiceNote: 'ordini accettati, esclusi acconti',
+        lateOld: '{{amount}} scaduti da oltre 90 gg, non conteggiati',
+      },
       title: 'Tesoreria',
       invoiced: 'Fatturato IVA incl.',
       collected: 'Incassato',
@@ -12987,8 +12996,8 @@ export default {
       monthReloading: '{{month}} cancellato, ricaricamento da Zoho in corso.',
     },
     hero: {
+      setTarget: 'Imposta un obiettivo',
       partial: '{{period}} · in corso, giorno {{day}} di {{total}}',
-      projection: 'Proiezione ≈ {{amount}}',
       target: 'Obiettivo netto {{amount}}',
       vs: 'rispetto a {{what}}',
       toDate: '{{range}} (a oggi)',
@@ -12998,7 +13007,6 @@ export default {
       paceLastYear: 'al ritmo dell\'anno scorso',
       paceCurrent: 'al ritmo attuale',
       margin: 'Margine lordo netto',
-      cumulative: 'Cumulato',
       previous: {
         day: 'Giorno precedente',
         week: 'Settimana precedente',
@@ -13070,6 +13078,8 @@ export default {
       other: 'Altri',
       cumulative: 'Cumulato',
       projection: 'Proiezione',
+      trend: 'Tendenza',
+      trendSlope: { day: '{{slope}} / giorno', week: '{{slope}} / settimana', month: '{{slope}} / mese', year: '{{slope}} / anno' },
       target: 'Obiettivo',
       inProgress: 'in corso',
       missingDays: 'Giorni mancanti: {{n}}',
@@ -13100,6 +13110,7 @@ export default {
       failed: 'Nota non salvata',
     },
     table: {
+      unit: 'Importi in FCP',
       title: 'Dettaglio per periodo',
       period: 'Periodo',
       ht: 'Fatturato HT',
@@ -13118,6 +13129,8 @@ export default {
       empty: 'Nessuna vendita Aito3D in questo periodo.',
     },
     movers: {
+      dimension: 'Elenco mostrato',
+      customers: 'Clienti',
       title: 'Movimenti',
       compareTitle: 'Confronta due periodi',
       compare: '⇄ Confronta due periodi',

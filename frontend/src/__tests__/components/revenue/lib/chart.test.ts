@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { bucketSplit, chartSeries, cumulativeScale, marginBuckets, niceTicks, OTHER_SERIES, STACK_DIMENSIONS, stackColumns, yFor } from "@/components/revenue/lib/chart";
+import { bucketSplit, chartSeries, cumulativeScale, linearTrend, marginBuckets, niceTicks, OTHER_SERIES, STACK_DIMENSIONS, stackColumns, yFor } from "@/components/revenue/lib/chart";
 import { bucket } from "./fixtures";
 
 const b1 = bucket({ key: "2026-09", label: "sept. 2026", ht: 1000, ttc: 1160, goods: 600, services: 400, byNature: { Filaments: 600, "Sans nature": 400 }, byBrand: { SUNLU: 600, Aito3D: 400 }, cumulative: { ht: 1000, ttc: 1160 }, goodsTtc: 696, servicesTtc: 464, byNatureTtc: { Filaments: 696, "Sans nature": 464 }, byBrandTtc: { SUNLU: 696, Aito3D: 464 } });
@@ -187,5 +187,18 @@ describe("marginBuckets", () => {
     expect(bucketSplit(b, "nature")).toEqual({ Filaments: 400 });
     expect(bucketSplit(b, "kind", "ttc")).toEqual({ Biens: 250, Services: 150 });
     expect(b.bySegment).toEqual({ pro: 400 });
+  });
+});
+
+describe("linearTrend", () => {
+  it("fits the complete columns and extends to the in-progress one", () => {
+    const cols = [{ total: 100, partial: false }, { total: 300, partial: false }, { total: 200, partial: false }, { total: 10, partial: true }];
+    const tr = linearTrend(cols)!;
+    expect(tr.slope).toBe(50);
+    expect(tr.at).toEqual([150, 200, 250, 300]);
+  });
+
+  it("needs three complete columns", () => {
+    expect(linearTrend([{ total: 1, partial: false }, { total: 2, partial: false }, { total: 3, partial: true }])).toBeNull();
   });
 });

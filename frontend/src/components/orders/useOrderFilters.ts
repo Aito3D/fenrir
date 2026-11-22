@@ -14,11 +14,13 @@ const VIEWS = ['orders', 'quotes'] as const;
 const pick = <T extends string>(value: string | null, allowed: readonly T[], fallback: T): T =>
   allowed.includes(value as T) ? (value as T) : fallback;
 
+const toFollow = (v: string | null | undefined): FollowKey | null => ((FOLLOW_KEYS as string[]).includes(v ?? '') ? (v as FollowKey) : null);
+
 const fromUrl = (params: URLSearchParams) => ({
   query: params.get('q') ?? '',
   status: pick(params.get('status'), STATUS_VALUES, 'all'),
   payFilter: pick(params.get('pay'), PAY_VALUES, 'all'),
-  follow: (FOLLOW_KEYS as string[]).includes(params.get('follow') ?? '') ? (params.get('follow') as FollowKey) : null,
+  follow: toFollow(params.get('follow')),
   sort: { key: pick(params.get('sort'), SORTS, 'age'), flipped: params.get('flip') === '1' },
   view: pick(params.get('view'), VIEWS, 'orders'),
 });
@@ -103,7 +105,7 @@ export function useOrderFilters() {
     if (typeof mine.coreOnly === 'boolean') setCoreOnly(mine.coreOnly);
     if (urlNamedFilters) return; // a link that names its filters shows them
     if (mine.pay) setPayFilter(pick(mine.pay, PAY_VALUES, 'all'));
-    if (mine.follow !== undefined) setFollow((FOLLOW_KEYS as string[]).includes(mine.follow ?? '') ? (mine.follow as FollowKey) : null);
+    if (mine.follow !== undefined) setFollow(toFollow(mine.follow));
     if (mine.sort) setSort({ key: pick(mine.sort, SORTS, 'age'), flipped: !!mine.flip });
   }, [prefs.isSuccess, prefs.isError, prefs.data, urlNamedFilters, queryClient]);
 

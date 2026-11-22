@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { TrendingUp } from 'lucide-react';
 import { Bar, CartesianGrid, Cell, ComposedChart, Line, ResponsiveContainer, Tooltip, usePlotArea, XAxis, YAxis } from 'recharts';
 import type { RevenueCan, RevenueControls } from '../../pages/RevenuePage';
 import { AXIS, GRID, SERVICE_COLORS } from '../aito/stats/palette';
@@ -11,7 +12,7 @@ import { RevenueNotes } from './RevenueNotes';
 import { RevenueSegmented } from './RevenueSegmented';
 import { drillDown } from './lib/analysis';
 import { effectiveStack } from './lib/basket';
-import { chartSeries, cumulativeScale, marginBuckets, niceTicks, OTHER_SERIES, STACK_DIMENSIONS, stackColumns, yFor, type StackDimension, type StackedColumn, type StackSeries } from './lib/chart';
+import { chartSeries, cumulativeScale, linearTrend, marginBuckets, niceTicks, OTHER_SERIES, STACK_DIMENSIONS, stackColumns, yFor, type StackDimension, type StackedColumn, type StackSeries } from './lib/chart';
 import { compactAxis, formatFcp, serverLabel } from './lib/format';
 import type { AnnotationsResponse, RevenueAnnotation, RevenueResponse } from './lib/types';
 import { useRevenueResource } from './useRevenueResource';
@@ -20,9 +21,12 @@ const COLORS = Object.values(SERVICE_COLORS);
 const OTHER_COLOR = '#6b6b6b';
 const LINE_COLOR = '#ffffff';
 const TARGET_COLOR = '#f59e0b';
+const TREND_COLOR = '#f472b6';
 const NOTE_COLOR = '#a0a0a0';
 const FOCUS_COLOR = '#00ae42';
 const HEIGHT = 300;
+// One or two columns would otherwise fill the plot as a solid block.
+const MAX_BAR = 96;
 const SEGMENT_KEY: Record<string, string> = { Pro: 'pro', Particuliers: 'particulier', Passage: 'passage', 'Non identifié': 'inconnu' };
 
 /** Colours belong to the series: a key keeps its colour while it is free, so a series a filter empties repaints nothing. */
@@ -49,6 +53,7 @@ interface Row {
   i: number;
   label: string;
   cumulative: number;
+  trend?: number;
   ghost: number;
   partial: boolean;
   [series: `s${number}`]: number;
@@ -101,7 +106,7 @@ function ColumnMarks(p: {
             <rect x={x0} y={area.y} width={band} height={area.height} fill="transparent" />
             {focused === i && <rect x={x0 + 1} y={area.y} width={band - 2} height={area.height} fill="none" stroke={FOCUS_COLOR} strokeWidth={2} rx={4} />}
             {target != null && (
-              <line data-target x1={x0 + band * 0.15} x2={x0 + band * 0.85} y1={y(target)} y2={y(target)} stroke={TARGET_COLOR} strokeWidth={2} strokeLinecap="round" />
+              <line data-target x1={mid - Math.min(band * 0.35, MAX_BAR / 2 + 6)} x2={mid + Math.min(band * 0.35, MAX_BAR / 2 + 6)} y1={y(target)} y2={y(target)} stroke={TARGET_COLOR} strokeWidth={2} strokeLinecap="round" />
             )}
             {p.notes[i].length > 0 && (
               <rect data-note x={mid - 4} y={area.y - 14} width={8} height={8} fill={NOTE_COLOR} transform={`rotate(45 ${mid} ${area.y - 10})`}>
@@ -146,6 +151,7 @@ export function RevenueChart({ payload, controls, can, onStack, onDrill, drillDe
   // Cost fields are stripped by the server without the margin permission.
   const canMargin = can.margin && payload.buckets.some((b) => b.costedHt !== undefined);
   const [metric, setMetric] = useState<'revenue' | 'margin'>('revenue');
+  const [showTrend, setShowTrend] = useState(false);
   const margin = canMargin && metric === 'margin';
   const marginLabel = t('revenue.chart.marginSeries');
   const buckets = useMemo(() => (margin ? marginBuckets(payload.buckets, marginLabel) : payload.buckets), [margin, payload.buckets, marginLabel]);
@@ -185,8 +191,26 @@ export function RevenueChart({ payload, controls, can, onStack, onDrill, drillDe
     backFrom.current = null;
     target.focus();
   });
-  const drillFrom = onDrill && ((i: number) => { refocus.current = true; onDrill(i); });
+  // The drill direction waits for the payload it asked for, so the slide plays on the new columns, not the old ones.
+  const windowKey = `${payload.from}|${payload.to}|${granularity}`;
+  const [drillDir, setDrillDir] = useState<'in' | 'back' | null>(null);
+  const [shown, setShown] = useState<{ key: string; dir: 'in' | 'back' | null }>({ key: windowKey, dir: null });
+  if (shown.key !== windowKey) {
+    setShown({ key: windowKey, dir: drillDir });
+    setDrillDir(null);
+  }
+  // Played on the live element, not by remounting: a remount drops the columns the focus handoff above waits for.
+  useEffect(() => {
+    if (!shown.dir || window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) return;
+    const x = shown.dir === 'in' ? 28 : -28; // same path as .animate-drill-in / -back in index.css
+    groupRef.current?.animate?.([{ opacity: 0, transform: `translateX(${x}px)` }, { opacity: 1, transform: 'none' }], {
+      duration: 240,
+      easing: 'cubic-bezier(0.22, 1, 0.36, 1)',
+    });
+  }, [shown]);
+  const drillFrom = onDrill && ((i: number) => { refocus.current = true; setDrillDir('in'); onDrill(i); });
   const back = () => {
+    setDrillDir('back');
     refocus.current = drillDepth === 1;
     backFrom.current = payload;
     onBack();
@@ -224,9 +248,12 @@ export function RevenueChart({ payload, controls, can, onStack, onDrill, drillDe
     });
     return row;
   });
+  const trend = showTrend ? linearTrend(columns) : null;
+  // Floored at the axis so a steep line cannot push the domain below zero.
+  if (trend) rows.forEach((row, i) => { row.trend = Math.max(trend.at[i], Math.min(0, ...columns.map((c) => c.total))); });
 
   // The extent follows the segments, the projection and the targets, so none is clipped.
-  const maxUp = Math.max(0, ...buckets.map((_, i) => Math.max(projectionOf(i) ?? 0, targets[i] ?? 0)), ...columns.map((c) => Math.max(0, ...c.segments.map((s) => s.to))));
+  const maxUp = Math.max(0, ...(trend?.at ?? []), ...buckets.map((_, i) => Math.max(projectionOf(i) ?? 0, targets[i] ?? 0)), ...columns.map((c) => Math.max(0, ...c.segments.map((s) => s.to))));
   const maxDown = Math.min(0, ...columns.map((c) => Math.min(0, ...c.segments.map((s) => s.to))));
   const ticks = niceTicks(maxUp);
   const yMax = ticks[ticks.length - 1];
@@ -262,6 +289,7 @@ export function RevenueChart({ payload, controls, can, onStack, onDrill, drillDe
         <p className="tabular-nums">{t('revenue.chart.cumulative')} {formatFcp(c.cumulative)}</p>
         {proj != null && <p className="tabular-nums">{t('revenue.chart.projection')} {formatFcp(proj)}</p>}
         {target != null && <p className="tabular-nums" style={{ color: TARGET_COLOR }}>{t('revenue.chart.target')} {formatFcp(target)}</p>}
+        {row.trend != null && <p className="tabular-nums" style={{ color: TREND_COLOR }}>{t('revenue.chart.trend')} {formatFcp(row.trend)}</p>}
         {notesOf[row.i].map((n) => (
           <p key={n.id} className="mt-1 truncate" title={n.label}>◆ {n.day.slice(8)}/{n.day.slice(5, 7)} · {n.label}</p>
         ))}
@@ -294,7 +322,17 @@ export function RevenueChart({ payload, controls, can, onStack, onDrill, drillDe
               <Legend key={s.key} color={colorOf(s)}>{nameOf(s)}</Legend>
             ))}
             <Legend color={LINE_COLOR} line>{t('revenue.chart.cumulative')}</Legend>
+            {trend && (
+              <Legend color={TREND_COLOR} line>
+                {t(`revenue.chart.trendSlope.${granularity}`, { slope: `${trend.slope >= 0 ? '+' : '−'}${formatFcp(Math.abs(trend.slope))}` })}
+              </Legend>
+            )}
           </LegendList>
+          <button type="button" aria-pressed={showTrend} onClick={() => setShowTrend((v) => !v)}
+            className={`inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1 text-sm transition-colors ${showTrend ? 'border-pink-400/60 bg-pink-400/10 text-white' : 'border-bambu-dark-tertiary text-bambu-gray-light hover:border-pink-400/60 hover:text-white'} ${focusRingCls}`}>
+            <TrendingUp aria-hidden="true" className="h-4 w-4" style={{ color: TREND_COLOR }} />
+            {t('revenue.chart.trend')}
+          </button>
           <RevenueSegmented inPanel label={t('revenue.chart.stackBy')} value={stack} onChange={onStack} options={stackOptions} />
           <RevenueNotes annotations={annotations} onChanged={notes.reload} today={today} canManage={can.notes} />
         </div>
@@ -315,12 +353,13 @@ export function RevenueChart({ payload, controls, can, onStack, onDrill, drillDe
               domain={[cum.min, cum.max]} ticks={cum.min < 0 ? [cum.min, 0, cum.max] : [0, cum.max]} tickFormatter={compactAxis} />
             <Tooltip content={tooltip} active={focused != null ? true : undefined} defaultIndex={focused ?? undefined} cursor={{ fill: 'rgba(255,255,255,0.04)' }} animationDuration={120} />
             {series.map((s) => (
-              <Bar key={s.key} yAxisId="left" dataKey={`s${s.slot}`} stackId="revenue" fill={colorOf(s)} isAnimationActive={false}>
+              <Bar key={s.key} yAxisId="left" dataKey={`s${s.slot}`} stackId="revenue" fill={colorOf(s)} maxBarSize={MAX_BAR} isAnimationActive={false}>
                 {rows.map((r) => <Cell key={r.i} fillOpacity={r.partial ? 0.6 : 1} />)}
               </Bar>
             ))}
-            <Bar yAxisId="left" dataKey="ghost" stackId="revenue" shape={GhostShape} isAnimationActive={false} />
+            <Bar yAxisId="left" dataKey="ghost" stackId="revenue" shape={GhostShape} maxBarSize={MAX_BAR} isAnimationActive={false} />
             <Line yAxisId="cum" dataKey="cumulative" stroke={LINE_COLOR} strokeOpacity={0.7} strokeWidth={2} strokeDasharray="4 3" dot={false} isAnimationActive={false} />
+            {trend && <Line yAxisId="left" dataKey="trend" stroke={TREND_COLOR} strokeWidth={2} dot={false} activeDot={false} isAnimationActive={false} />}
             <ColumnMarks columns={columns} yMin={yMin} yMax={yMax} targets={targets} notes={notesOf} label={columnLabel}
               missingLabel={(n) => t('revenue.chart.missingDays', { n })}
               noteLabel={(ns) => t('revenue.chart.note', { label: ns.map((n) => n.label).join(' · ') })}

@@ -1,0 +1,96 @@
+#!/bin/bash
+# Campaign RV1 (Revenue page) SURFACE generator: the Revenue page's public contract.
+# Regenerate the whole file with:  bash tools/gen_surface_revenue.sh > /tmp/surface-revenue.md && mv /tmp/surface-revenue.md SURFACE.md
+# Every section is produced by the `regen:` command printed above it, so the
+# file is byte-replayable. ANY diff = a surface change = the iteration FAILS.
+# Private helpers (leading underscore) are deliberately NOT pinned.
+set -u
+mkdir -p /tmp/fenrir-revenue-probe/surface
+cd "$(dirname "$0")/.." || exit 1
+export LC_ALL=C
+
+FE_SCOPE='$(find frontend/src/components/revenue -type f | sort) frontend/src/pages/RevenuePage.tsx'
+
+R1='PYTHONHASHSEED=0 DATA_DIR=/tmp/fenrir-revenue-probe/surface LOG_TO_FILE=false ./venv/bin/python3 -c "from backend.app.main import app; [print(sorted(r.methods), r.path, r.endpoint.__name__, \"status=\" + str(r.status_code), \"response_model=\" + getattr(r.response_model, \"__name__\", str(r.response_model))) for r in app.routes if hasattr(r, \"methods\") and r.path.startswith(\"/api/v1/revenue\")]" 2>/dev/null'
+R2='./venv/bin/python3 -c "
+import ast
+tree = ast.parse(open(\"backend/app/api/routes/revenue.py\").read())
+for fn in tree.body:
+    if not isinstance(fn, (ast.FunctionDef, ast.AsyncFunctionDef)):
+        continue
+    decos = [ast.unparse(d) for d in fn.decorator_list if ast.unparse(d).startswith(\"router.\")]
+    if not decos:
+        continue
+    perms = [ast.unparse(n) for n in ast.walk(fn.args) if isinstance(n, ast.Call) and ast.unparse(n.func) == \"RequirePermissionIfAuthEnabled\"]
+    params = [a.arg for a in fn.args.args + fn.args.kwonlyargs if a.arg not in (\"request\", \"user\")]
+    print(decos[0], fn.name, \"params=\" + \",\".join(params), \"perms=\" + \" \".join(perms or [\"NONE\"]))
+"'
+R3='for f in backend/app/api/routes/revenue.py backend/app/services/revenue/*.py; do echo "# $f"; grep -E "^(def|class|async def) [a-zA-Z]|^[A-Z][A-Z_0-9]* = |^[A-Z][A-Z_0-9]*: " "$f" | sed -E "s/ = .*/ =/; s/(def [a-zA-Z_0-9]+)\(.*/\1(/"; done'
+R4='PYTHONHASHSEED=0 DATA_DIR=/tmp/fenrir-revenue-probe/surface LOG_TO_FILE=false ./venv/bin/python3 -c "
+import inspect
+from pydantic import BaseModel
+import backend.app.api.routes.revenue as mod
+for n, c in sorted(vars(mod).items()):
+    if inspect.isclass(c) and issubclass(c, BaseModel) and c.__module__ == mod.__name__:
+        print(n + \": \" + \", \".join(f + \": \" + str(x.annotation).replace(\"typing.\", \"\") for f, x in c.model_fields.items()))
+" 2>/dev/null'
+R5='PYTHONHASHSEED=0 DATA_DIR=/tmp/fenrir-revenue-probe/surface LOG_TO_FILE=false ./venv/bin/python3 -c "
+import dataclasses, inspect, importlib, pkgutil
+import backend.app.services.revenue as pkg
+for m in sorted(x.name for x in pkgutil.iter_modules(pkg.__path__)):
+    mod = importlib.import_module(\"backend.app.services.revenue.\" + m)
+    for n, c in sorted(vars(mod).items()):
+        if inspect.isclass(c) and dataclasses.is_dataclass(c) and c.__module__ == mod.__name__:
+            print(m + \".\" + n + \": \" + \", \".join(f.name + \": \" + str(f.type) for f in dataclasses.fields(c)))
+" 2>/dev/null'
+R6='grep -hE "__tablename__|^class |^    [a-z_]+: Mapped\[|UniqueConstraint|Index\(" backend/app/models/revenue.py | sed -E "s/ *= *mapped_column/ = mapped_column/"'
+R7='grep -inE "revenue" backend/app/core/database.py | sed -E "s/^([0-9]+): +/\1: /" | cut -d: -f2-'
+R8='grep -hE "REVENUE_" backend/app/core/permissions.py backend/app/core/auth.py | sed -E "s/^ +//"'
+R9='grep -E "revenue" backend/app/main.py | sed -E "s/^ +//"'
+R10='{ grep -hoE "^[A-Z_]+_KEY = \"[a-z_]+\"" backend/app/services/revenue/*.py; grep -rhoE --include=\"*.py\" "env_get\([^)]*\)|os\.environ[^ ]*|\b(app_)?settings\.[a-z_]+" backend/app/services/revenue backend/app/api/routes/revenue.py; } | sort -u'
+R11='for f in '"$FE_SCOPE"'; do grep -HoE "^export (default )?(async )?(function|const|type|interface|class|enum) [A-Za-z0-9_]+" "$f"; done'
+R12='{ grep -E "RevenuePage|path=\"revenue\"|/revenue" frontend/src/App.tsx; grep -E "revenue" frontend/src/components/Layout.tsx; grep -E "revenue:" frontend/src/api/client.ts; } | sed -E "s/^ +//"'
+R13='grep -rhoE "/api/v1/revenue[^\`\x27\"]*" '"$FE_SCOPE"' | sort -u'
+R14='grep -rhoE "\"revenue-[a-z-]+\"" '"$FE_SCOPE"' | sort -u'
+R15='LC_ALL=C node tools/probe_revenue_i18n.cjs | sed -n "/^--- en values/,/^$/p" | sed -E "s/ = .*//" | grep -v "^---" | grep -v "^$"'
+R16='perl -nle "print \$1 while /[\x27\"\x60]((?:revenue|common|nav|settings)\.[\w.]*\w)[\x27\"\x60]/g" '"$FE_SCOPE"' | sort -u'
+R17='grep -rhoE "data-testid=\"[^\"]+\"|testId=\"[^\"]+\"|data-testid=\{[^}]+\}" '"$FE_SCOPE"' | sort | uniq -c | sed "s/^ *//"'
+
+emit() { # emit <heading> <cmd>
+  local heading="$1" cmd="$2"
+  echo "## $heading"
+  echo "\`\`\`regen: $cmd\`\`\`"
+  echo '```'
+  eval "$cmd"
+  echo '```'
+  echo ''
+}
+
+echo '# SURFACE.md — campaign-RV1 public contract: the Revenue page (frozen at setup)'
+echo ''
+echo 'Generated by `bash tools/gen_surface_revenue.sh > /tmp/surface-revenue.md && mv /tmp/surface-revenue.md SURFACE.md`.'
+echo 'Each section is replayable by the `regen:` command shown above it. Any diff'
+echo 'against the committed copy is a change to something outside the feature`s own'
+echo 'internals — a route, its permissions or parameters, a request field, a public'
+echo 'function, dataclass or constant, a table column, a permission, a settings key,'
+echo 'an exported component, an endpoint the UI calls, a storage key, a translation'
+echo 'key or a test id — and fails the iteration unless the user approved it.'
+echo ''
+
+emit 'HTTP routes under /api/v1/revenue (registration order, status, response model)' "$R1"
+emit 'Route handlers — decorator, name, query/path/body params, permissions (routes/revenue.py)' "$R2"
+emit 'Public functions, classes and constants per module (routes/revenue.py, services/revenue/*.py)' "$R3"
+emit 'Request body models declared by the routes, with fields' "$R4"
+emit 'Service dataclasses, with fields (services/revenue/*)' "$R5"
+emit 'Models — revenue_* tables and columns (models/revenue.py)' "$R6"
+emit 'core/database.py lines touching revenue (model registration, migrations)' "$R7"
+emit 'Permissions REVENUE_* (permissions.py, auth.py)' "$R8"
+emit 'main.py wiring' "$R9"
+emit 'Settings-table keys and settings/env reads in the revenue backend' "$R10"
+emit 'Frontend exports — components/revenue/**, RevenuePage' "$R11"
+emit 'App.tsx / Layout.tsx / client.ts wiring' "$R12"
+emit 'Endpoints the UI calls (literal URL templates)' "$R13"
+emit '"revenue-*" string literals in the UI (localStorage keys, ids)' "$R14"
+emit 'Translation keys — revenue namespace + nav.revenue in en.ts' "$R15"
+emit 'Translation keys the scope files name literally' "$R16"
+emit 'Test ids the scope binds' "$R17"

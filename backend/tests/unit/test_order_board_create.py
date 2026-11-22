@@ -311,6 +311,25 @@ async def test_a_failed_void_still_refuses_create_failed(db_session, books, monk
 
 
 @pytest.mark.asyncio
+async def test_a_failed_cleanup_void_goes_to_the_pending_void_retry(db_session, books, monkeypatch):
+    books.open_error = ZohoUpstreamError("open boom")
+    real_void = zoho_service.void_salesorder
+
+    async def void_boom(db, salesorder_id):
+        raise ZohoUpstreamError("void boom")
+
+    monkeypatch.setattr(zoho_service, "void_salesorder", void_boom)
+    with pytest.raises(actions.OrderActionRefused, match="create_failed"):
+        await actions.create_counter_order(db_session, "c1", [{"item_id": "A", "quantity": 1}], "ref-7", by=None)
+    assert sync_common._pending_voids == {"9": "SO-00009"}
+
+    monkeypatch.setattr(zoho_service, "void_salesorder", real_void)
+    await sync.run_pass(db_session)  # the pass voids the leftover order
+    assert books.voided == ["9"]
+    assert sync_common._pending_voids == {}
+
+
+@pytest.mark.asyncio
 async def test_rate_limited_create_is_busy(db_session, books):
     books.create_error = ZohoRateLimited("429", retry_after=30)
     with pytest.raises(sync.ZohoBusy):
@@ -499,5 +518,38 @@ async def test_a_failed_reread_leaves_the_create_header(db_session, books):
     books.fail_detail_once = True
     await actions.create_counter_order(db_session, "c1", [{"item_id": "A", "quantity": 1}], "r", by=None)
     doc = await sync.find_stored(db_session, "9")
-    assert (doc.header["status"], doc.pending) == ("draft", True)
+    assert (doc.header["status"], doc.pending) == ("open", True)
     assert await sync.find_board_row(db_session, "9") is None  # the next pass puts it on
+
+
+async def _loaded_board(db):  # recompute does nothing before the first complete load
+    loaded = {"stock_loaded_at": "2026-01-01T00:00:00+00:00", "computed_at": "2026-01-01T00:00:00+00:00", "rows": []}
+    db.add(OrderBoardDoc(kind="state", zoho_id="board", header={}, detail=loaded))
+    await db.commit()
+
+
+@pytest.mark.asyncio
+async def test_the_new_order_is_on_the_board_at_once(db_session, books, monkeypatch):
+    await _loaded_board(db_session)
+    real_create = zoho_service.create_salesorder
+
+    async def create_with_quantities(db, payload):  # Books' create response is the whole order, quantities included
+        return {**await real_create(db, payload), "quantity": 1, "quantity_shipped": 0}
+
+    monkeypatch.setattr(zoho_service, "create_salesorder", create_with_quantities)
+    await actions.create_counter_order(db_session, "c1", [{"item_id": "A", "quantity": 1}], "ref-board", by=None)
+    assert (await sync.find_stored(db_session, "9")).header["status"] == "open"
+    assert await sync.find_board_row(db_session, "9") is not None
+
+
+@pytest.mark.asyncio
+async def test_an_order_a_pass_stored_as_draft_is_confirmed_too(db_session, books):
+    await _loaded_board(db_session)
+    db_session.add(
+        OrderBoardDoc(kind="salesorder", zoho_id="9", header={"status": "draft", "quantity": 1, "x": 1}, pending=False)
+    )
+    await db_session.commit()
+    await actions.create_counter_order(db_session, "c1", [{"item_id": "A", "quantity": 1}], "ref-pass", by=None)
+    assert (await sync.find_stored(db_session, "9")).header["status"] == "open"
+    assert (await sync.find_stored(db_session, "9")).header["x"] == 1
+    assert await sync.find_board_row(db_session, "9") is not None

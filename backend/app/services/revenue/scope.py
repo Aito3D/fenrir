@@ -70,6 +70,17 @@ def matches_kind(item: ScopeItem | None, kind: str | None) -> bool:
     return kind is None or (kind == "services") == is_service_item(item)
 
 
+# Aito3D services carry no Zoho category: their kind is the name's prefix, « Impression3D - Prestation "AITO 3D" ».
+_SERVICE_NATURE = re.compile(r'^(.+?) - Prestation "AITO 3D"$')
+
+
+def service_nature(name: str, item_type: str | None, nature: str | None) -> str | None:
+    if nature is not None or item_type != "sales":
+        return nature
+    m = _SERVICE_NATURE.match(name.strip())
+    return m.group(1).strip() if m else None
+
+
 def item_display_name(item: ScopeItem | None, fallback: str) -> str:
     return item.name if item is not None else fallback
 

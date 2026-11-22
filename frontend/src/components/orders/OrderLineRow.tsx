@@ -25,6 +25,7 @@ export function OrderLineRow({
   editQty,
   setGone,
   setCheck,
+  scanTick,
 }: {
   groupId: PanelGroup['id'];
   line: OrderBoardLine;
@@ -40,6 +41,8 @@ export function OrderLineRow({
   editQty: (id: string, v: number) => void;
   setGone: (id: string, gone: boolean) => void;
   setCheck: (check: OrderCheck) => void;
+  /** Bumped by each scan that lands on this line: the name cell flashes. */
+  scanTick?: number;
 }) {
   const { t } = useTranslation();
   const meta = GROUP[groupId];
@@ -53,7 +56,8 @@ export function OrderLineRow({
   const priceGap = priced && line.item_rate ? line.rate - line.item_rate : 0;
   return (
     <tr className={`max-md:grid max-md:grid-cols-[1fr_auto_auto] max-md:gap-x-3 transition-opacity duration-150 ease-out ${index ? 'border-t border-bambu-dark-tertiary/60' : ''} ${(todo && check && !(check.max[line.id] > 0)) || gone ? 'opacity-40' : ''}`}>
-      <td className={`max-md:col-span-3 border-l-2 py-2 pl-4 pr-3 ${TONE[meta.tone].rail} ${gone ? 'line-through' : ''}`}>
+      {/* Keyed by the scan tick so each scan restarts the flash. */}
+      <td key={scanTick} className={`relative max-md:col-span-3 border-l-2 py-2 pl-4 pr-3 ${TONE[meta.tone].rail} ${gone ? 'line-through' : ''} ${scanTick ? 'animate-row-flash flash-quick' : ''}`}>
         <div className="text-white">
           {line.name}
           {priceGap !== 0 && (

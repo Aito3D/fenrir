@@ -13085,6 +13085,15 @@ export default {
   },
   revenue: {
     cash: {
+      allOverdue: 'Zaległe',
+      forecast: {
+        title: 'Oczekiwane w ciągu 30 dni',
+        dueSoon: 'Faktury z terminem w ciągu 30 dni',
+        lateRecent: 'Zaległe krócej niż 90 dni',
+        toInvoice: 'Następnie do zafakturowania',
+        toInvoiceNote: 'przyjęte zamówienia, bez zaliczek',
+        lateOld: '{{amount}} zaległe ponad 90 dni, nieliczone',
+      },
       title: 'Środki pieniężne',
       invoiced: 'Zafakturowano brutto',
       collected: 'Wpłynęło',
@@ -13207,8 +13216,8 @@ export default {
       monthReloading: 'Wyczyszczono {{month}}, trwa ponowne wczytywanie z Zoho.',
     },
     hero: {
+      setTarget: 'Ustaw cel',
       partial: '{{period}} · w toku, dzień {{day}} z {{total}}',
-      projection: 'Prognoza ≈ {{amount}}',
       target: 'Cel netto {{amount}}',
       vs: 'wobec {{what}}',
       toDate: '{{range}} (do dziś)',
@@ -13218,7 +13227,6 @@ export default {
       paceLastYear: 'w tempie z zeszłego roku',
       paceCurrent: 'w obecnym tempie',
       margin: 'Marża brutto netto',
-      cumulative: 'Narastająco',
       previous: {
         day: 'Poprzedni dzień',
         week: 'Poprzedni tydzień',
@@ -13290,6 +13298,8 @@ export default {
       other: 'Inne',
       cumulative: 'Narastająco',
       projection: 'Prognoza',
+      trend: 'Tendencja',
+      trendSlope: { day: '{{slope}} / dzień', week: '{{slope}} / tydzień', month: '{{slope}} / miesiąc', year: '{{slope}} / rok' },
       target: 'Cel',
       inProgress: 'w toku',
       missingDays: 'Brakujące dni: {{n}}',
@@ -13320,6 +13330,7 @@ export default {
       failed: 'Notatka nie została zapisana',
     },
     table: {
+      unit: 'Kwoty w FCP',
       title: 'Szczegóły według okresu',
       period: 'Okres',
       ht: 'Przychód HT',
@@ -13338,6 +13349,8 @@ export default {
       empty: 'Brak sprzedaży Aito3D w tym okresie.',
     },
     movers: {
+      dimension: 'Wyświetlana lista',
+      customers: 'Klienci',
       title: 'Ruchy',
       compareTitle: 'Porównaj dwa okresy',
       compare: '⇄ Porównaj dwa okresy',

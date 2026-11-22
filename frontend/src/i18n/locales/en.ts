@@ -12936,6 +12936,15 @@ export default {
   },
   revenue: {
     cash: {
+      allOverdue: 'Overdue',
+      forecast: {
+        title: 'Expected within 30 days',
+        dueSoon: 'Invoices due within 30 d',
+        lateRecent: 'Overdue less than 90 d',
+        toInvoice: 'Then, still to invoice',
+        toInvoiceNote: 'accepted orders, less deposits',
+        lateOld: '{{amount}} overdue for more than 90 d not counted',
+      },
       title: 'Cash',
       invoiced: 'Invoiced incl. tax',
       collected: 'Collected',
@@ -13058,8 +13067,8 @@ export default {
       monthReloading: '{{month}} cleared, reloading from Zoho.',
     },
     hero: {
+      setTarget: 'Set a target',
       partial: '{{period}} · in progress, day {{day}} of {{total}}',
-      projection: 'Projection ≈ {{amount}}',
       target: 'Target HT {{amount}}',
       vs: 'vs {{what}}',
       toDate: '{{range}} (to date)',
@@ -13069,7 +13078,6 @@ export default {
       paceLastYear: 'at last year\'s pace',
       paceCurrent: 'at the current pace',
       margin: 'Gross margin HT',
-      cumulative: 'Running total',
       previous: {
         day: 'Previous day',
         week: 'Previous week',
@@ -13141,6 +13149,8 @@ export default {
       other: 'Others',
       cumulative: 'Running total',
       projection: 'Projection',
+      trend: 'Trend',
+      trendSlope: { day: '{{slope}} / day', week: '{{slope}} / week', month: '{{slope}} / month', year: '{{slope}} / year' },
       target: 'Target',
       inProgress: 'in progress',
       missingDays: 'Missing days: {{n}}',
@@ -13171,6 +13181,7 @@ export default {
       failed: 'Note not saved',
     },
     table: {
+      unit: 'Amounts in FCP',
       title: 'Detail by period',
       period: 'Period',
       ht: 'Revenue HT',
@@ -13189,6 +13200,8 @@ export default {
       empty: 'No Aito3D sales in this period.',
     },
     movers: {
+      dimension: 'List shown',
+      customers: 'Customers',
       title: 'Movements',
       compareTitle: 'Compare two periods',
       compare: '⇄ Compare two periods',

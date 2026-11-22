@@ -169,3 +169,15 @@ export function niceTicks(max: number): number[] {
   }
   return ticks;
 }
+
+/** Least-squares line through the complete columns, read at every column (the in-progress one included); null under three points. */
+export function linearTrend(columns: { total: number; partial: boolean }[]): { at: number[]; slope: number } | null {
+  const pts = columns.flatMap((c, i) => (c.partial ? [] : [[i, c.total] as const]));
+  const n = pts.length;
+  if (n < 3) return null;
+  const mx = pts.reduce((a, [x]) => a + x, 0) / n;
+  const my = pts.reduce((a, [, y]) => a + y, 0) / n;
+  const sxx = pts.reduce((a, [x]) => a + (x - mx) ** 2, 0);
+  const slope = pts.reduce((a, [x, y]) => a + (x - mx) * (y - my), 0) / sxx;
+  return { at: columns.map((_, i) => my + slope * (i - mx)), slope };
+}

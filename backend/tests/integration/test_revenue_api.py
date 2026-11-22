@@ -154,6 +154,19 @@ async def test_customers_with_auth_disabled_is_allowed(async_client, revenue_db)
 
 
 @pytest.mark.asyncio
+async def test_customers_clamps_range_to_history(async_client, revenue_db):
+    r = await async_client.get(
+        f"{URL}/customers", params={"from": "1000-01-01", "to": "9999-12-31", "granularity": "day"}
+    )
+    body = r.json()
+    assert (body["from"], body["to"]) == (
+        revenue_routes.REVENUE_HISTORY_START,
+        revenue_routes.org_today(datetime.now(timezone.utc)),
+    )
+    assert len(body["retention"]) < 5000
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize(
     ("params", "message"),
     [
@@ -334,6 +347,9 @@ async def test_movers_defaults_to_the_bucket_of_today_and_compares_a_bucket(asyn
     body = (await async_client.get(f"{URL}/movers", params={"key": "2025-03"}, headers=tokens["read"])).json()
     assert body["items"]["up"][0]["key"] == "i1"
     assert body["totals"] == {"current": 1000, "previous": 0}
+    assert "customerMovers" not in body
+    body = (await async_client.get(f"{URL}/movers", params={"key": "2025-03"}, headers=tokens["read_customers"])).json()
+    assert [(m["key"], m["delta"]) for m in body["customerMovers"]["up"]] == [("c1", 1000)]
 
 
 @pytest.mark.asyncio
@@ -663,7 +679,15 @@ async def test_cash_shape_and_customer_names_need_view_customers(async_client, r
     assert [w["window"] for w in body["forecast"]] == ["d30", "d60", "d90"]
     assert len(body["months"]) == 12 and body["months"][-1]["month"] == today[:7]
     assert body["months"][-1]["collected"] == 500  # c1 bought only 3D items in the cache
-    assert body["outstanding"] == {"total": 300, "overdue": 300, "invoices": 1, "unknown": 0}
+    assert body["outstanding"] == {
+        "total": 300,
+        "overdue": 300,
+        "invoices": 1,
+        "unknown": 0,
+        "dueSoon": 0,
+        "lateRecent": 0,
+        "lateOld": 300,
+    }
     assert body["topOverdue"][0]["customerName"] == "Alice"
     assert body["coverage"] == {"known": 800, "unknown": 0}
     plain = (await async_client.get(f"{URL}/cash", headers=tokens["read"])).json()

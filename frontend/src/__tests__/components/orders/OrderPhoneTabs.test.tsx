@@ -1,6 +1,6 @@
 /** The opened order on the phone: one tab at a time, every open bar keeps its state across tab switches. */
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { fireEvent, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { http, HttpResponse } from 'msw';
@@ -103,7 +103,7 @@ describe('the order panel by phone tab', () => {
   it('activity mounts only when selected', async () => {
     const events = vi.spyOn(api, 'getOrderEvents').mockResolvedValue({ events: [], next_cursor: null } as never);
     const { rerender } = render(<OrderLinesPanel row={panelRow()} phoneTab="lines" />);
-    await new Promise(r => setTimeout(r, 50));
+    await act(async () => { for (let i = 0; i < 20; i++) await Promise.resolve(); }); // flush effects and settled promises
     expect(events).not.toHaveBeenCalled();
     rerender(<OrderLinesPanel row={panelRow()} phoneTab="activity" />);
     await waitFor(() => expect(events).toHaveBeenCalled());

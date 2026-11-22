@@ -12527,6 +12527,15 @@ export default {
   },
   revenue: {
     cash: {
+      allOverdue: 'Прострочено',
+      forecast: {
+        title: 'Очікується протягом 30 днів',
+        dueSoon: 'Рахунки з терміном протягом 30 дн.',
+        lateRecent: 'Прострочено менше 90 дн.',
+        toInvoice: 'Далі до виставлення',
+        toInvoiceNote: 'прийняті замовлення без авансів',
+        lateOld: '{{amount}} прострочено понад 90 дн., не враховано',
+      },
       title: 'Грошові кошти',
       invoiced: 'Виставлено з ПДВ',
       collected: 'Отримано',
@@ -12649,8 +12658,8 @@ export default {
       monthReloading: '{{month}} очищено, триває повторне завантаження з Zoho.',
     },
     hero: {
+      setTarget: 'Встановити ціль',
       partial: '{{period}} · триває, день {{day}} з {{total}}',
-      projection: 'Прогноз ≈ {{amount}}',
       target: 'Ціль без ПДВ {{amount}}',
       vs: 'порівняно з: {{what}}',
       toDate: '{{range}} (на цю дату)',
@@ -12660,7 +12669,6 @@ export default {
       paceLastYear: 'у темпі минулого року',
       paceCurrent: 'у поточному темпі',
       margin: 'Валова маржа без ПДВ',
-      cumulative: 'Наростаючим підсумком',
       previous: {
         day: 'Попередній день',
         week: 'Попередній тиждень',
@@ -12732,6 +12740,8 @@ export default {
       other: 'Інше',
       cumulative: 'Наростаючий підсумок',
       projection: 'Прогноз',
+      trend: 'Тренд',
+      trendSlope: { day: '{{slope}} / день', week: '{{slope}} / тиждень', month: '{{slope}} / місяць', year: '{{slope}} / рік' },
       target: 'Ціль',
       inProgress: 'триває',
       missingDays: 'Пропущено днів: {{n}}',
@@ -12762,6 +12772,7 @@ export default {
       failed: 'Нотатку не збережено',
     },
     table: {
+      unit: 'Суми у FCP',
       title: 'Деталізація за періодами',
       period: 'Період',
       ht: 'Виручка HT',
@@ -12780,6 +12791,8 @@ export default {
       empty: 'Немає продажів Aito3D за цей період.',
     },
     movers: {
+      dimension: 'Показаний список',
+      customers: 'Клієнти',
       title: 'Зміни',
       compareTitle: 'Порівняти два періоди',
       compare: '⇄ Порівняти два періоди',

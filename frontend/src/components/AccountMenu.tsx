@@ -46,7 +46,7 @@ export function AccountMenu({ username, onChangePassword }: { username: string; 
             role="dialog"
             aria-label={t('accountMenu.title')}
             style={style}
-            className="z-[1000] bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-lg shadow-xl overflow-hidden"
+            className="animate-dropdown-in [--dropdown-origin:bottom_left] z-[1000] bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-lg shadow-xl overflow-hidden"
           >
             <div className="px-3 py-2 text-xs text-bambu-gray border-b border-bambu-dark-tertiary truncate">{username}</div>
             {/* Per-browser interface language, no permission needed (#3623). */}

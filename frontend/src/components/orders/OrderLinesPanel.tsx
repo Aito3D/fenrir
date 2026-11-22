@@ -78,6 +78,8 @@ export function OrderLinesPanel({
   // Set while the operator chooses the lines of a new picklist, or checks the parcel of one.
   const [checkState, setCheck] = useState<OrderCheck | null>(null);
   const [pending, setPending] = useState(false);
+  // The line the last scan landed on, with a counter so a second scan of the same line flashes again.
+  const [scanned, setScanned] = useState<{ id: string; n: number } | null>(null);
   const queryClient = useQueryClient();
   // Settings switch, read from the board the page already holds (no fetch here).
   const scan = useQuery<OrderBoardResponse>({ queryKey: ['order-board'], queryFn: api.getOrderBoard, enabled: false }).data?.scan ?? false;
@@ -150,7 +152,10 @@ export function OrderLinesPanel({
   useScan(scan && check?.kind === 'pack' && !pending && (!phoneTab || phoneTab === 'lines'), code => {
     if (!check) return;
     const r = scanCheck(check, row.lines, code);
-    if (r.hit === 'added') return setCheck(r.check);
+    if (r.hit === 'added') {
+      setScanned(s => ({ id: r.id!, n: (s?.n ?? 0) + 1 }));
+      return setCheck(r.check);
+    }
     chime(); // the operator looks at the parcel, not the screen
     showToast(r.hit === 'full' ? t('orders.scan.full', { name: r.name }) : t('orders.scan.unknown', { code }), 'error');
   });
@@ -325,6 +330,7 @@ export function OrderLinesPanel({
                     editQty={editQty}
                     setGone={setGone}
                     setCheck={setCheck}
+                    scanTick={scanned?.id === line.id ? scanned.n : undefined}
                   />
                 ))}
                 {group.id === 'packed' && (

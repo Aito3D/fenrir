@@ -6,7 +6,6 @@ from collections.abc import Iterable
 from dataclasses import dataclass, field
 from datetime import date, datetime, timezone
 from typing import Protocol, cast
-from zoneinfo import ZoneInfo
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncConnection
@@ -15,8 +14,7 @@ from backend.app.models.calculator import CalculatorDefaults, CalculatorFilament
 from backend.app.models.print_log import RUN_OPEN, PrintLogEntry
 from backend.app.models.printer import Printer
 from backend.app.models.settings import Settings
-from backend.app.services.revenue.config import ORG_TIME_ZONE
-from backend.app.services.revenue.dates import add_days, all_days
+from backend.app.services.revenue.dates import _org_day_of, add_days, all_days
 
 # Before July 2026 the print log priced filament at ~25-31 per kg (not XPF), so earlier costs are not usable.
 COSTS_START = "2026-07-01"
@@ -89,7 +87,7 @@ def match_rate(model: str | None, name: str, rates: dict[str, MachineRate]) -> M
 def org_day(at: datetime) -> str:
     # Print log timestamps are naive UTC.
     aware = at if at.tzinfo else at.replace(tzinfo=timezone.utc)
-    return aware.astimezone(ZoneInfo(ORG_TIME_ZONE)).date().isoformat()
+    return _org_day_of(aware)
 
 
 class FilamentPrices:

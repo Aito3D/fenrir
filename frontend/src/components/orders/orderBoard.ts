@@ -250,14 +250,14 @@ export function scanCheck(
   check: OrderCheck,
   lines: Pick<OrderBoardLine, 'id' | 'name' | 'codes'>[],
   code: string,
-): { check: OrderCheck; hit: 'added' | 'full' | 'unknown'; name: string } {
+): { check: OrderCheck; hit: 'added' | 'full' | 'unknown'; name: string; id?: string } {
   const want = code.trim().toLowerCase();
   const matches = want ? lines.filter(l => check.max[l.id] > 0 && (l.codes ?? []).some(c => c.toLowerCase() === want)) : [];
   if (!matches.length) return { check, hit: 'unknown', name: '' };
   const line = matches.find(l => (check.qty[l.id] ?? 0) < check.max[l.id]);
   if (!line) return { check, hit: 'full', name: matches[0].name };
   const qty = Math.min(check.max[line.id], round2((check.qty[line.id] ?? 0) + 1));
-  return { check: { ...check, qty: { ...check.qty, [line.id]: qty } }, hit: 'added', name: line.name };
+  return { check: { ...check, qty: { ...check.qty, [line.id]: qty } }, hit: 'added', name: line.name, id: line.id };
 }
 
 /** Picklists a parcel can be made from: the open ones, and the completed ones while picked units wait for a box. */

@@ -192,8 +192,12 @@ async def record_order_payment(
 
     Heimdall books the money in Books itself, so a board pass may already have
     recorded this payment (a board event: no `method`) after the row was created
-    (`since`). Then the newest such event is annotated with `method` (its amount
-    stays the board's) instead of telling the same payment twice."""
+    (`since`). Among those unlabelled events, newest first: (1) one whose amount equals the settled
+    amount (rounded to 2 decimals, as the board records it) is annotated with `method`; (2) else the
+    newest one, if its amount is at least the settled amount (a pass that summed this payment with
+    another), is annotated, its amount staying the board's; (3) else a new `payment.received` with the
+    settled amount and method is recorded. Accepted residual: a board amount smaller than the settled one
+    (unknown retainers or credit) is told twice."""
     from backend.app.models.order_board_event import OrderBoardEvent
     from backend.app.services import order_board_events
 
@@ -207,11 +211,18 @@ async def record_order_payment(
             )
             .order_by(OrderBoardEvent.occurred_at.desc(), OrderBoardEvent.id.desc())
         )
-        for event in (await db.execute(stmt)).scalars():
-            if "method" not in (event.detail or {}):
-                event.detail = {**(event.detail or {}), "method": method}  # a new dict: JSON change tracking
-                await db.flush()
-                return
+        unlabelled = [
+            (e, e.detail or {}) for e in (await db.execute(stmt)).scalars() if "method" not in (e.detail or {})
+        ]
+        settled = round(float(amount), 2)
+        # shortcut: the match is by amount only, a board amount below the settled one is never annotated
+        target = next((p for p in unlabelled if round(_num(p[1].get("amount")), 2) == settled), None)
+        if target is None and unlabelled and round(_num(unlabelled[0][1].get("amount")), 2) >= settled:
+            target = unlabelled[0]
+        if target is not None:
+            target[0].detail = {**target[1], "method": method}  # a new dict: JSON change tracking
+            await db.flush()
+            return
     await order_board_events.record(
         db, salesorder_id, "payment.received", actor_class="system", detail={"amount": amount, "method": method}
     )

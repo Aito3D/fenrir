@@ -295,6 +295,30 @@ async def test_the_data_stamp_moves_on_a_day_write_a_decision_a_target_and_a_cus
     assert len(set(stamps)) == len(stamps)
 
 
+async def test_the_data_stamp_moves_on_a_filament_price_edit_and_a_printer_add_or_rename(engine, db):
+    from backend.app.models.calculator import CalculatorFilament
+    from backend.app.models.printer import Printer
+
+    async def stamp():
+        async with store.snapshot(engine) as conn:
+            return await store.revenue_data_stamp(conn)
+
+    stamps = [await stamp()]
+    db.add(CalculatorFilament(name="PLA", material="PLA", cost_per_kg=20.0, sale_price_per_kg=30.0))
+    await db.commit()
+    stamps.append(await stamp())
+    await db.execute(text("update calculator_filaments set cost_per_kg = 25, updated_at = '2030-01-01 00:00:00'"))
+    await db.commit()
+    stamps.append(await stamp())
+    db.add(Printer(name="P1", serial_number="S1", ip_address="1.1.1.1", access_code="x", model="X1C"))
+    await db.commit()
+    stamps.append(await stamp())
+    await db.execute(text("update printers set name = 'P2', updated_at = '2031-01-01 00:00:00'"))
+    await db.commit()
+    stamps.append(await stamp())
+    assert len(set(stamps)) == len(stamps)
+
+
 async def test_customer_item_first_lines_ignores_unidentified_lines(engine, db):
     await write(db, "2026-10-05", [line("2026-10-05", L1, "c1"), line("2026-10-05", L2, "c1")])
     await write(db, "2026-10-02", [line("2026-10-02", L2, "c1"), line("2026-10-02", {**L2, "item_id": "i3"})])
@@ -432,3 +456,15 @@ async def test_a_scope_decision_forgets_every_invoice_share_so_the_cash_step_re_
     async with store.snapshot(engine) as conn:
         [inv] = await store.read_invoice_shares(conn)
     assert inv["share"] is None
+
+
+async def test_the_shops_own_production_line_is_a_transfer_not_a_sale(engine, db):
+    from backend.app.models.revenue import RevenueCustomer
+
+    for cid, name in (("c-farm", "O'SEA - Aito 3D"), ("c-real", "SARL THT")):
+        db.add(RevenueCustomer(customer_id=cid, name=name, company_name="", found=True, fetched_at=NOW.isoformat()))
+    await db.commit()
+    await write(db, "2026-05-15", [line("2026-05-15", L2, "c-farm"), line("2026-05-15", L2, "c-real")])
+    assert [x.customer_id for x in await read_lines(engine, "2026-05-15", "2026-05-15")] == ["c-real"]
+    async with store.snapshot(engine) as conn:
+        assert [x.customer_id for x in await store.customer_item_first_lines(conn)] == ["c-real"]

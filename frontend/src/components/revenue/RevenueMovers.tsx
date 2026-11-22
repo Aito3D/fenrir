@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { Facts, Panel } from '../aito/stats/primitives';
 import { Skeleton } from '../Skeleton';
 import { PICK_CLS } from './RevenueControls';
+import { RevenueSegmented } from './RevenueSegmented';
 import { dateInputCls } from './styles';
 import { REVENUE_HISTORY_START } from './lib/dates';
 import { formatFcp, formatPct } from './lib/format';
@@ -11,6 +12,7 @@ import { useRevenueResource } from './useRevenueResource';
 
 type Compare = { from: string; to: string; cfrom: string; cto: string };
 
+const SECTION_LABEL = { customerMovers: 'revenue.movers.customers', items: 'revenue.movers.products', brands: 'revenue.filters.brands' } as const;
 const signed = (n: number) => `${n > 0 ? '+' : ''}${formatFcp(n)}`;
 const tone = (up: boolean) => (up ? 'text-status-ok' : 'text-status-error');
 
@@ -36,8 +38,13 @@ function MoverList({ title, movers, up }: { title: string; movers: Mover[]; up: 
         <Facts
           rows={movers.map((m) => ({
             label: <span className="block truncate" title={m.label}>{m.label}</span>,
-            value: <span className={tone(up)}>{`${up ? '▲' : '▼'} ${signed(m.delta)}`}</span>,
-            note: m.change == null ? t('revenue.movers.new') : formatPct(m.change),
+            // The change sits under the amount: beside it, a phone pushed it past the panel edge.
+            value: (
+              <span className={tone(up)}>
+                {`${up ? '▲' : '▼'} ${signed(m.delta)}`}
+                <span className="block text-[11px] font-normal text-bambu-gray">{m.change == null ? t('revenue.movers.new') : formatPct(m.change)}</span>
+              </span>
+            ),
           }))}
         />
       )}
@@ -74,6 +81,10 @@ export function RevenueMovers(p: { granularity: RevenueGranularity; bucketKey: s
   const data = error ? null : res.data;
   // Compare prefills from the period's own payload, once it has landed (not from a comparison still on screen).
   const base = !res.loading && data?.granularity != null ? data : null;
+  // Customers come first, and only for a user allowed to see them (the server strips them otherwise).
+  const sections = (['customerMovers', 'items', 'brands'] as const).filter((k) => !data || data[k]);
+  const [section, setSection] = useState<(typeof sections)[number]>('customerMovers');
+  const shownSection = sections.includes(section) ? section : sections[0];
   const totals = data?.totals;
   const delta = totals ? totals.current - totals.previous : 0;
   const date = new Intl.DateTimeFormat(i18n.language, { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' });
@@ -128,13 +139,13 @@ export function RevenueMovers(p: { granularity: RevenueGranularity; bucketKey: s
           <Skeleton className="h-40 w-full" />
         ) : (
           <>
-            {(['items', 'brands'] as const).map((k) => (
-              <section key={k} className="space-y-2">
-                <h3 className="text-[13px] font-medium text-white">{t(k === 'items' ? 'revenue.movers.products' : 'revenue.filters.brands')}</h3>
-                <MoverList title={t('revenue.movers.up')} movers={data[k].up} up />
-                <MoverList title={t('revenue.movers.down')} movers={data[k].down} up={false} />
-              </section>
-            ))}
+            {/* One list at a time: all three stacked made the panel three times taller than the table beside it. */}
+            <RevenueSegmented inPanel label={t('revenue.movers.dimension')} value={shownSection} onChange={setSection}
+              options={sections.map((k) => ({ id: k, label: t(SECTION_LABEL[k]) }))} />
+            <section className="space-y-2">
+              <MoverList title={t('revenue.movers.up')} movers={data[shownSection]!.up} up />
+              <MoverList title={t('revenue.movers.down')} movers={data[shownSection]!.down} up={false} />
+            </section>
           </>
         )}
       </div>

@@ -30,7 +30,7 @@ export function RevenueClosablePanel({ title, action, onClose, returnFocus, chil
     };
   }, []);
   return (
-    <div role="region" aria-labelledby={id}>
+    <div role="region" aria-labelledby={id} className="animate-rise-sm">
       <Panel
         title={
           <h2 id={id} ref={heading} tabIndex={-1} className={`text-xs uppercase tracking-wide text-bambu-gray ${focusRingCls}`}>

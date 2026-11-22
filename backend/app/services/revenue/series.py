@@ -432,7 +432,8 @@ def build_revenue_series(
         elapsed = days_between(start, today) if partial else None
         back = shift_bucket_year(key, g, -1)
         year_ago = sum_range(*comparison_range(back, elapsed)) if back else None
-        prev_sum = sum_range(*comparison_range(bucket_key_for(add_days(start, -1), g), elapsed))
+        prev_key = bucket_key_for(add_days(start, -1), g)
+        prev_sum = sum_range(*comparison_range(prev_key, elapsed))
         count_from = max(start, history_start)
         count_to = min(end, today)
         missing = sum(1 for d in all_days(count_from, count_to) if d not in fetched)
@@ -481,6 +482,8 @@ def build_revenue_series(
                     "ttc": _evolution(ttc, prev_sum[1] if prev_sum else None),
                 },
                 "yearAgo": money(year_ago),
+                # The whole previous bucket, for a window that starts at this one (« Année précédente » with one column).
+                "previousTotal": money(sum_range(*bucket_range(prev_key, g))) if key == keys[0] else None,
                 "elapsedDays": elapsed,
                 "cumulative": {"ht": cum_ht, "ttc": cum_ttc},
                 "partial": partial,

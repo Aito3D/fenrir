@@ -12,7 +12,7 @@ from zoneinfo import ZoneInfo
 
 from backend.app.services.aito_poll_watermark import format_books_time
 from backend.app.services.revenue.config import ORG_TIME_ZONE
-from backend.app.services.revenue.dates import days_between
+from backend.app.services.revenue.dates import _month_shift, days_between
 from backend.app.services.revenue.scope import RevenueDecision, ScopeItem, classify_revenue_item
 from backend.app.services.revenue.series import RevenueLine, in_scope_lines, js_round, ttc_of
 
@@ -23,11 +23,9 @@ AGING_BUCKETS = ("notDue", "d30", "d60", "d90", "over")  # not due, then 1-30 / 
 AGING_CUSTOMERS = 10
 FORECAST_WINDOWS = ("d30", "d60", "d90")
 DSO_DAYS = 90
-
-
-def _month_shift(month: str, delta: int) -> str:
-    y, m = int(month[:4]), int(month[5:7]) - 1 + delta
-    return f"{y + m // 12:04d}-{m % 12 + 1:02d}"
+# The cash forecast: what falls due within FORECAST_DAYS, and overdue money still young enough to expect.
+FORECAST_DAYS = 30
+STALE_OVERDUE_DAYS = 90
 
 
 def last_months(today: str, n: int = CASH_MONTHS) -> list[str]:
@@ -60,7 +58,8 @@ def customer_share(kind: str | None) -> float | None:
     return 1.0 if kind == ONLY_3D else 0.0 if kind == NO_3D else None
 
 
-def _amount(v) -> float:
+def _lenient_float(v) -> float:
+    # Lenient on purpose: NaN/inf pass and bool counts (True is 1), unlike sync_plan._strict_amount.
     try:
         return float(v or 0)
     except (TypeError, ValueError):
@@ -72,7 +71,7 @@ def invoice_share(line_items: list[dict], items: dict[str, ScopeItem], decisions
     decision_by_id = {d.item_id: d for d in decisions}
     total = in_scope = 0.0
     for li in line_items:
-        amount = _amount(li.get("item_total"))
+        amount = _lenient_float(li.get("item_total"))
         total += amount
         item_id = li.get("item_id") or ""
         if item_id and classify_revenue_item(items.get(item_id), decision_by_id.get(item_id)).included:
@@ -221,6 +220,7 @@ def invoiced_ttc_since(
 def outstanding(invoices: list[dict], classes: dict[str, str], today: str) -> tuple[dict, list[dict], float]:
     """{total, overdue, invoices, unknown} (3D share applied), the most overdue invoices, and the raw known balance."""
     total = overdue = unknown = known = 0.0
+    due_soon = late_recent = late_old = 0.0
     count = 0
     late: list[dict] = []
     for inv in invoices:
@@ -238,8 +238,15 @@ def outstanding(invoices: list[dict], classes: dict[str, str], today: str) -> tu
         part = balance * share
         total += part
         count += 1
-        if inv["dueDate"] and inv["dueDate"] < today:
+        due = inv["dueDate"]
+        if not due or (due >= today and days_between(today, due) - 1 <= FORECAST_DAYS):
+            due_soon += part  # no due date reads as due on receipt
+        if due and due < today:
             overdue += part
+            if days_between(due, today) - 1 > STALE_OVERDUE_DAYS:
+                late_old += part
+            else:
+                late_recent += part
             late.append(
                 {
                     "number": inv["number"],
@@ -250,7 +257,15 @@ def outstanding(invoices: list[dict], classes: dict[str, str], today: str) -> tu
                 }
             )
     late.sort(key=lambda r: (-r["balance"], r["dueDate"]))
-    owed = {"total": js_round(total), "overdue": js_round(overdue), "invoices": count, "unknown": js_round(unknown)}
+    owed = {
+        "total": js_round(total),
+        "overdue": js_round(overdue),
+        "invoices": count,
+        "unknown": js_round(unknown),
+        "dueSoon": js_round(due_soon),
+        "lateRecent": js_round(late_recent),
+        "lateOld": js_round(late_old),
+    }
     return owed, late[:TOP_OVERDUE], known
 
 

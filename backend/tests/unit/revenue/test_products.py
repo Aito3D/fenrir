@@ -1,9 +1,7 @@
 import pytest
 
-from backend.app.services.revenue import scope
 from backend.app.services.revenue.products import (
     BRANDS_PARAM_ERROR,
-    ITEM_ID_RE,
     ITEMS_PARAM_ERROR,
     KIND_PARAM_ERROR,
     SEGMENT_PARAM_ERROR,
@@ -13,7 +11,7 @@ from backend.app.services.revenue.products import (
     parse_item_ids,
     parse_series_filters,
 )
-from backend.app.services.revenue.scope import RevenueDecision, ScopeItem
+from backend.app.services.revenue.scope import ITEM_ID_RE, RevenueDecision, ScopeItem
 from backend.app.services.revenue.series import LineFilters
 
 
@@ -82,7 +80,6 @@ def test_splits_a_comma_list_trims_dedupes_and_refuses_a_malformed_id():
 
 
 def test_item_id_re_rejects_a_trailing_newline():
-    assert ITEM_ID_RE is scope.ITEM_ID_RE
     assert ITEM_ID_RE.fullmatch("abc")
     assert not ITEM_ID_RE.fullmatch("abc\n")
     assert not ITEM_ID_RE.match("abc\n")

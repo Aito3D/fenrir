@@ -14,7 +14,7 @@ from backend.app.core.permissions import Permission
 if TYPE_CHECKING:
     from backend.app.models.user import User
 
-_CUSTOMER_KEYS = frozenset({"bySegment", "bySegmentTtc", "topOverdue", "byCustomer"})
+_CUSTOMER_KEYS = frozenset({"bySegment", "bySegmentTtc", "topOverdue", "byCustomer", "customerMovers"})
 _MARGIN_KEYS = frozenset(
     {"cost", "costedHt", "marginByBrand", "marginByNature", "marginSplit", "costParts", "printHours"}
 )

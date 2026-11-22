@@ -365,21 +365,22 @@ async def get_customers(
 ):
     now = datetime.now(timezone.utc)
     _ordered_range(from_, to)
+    start, end = series.clamp_range(from_, to, REVENUE_HISTORY_START, org_today(now))
     if granularity not in REVENUE_GRANULARITIES:
         raise _unprocessable("granularity must be day, week, month or year")
     flags = memo.caller_flags(user)
     filters = _filters(flags, items, brand, kind, segment)
 
     async def build(conn, _now, _status):
-        ctx = await _context(conn, from_, to)
+        ctx = await _context(conn, start, end)
         scope = (ctx["items"], ctx["decisions"], ctx["customers"], filters)
         # "New" means first purchase of what the page shows: a 2025 print customer is new to filament this month.
         first_days = insights.first_days_in_scope(await store.customer_item_first_lines(conn), *scope)
-        result = insights.customer_breakdown(ctx["lines"], *scope, first_days, from_)
+        result = insights.customer_breakdown(ctx["lines"], *scope, first_days, start)
         retention = insights.retention_series(
-            ctx["lines"], *scope, first_days, cast(series.Granularity, granularity), from_, to
+            ctx["lines"], *scope, first_days, cast(series.Granularity, granularity), start, end
         )
-        return {"from": from_, "to": to, **result, "retention": retention}
+        return {"from": start, "to": end, **result, "retention": retention}
 
     return await _respond(request, user, build, flags=flags, now=now)
 
@@ -514,11 +515,21 @@ async def get_movers(
         cur, prev = ranges["current"], ranges["previous"]
         ctx = await _context(conn, min(cur["from"], prev["from"]), max(cur["to"], prev["to"]))
 
-        def rows(r: dict) -> list[dict]:
-            return _breakdown(ctx, [x for x in ctx["lines"] if r["from"] <= x.day <= r["to"]], filters)
+        def lines_in(r: dict) -> list:
+            return [x for x in ctx["lines"] if r["from"] <= x.day <= r["to"]]
+
+        def by_customer(r: dict) -> dict:
+            return insights.customer_totals(lines_in(r), ctx["items"], ctx["decisions"], ctx["customers"], filters)
 
         shown = COMPARE_SHOWN if free else insights.MOVERS_SHOWN
-        moved = insights.compute_movers(rows(cur), rows(prev), ranges, shown)
+        # Built for every caller and stripped (memo._CUSTOMER_KEYS) for one without revenue:view_customers.
+        moved = insights.compute_movers(
+            _breakdown(ctx, lines_in(cur), filters),
+            _breakdown(ctx, lines_in(prev), filters),
+            ranges,
+            shown,
+            (by_customer(cur), by_customer(prev)),
+        )
         return {"granularity": None if free else granularity, "key": None if free else key, **moved}
 
     return await _respond(request, user, build, flags=flags, now=now)

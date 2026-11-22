@@ -157,12 +157,14 @@ function Dormant({ rows }: { rows: DormantRow[] }) {
             rows={rows.map((r) => ({
               label: (
                 <>
-                  <span className="block text-white">{r.name}</span>
-                  {(r.brand || r.sku) && <span className="block text-[11px] text-bambu-gray">{[r.brand, r.sku].filter(Boolean).join(' · ')}</span>}
+                  <span className="block truncate text-white" title={r.name}>{r.name}</span>
+                  {/* The last sale sits under the name: beside the amount it squeezed long names onto three lines. */}
+                  <span className="block truncate text-[11px] text-bambu-gray">
+                    {[r.lastDay ? t('revenue.analysis.lastSale', { date: date.format(new Date(`${r.lastDay}T00:00:00Z`)) }) : null, r.brand, r.sku].filter(Boolean).join(' · ')}
+                  </span>
                 </>
               ),
               value: <span>{formatFcp(r.ht)}</span>,
-              note: r.lastDay ? t('revenue.analysis.lastSale', { date: date.format(new Date(`${r.lastDay}T00:00:00Z`)) }) : undefined,
             }))}
           />
         </div>

@@ -1534,3 +1534,51 @@ async def test_an_order_written_after_the_listing_survives_the_pass(db_session, 
     await sync.run_pass(db_session)
     alerts = (await db_session.execute(select(OrderBoardDoc).where(OrderBoardDoc.kind == "alert_new"))).scalars().all()
     assert alerts == []
+
+
+async def _finished_with_deposit(db, zoho) -> None:
+    """A finished order from quote e1 whose 400 deposit is still unused; the pass has stored its detail."""
+    zoho.retainers["e1"] = [_retainer(400.0)]
+    zoho.customer_payments = [_retainer_payment("r1", 400.0)]
+    await _synced(db, zoho, order(1, age=10, shipped=1, estimate_id="e1"))
+    assert (await sync.read_finished(db))["rows"][0]["payment"]["left"] == 600.0
+
+
+async def _mark_stale(db, zoho_id) -> None:
+    doc = await _doc(db, zoho_id)
+    doc.detail = {**doc.detail, "_stale": True}
+    await db.commit()
+
+
+@pytest.mark.asyncio
+async def test_a_finished_order_re_read_when_stale_still_counts_its_unused_deposit(db_session, zoho):
+    await _finished_with_deposit(db_session, zoho)
+    await _mark_stale(db_session, "so1")
+    reads = zoho.calls["detail"]
+    row = await sync.read_finished_order(db_session, "so1")
+    assert zoho.calls["detail"] == reads + 1  # the stale copy really was fetched again
+    assert (row["payment"]["retainer"], row["payment"]["left"]) == (400.0, 600.0)
+    doc = await sync.find_stored(db_session, "so1")
+    assert doc is not None
+    assert [(r["id"], r["unused"]) for r in doc.detail["_retainers"]] == [("r1", 400.0)]
+
+
+@pytest.mark.asyncio
+async def test_a_finished_order_re_read_keeps_its_deposits_when_books_fails_on_them(db_session, zoho):
+    await _finished_with_deposit(db_session, zoho)
+    await _mark_stale(db_session, "so1")
+    zoho.fail_retainers = ZohoUpstreamError("boom")
+    row = await sync.read_finished_order(db_session, "so1")
+    assert (row["payment"]["retainer"], row["payment"]["left"]) == (400.0, 600.0)
+
+
+@pytest.mark.asyncio
+async def test_a_rate_limited_deposit_read_on_a_finished_order_is_busy_and_keeps_the_stored_copy(db_session, zoho):
+    await _finished_with_deposit(db_session, zoho)
+    await _mark_stale(db_session, "so1")
+    zoho.fail_retainers = ZohoRateLimited("slow down", retry_after=60)
+    with pytest.raises(sync.ZohoBusy):
+        await sync.read_finished_order(db_session, "so1")
+    assert sync.zoho_busy()
+    doc = await sync.find_stored(db_session, "so1")
+    assert doc is not None and doc.detail["_stale"] is True

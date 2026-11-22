@@ -6398,12 +6398,37 @@
    },
    "security": true
   },
+  "GET /api/v1/revenue/cash": {
+   "operationId": "get_cash_api_v1_revenue_cash_get",
+   "params": [
+    "header:X-API-Key"
+   ],
+   "requestBody": {},
+   "responses": {
+    "200": null,
+    "422": "HTTPValidationError"
+   },
+   "security": true
+  },
+  "GET /api/v1/revenue/checks": {
+   "operationId": "get_checks_api_v1_revenue_checks_get",
+   "params": [
+    "header:X-API-Key"
+   ],
+   "requestBody": {},
+   "responses": {
+    "200": null,
+    "422": "HTTPValidationError"
+   },
+   "security": true
+  },
   "GET /api/v1/revenue/customers": {
    "operationId": "get_customers_api_v1_revenue_customers_get",
    "params": [
     "header:X-API-Key",
     "query:brand",
     "query:from",
+    "query:granularity",
     "query:items",
     "query:kind",
     "query:segment",
@@ -6452,6 +6477,18 @@
    },
    "security": true
   },
+  "GET /api/v1/revenue/labor": {
+   "operationId": "get_labor_api_v1_revenue_labor_get",
+   "params": [
+    "header:X-API-Key"
+   ],
+   "requestBody": {},
+   "responses": {
+    "200": null,
+    "422": "HTTPValidationError"
+   },
+   "security": true
+  },
   "GET /api/v1/revenue/movers": {
    "operationId": "get_movers_api_v1_revenue_movers_get",
    "params": [
@@ -6466,6 +6503,18 @@
     "query:kind",
     "query:segment",
     "query:to"
+   ],
+   "requestBody": {},
+   "responses": {
+    "200": null,
+    "422": "HTTPValidationError"
+   },
+   "security": true
+  },
+  "GET /api/v1/revenue/pipeline": {
+   "operationId": "get_pipeline_api_v1_revenue_pipeline_get",
+   "params": [
+    "header:X-API-Key"
    ],
    "requestBody": {},
    "responses": {
@@ -13387,6 +13436,19 @@
    },
    "security": true
   },
+  "POST /api/v1/revenue/checks/{month}/refetch": {
+   "operationId": "refetch_month_api_v1_revenue_checks__month__refetch_post",
+   "params": [
+    "header:X-API-Key",
+    "path:month!"
+   ],
+   "requestBody": {},
+   "responses": {
+    "200": null,
+    "422": "HTTPValidationError"
+   },
+   "security": true
+  },
   "POST /api/v1/revenue/sync": {
    "operationId": "post_sync_api_v1_revenue_sync_post",
    "params": [
@@ -14913,6 +14975,20 @@
    },
    "security": true
   },
+  "PUT /api/v1/revenue/labor": {
+   "operationId": "put_labor_api_v1_revenue_labor_put",
+   "params": [
+    "header:X-API-Key"
+   ],
+   "requestBody": {
+    "application/json": "LaborBody"
+   },
+   "responses": {
+    "200": null,
+    "422": "HTTPValidationError"
+   },
+   "security": true
+  },
   "PUT /api/v1/revenue/scope/{item_id}": {
    "operationId": "put_scope_api_v1_revenue_scope__item_id__put",
    "params": [
@@ -16274,7 +16350,8 @@
     "created": "integer",
     "day": "string",
     "declined": "integer",
-    "done": "integer"
+    "done": "integer",
+    "tracking_views": "integer"
    },
    "required": [
     "accepted",
@@ -16338,7 +16415,8 @@
     "created": "integer",
     "declined": "integer",
     "done": "integer",
-    "lead_days": "anyOf(number,null)"
+    "lead_days": "anyOf(number,null)",
+    "tracking_views": "integer"
    },
    "required": [
     "accepted",
@@ -16492,6 +16570,8 @@
     "done": "integer",
     "lead_days": "anyOf(number,null)",
     "lead_days_median": "anyOf(number,null)",
+    "make_days": "anyOf(number,null)",
+    "make_days_median": "anyOf(number,null)",
     "per_day": "anyOf(number,null)",
     "production_days": "anyOf(number,null)"
    },
@@ -21296,6 +21376,29 @@
     "layout",
     "name",
     "updated_at"
+   ]
+  },
+  "LaborBody": {
+   "properties": {
+    "providers": "[LaborProvider]"
+   },
+   "required": [
+    "providers"
+   ]
+  },
+  "LaborProvider": {
+   "properties": {
+    "daysPerWeek": "integer",
+    "hourlyRate": "number",
+    "hoursPerDay": "number",
+    "name": "string",
+    "since": "anyOf(string,null)"
+   },
+   "required": [
+    "daysPerWeek",
+    "hourlyRate",
+    "hoursPerDay",
+    "name"
    ]
   },
   "LatestFirmwareInfo": {

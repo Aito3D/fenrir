@@ -1751,6 +1751,8 @@ CREATE TABLE revenue_day_lines (
 	sku VARCHAR(255) NOT NULL, 
 	quantity FLOAT NOT NULL, 
 	amount FLOAT NOT NULL, 
+	unit_cost FLOAT, 
+	tax_percentage FLOAT, 
 	PRIMARY KEY (day, item_id, customer_id), 
 	FOREIGN KEY(day) REFERENCES revenue_days (day) ON DELETE CASCADE
 );
@@ -1760,6 +1762,20 @@ CREATE TABLE revenue_days (
 	fetched_at VARCHAR(40) NOT NULL, 
 	format INTEGER NOT NULL, 
 	PRIMARY KEY (day)
+);
+CREATE TABLE revenue_invoice_shares (
+	invoice_id VARCHAR(64) NOT NULL, 
+	number VARCHAR(100) NOT NULL, 
+	customer_id VARCHAR(64) NOT NULL, 
+	customer_name VARCHAR(500) NOT NULL, 
+	date VARCHAR(10) NOT NULL, 
+	due_date VARCHAR(10) NOT NULL, 
+	total FLOAT NOT NULL, 
+	balance FLOAT NOT NULL, 
+	share FLOAT, 
+	share_total FLOAT, 
+	fetched_at VARCHAR(40) NOT NULL, 
+	PRIMARY KEY (invoice_id)
 );
 CREATE TABLE revenue_items (
 	item_id VARCHAR(64) NOT NULL, 
@@ -1774,6 +1790,24 @@ CREATE TABLE revenue_items (
 	status VARCHAR(32), 
 	fetched_at VARCHAR(40) NOT NULL, 
 	PRIMARY KEY (item_id)
+);
+CREATE TABLE revenue_month_checks (
+	month VARCHAR(7) NOT NULL, 
+	zoho_amount FLOAT NOT NULL, 
+	cache_amount FLOAT NOT NULL, 
+	checked_at VARCHAR(40) NOT NULL, 
+	PRIMARY KEY (month)
+);
+CREATE TABLE revenue_payments (
+	payment_id VARCHAR(64) NOT NULL, 
+	customer_id VARCHAR(64) NOT NULL, 
+	date VARCHAR(10) NOT NULL, 
+	amount FLOAT NOT NULL, 
+	unapplied FLOAT NOT NULL, 
+	applications JSON, 
+	last_modified_time VARCHAR(40) NOT NULL, 
+	fetched_at VARCHAR(40) NOT NULL, 
+	PRIMARY KEY (payment_id)
 );
 CREATE TABLE revenue_scope_decisions (
 	item_id VARCHAR(64) NOT NULL, 

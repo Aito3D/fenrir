@@ -38,7 +38,7 @@ export function LanguageMenu() {
             role="dialog"
             aria-label={t('languageMenu.label')}
             style={style}
-            className="z-[1000] bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-lg shadow-xl p-3"
+            className="animate-dropdown-in [--dropdown-origin:bottom_left] z-[1000] bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-lg shadow-xl p-3"
           >
             <LanguageSelect id="language-menu-select" />
           </div>,

@@ -392,11 +392,18 @@ describe('scanning into a parcel', () => {
       </QueryClientProvider>,
     );
     expect(await screen.findByText(/Parcel: 0 of 2 on PL-00013/)).toBeInTheDocument();
+    expect(document.querySelector('.animate-row-flash')).toBeNull();
     scan('6975337030001');
     expect(await screen.findByText(/Parcel: 1 of 2 on PL-00013/)).toBeInTheDocument();
+    // The hit flashes the scanned line, and a second scan of it restarts the flash (a fresh cell).
+    const flashed = document.querySelector('.animate-row-flash');
+    expect(flashed).not.toBeNull();
+    scan('6975337030001');
+    expect(await screen.findByText(/Parcel: 2 of 2 on PL-00013/)).toBeInTheDocument();
+    expect(document.querySelector('.animate-row-flash')).not.toBe(flashed);
     scan('0000000');
     expect(await screen.findByText('Unknown barcode: 0000000')).toBeInTheDocument();
-    expect(screen.getByText(/Parcel: 1 of 2 on PL-00013/)).toBeInTheDocument();
+    expect(screen.getByText(/Parcel: 2 of 2 on PL-00013/)).toBeInTheDocument();
   });
 
   it('with the setting off the check starts full and keys are left alone', async () => {

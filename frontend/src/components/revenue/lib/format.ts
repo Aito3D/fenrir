@@ -9,6 +9,11 @@ export function formatFcp(n: number): string {
   return `${r < 0 ? "−" : ""}${digits} FCP`;
 }
 
+/** formatFcp without the unit, for tables whose header states it once. */
+export function formatAmount(n: number): string {
+  return formatFcp(n).slice(0, -" FCP".length);
+}
+
 export function formatPct(v: number | null): string {
   if (v == null) return "—";
   const p = v * 100;

@@ -69,7 +69,33 @@ describe('RevenueHero', () => {
     const { container } = renderHero([sept, oct({ target: 1_000_000, projection: { ht: 970_000, ttc: 1_096_100 }, projectionMethod: 'linear' })]);
     expect(screen.getByRole('img', { name: '62 % of the target reached, projection 97 %' })).toBeInTheDocument();
     expect(container.querySelector('[data-arc="projection"]')).not.toBeNull();
-    expect(screen.getByText('Projection ≈ 970.000 FCP · Target HT 1.000.000 FCP')).toBeInTheDocument();
+    // The projection lives in its own tile; the corner keeps the target only.
+    expect(screen.getByText('Target HT 1.000.000 FCP')).toBeInTheDocument();
+    expect(screen.queryByText(/Projection ≈/)).toBeNull();
+  });
+
+  it('offers to set a target on a month or year without one, never on a week', () => {
+    let opened = 0;
+    const { unmount } = render(<RevenueHero payload={payload([sept, oct()])} taxMode="ht" canMargin onSetTarget={() => { opened += 1; }} />);
+    screen.getByRole('button', { name: 'Set a target' }).click();
+    expect(opened).toBe(1);
+    unmount();
+    const w = bucket({ key: '2026-W47', label: 'S47', start: '2026-11-16', end: '2026-11-22' });
+    render(<RevenueHero payload={payload([w], 'week')} taxMode="ht" canMargin onSetTarget={() => {}} />);
+    expect(screen.queryByRole('button', { name: 'Set a target' })).toBeNull();
+  });
+
+  it('shows one year-over-year badge and the previous year from the server on a one-column year', () => {
+    const y = bucket({
+      key: '2026', label: '2026', start: '2026-01-01', end: '2026-12-31', ht: 4_000_000, ttc: 4_520_000, partial: true, elapsedDays: 324,
+      evolution: { ht: 3.02, ttc: 3.02 }, yearAgo: { ht: 995_000, ttc: 1_124_350 }, previousTotal: { ht: 1_200_000, ttc: 1_356_000 },
+    });
+    renderHero([y], { granularity: 'year' });
+    const badges = screen.getAllByText(/^vs /);
+    expect(badges).toHaveLength(1);
+    expect(badges[0]).toHaveTextContent('2025'); // the year-ago label names the year
+    expect(screen.getByText('1.200.000 FCP')).toBeInTheDocument();
+    expect(screen.getByText('2025')).toBeInTheDocument();
   });
 
   it('hides the margin tile without revenue:view_margin or without cost fields', () => {
@@ -85,7 +111,8 @@ describe('RevenueHero', () => {
     renderHero([sept, oct({ costedHt: undefined, cost: undefined })]);
     expect(screen.queryByText(/Gross margin/)).toBeNull();
     expect(screen.getByText('Previous month')).toBeInTheDocument();
-    expect(screen.getByText('Running total')).toBeInTheDocument();
+    // The running total repeated the hero figure: it is no longer a tile.
+    expect(screen.queryByText('Running total')).toBeNull();
   });
 
   it('names the services per machine hour tile and formats its hours', () => {
@@ -98,7 +125,6 @@ describe('RevenueHero', () => {
   it('shows the tile hints the helpers return', () => {
     renderHero([sept, oct({ projection: { ht: 1_240_000, ttc: 1_401_200 }, projectionMethod: 'linear' })]);
     expect(screen.getByText('sept. 2026')).toBeInTheDocument();
-    expect(screen.getByText('sept. 2026 → oct. 2026')).toBeInTheDocument();
     expect(screen.getByText('Projection to end of month')).toBeInTheDocument();
     expect(screen.getByText('at the current pace')).toBeInTheDocument();
   });

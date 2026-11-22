@@ -66,7 +66,7 @@ export function CopyButton({
       className={className}
       title={copied ? t(copiedTitleKey) : t(titleKey)}
     >
-      {copied ? <Check className={`${iconClassName} text-bambu-green`} /> : <Copy className={iconClassName} />}
+      {copied ? <Check className={`${iconClassName} text-bambu-green animate-slice-done`} /> : <Copy className={iconClassName} />}
     </button>
   );
 }

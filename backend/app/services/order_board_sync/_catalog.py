@@ -8,7 +8,7 @@ every time (the ``item`` rows): those win. Prices on the copy are only shown; cr
 import logging
 from datetime import datetime, timezone
 
-from sqlalchemy import delete, select
+from sqlalchemy import delete, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.models.order_board_doc import OrderBoardDoc
@@ -26,6 +26,8 @@ from backend.app.utils.text import fold_text
 logger = logging.getLogger(__name__)
 
 CATALOG_TTL_SECONDS = 30 * 60
+_CATALOG_RETRY_SECONDS = 5 * 60  # a failed or cut-short sweep waits this long (5 pass intervals) before starting over
+_STAGE = "catalog_stage"  # pages of a sweep in progress, beside the live "catalog" rows
 CATALOG_PAGE_CAP = 100  # 20,000 items; a runaway has_more stops here
 # The codes a product can be searched by: SKU (UGS in French Books), barcodes, part number, the shop's own reference.
 CODES = ("sku", "upc", "ean", "isbn", "part_number", "cf_r_f_rence")
@@ -55,39 +57,86 @@ def _stale(loaded_at: str | None) -> bool:
     return (datetime.now(timezone.utc) - datetime.fromisoformat(loaded_at)).total_seconds() >= CATALOG_TTL_SECONDS
 
 
-async def refresh_catalog_if_stale(db: AsyncSession) -> None:
-    """Sweep Books' items when the copy is stale and the call budget allows. A failure keeps the old copy and never
-    fails the pass: the search falls back to asking Books."""
+async def _note_sweep_failed(db: AsyncSession) -> None:
     state = await _state(db)
-    if not _stale((state.detail or {}).get("catalog_loaded_at")) or zoho_busy(CALL_CEILING):
-        return
-    items: list[dict] = []
-    try:
-        for page in range(1, CATALOG_PAGE_CAP + 1):
-            rows, more = await zoho_service.list_items_page_all(db, page)
-            items += rows
-            if not more:
-                break
-    except ZohoRateLimited as e:
-        open_rate_limit_window(e)
-        logger.warning("Order board: catalogue sweep rate limited, keeping the old copy")
-        return
-    except ZohoUpstreamError as e:
-        logger.warning("Order board: catalogue sweep failed (%s), keeping the old copy", e)
-        return
+    state.detail = {**(state.detail or {}), "catalog_failed_at": _now()}
+    await db.commit()
+
+
+def _age_seconds(stamp: str) -> float:
+    return (datetime.now(timezone.utc) - datetime.fromisoformat(stamp)).total_seconds()
+
+
+async def _discard_stage(db: AsyncSession) -> None:
+    await db.execute(delete(OrderBoardDoc).where(OrderBoardDoc.kind == _STAGE))
+
+
+async def _stage_page(db: AsyncSession, rows: list[dict]) -> None:
+    """Keep the active goods of one page beside the live copy, which stays in place until the sweep completes."""
     goods = {
         str(it["item_id"]): {k: it.get(k) for k in _FIELDS}
-        for it in items
+        for it in rows
         if it.get("item_id")
         and (it.get("status") or "active") == "active"
         and not (it.get("product_type") or "").endswith("service")
     }
-    if not goods:  # an empty listing is a Books hiccup, not an empty shop
+    have = set((await db.execute(select(OrderBoardDoc.zoho_id).where(OrderBoardDoc.kind == _STAGE))).scalars())
+    db.add_all(OrderBoardDoc(kind=_STAGE, zoho_id=i, header=h) for i, h in goods.items() if i not in have)
+
+
+async def refresh_catalog_if_stale(db: AsyncSession) -> None:
+    """Sweep Books' items when the copy is stale and the call budget allows, re-checking the budget before each page.
+    The pages are staged as they arrive (``catalog_sweep`` in the board state holds the next page and the start time)
+    and replace the live copy in one go when the last one is in. A tripped budget stops the sweep and the next pass
+    resumes it, no back-off; a failure keeps the staged pages too but waits ``_CATALOG_RETRY_SECONDS``. Progress older
+    than ``CATALOG_TTL_SECONDS`` is dropped, so a sweep never mixes very old pages with new ones. Never fails the
+    pass: the search falls back to asking Books."""
+    state = await _state(db)
+    detail = state.detail or {}
+    if not _stale(detail.get("catalog_loaded_at")) or zoho_busy(CALL_CEILING):
+        return
+    failed_at = detail.get("catalog_failed_at")
+    if failed_at and _age_seconds(failed_at) < _CATALOG_RETRY_SECONDS:
+        return
+    sweep = detail.get("catalog_sweep")
+    if not sweep or _age_seconds(sweep["started_at"]) >= CATALOG_TTL_SECONDS:
+        await _discard_stage(db)
+        sweep = {"started_at": _now(), "next_page": 1}
+    first = page = sweep["next_page"]
+    try:
+        while page <= CATALOG_PAGE_CAP:
+            if page > first and zoho_busy(CALL_CEILING):
+                logger.warning("Order board: catalogue sweep paused at page %d, call budget spent", page)
+                break
+            rows, more = await zoho_service.list_items_page_all(db, page)
+            page += 1
+            await _stage_page(db, rows)
+            state = await _state(db)
+            state.detail = {**(state.detail or {}), "catalog_sweep": {**sweep, "next_page": page}}
+            await db.commit()
+            if not more:
+                page = CATALOG_PAGE_CAP + 1
+    except ZohoRateLimited as e:
+        open_rate_limit_window(e)
+        logger.warning("Order board: catalogue sweep rate limited, keeping the old copy")
+        await _note_sweep_failed(db)
+        return
+    except ZohoUpstreamError as e:
+        logger.warning("Order board: catalogue sweep failed (%s), keeping the old copy", e)
+        await _note_sweep_failed(db)
+        return
+    if page <= CATALOG_PAGE_CAP:
+        return  # paused: the next pass resumes at ``page``
+    staged = (await db.execute(select(OrderBoardDoc.id).where(OrderBoardDoc.kind == _STAGE).limit(1))).first()
+    state = await _state(db)
+    rest = {k: v for k, v in (state.detail or {}).items() if k not in ("catalog_sweep", "catalog_failed_at")}
+    if not staged:  # an empty listing is a Books hiccup, not an empty shop
+        state.detail = rest
+        await db.commit()
         return
     await db.execute(delete(OrderBoardDoc).where(OrderBoardDoc.kind == "catalog"))
-    db.add_all(OrderBoardDoc(kind="catalog", zoho_id=item_id, header=header) for item_id, header in goods.items())
-    state = await _state(db)
-    state.detail = {**(state.detail or {}), "catalog_loaded_at": _now()}
+    await db.execute(update(OrderBoardDoc).where(OrderBoardDoc.kind == _STAGE).values(kind="catalog"))
+    state.detail = {**rest, "catalog_loaded_at": _now()}
     await db.commit()
 
 
