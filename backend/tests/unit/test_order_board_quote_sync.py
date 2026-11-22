@@ -265,9 +265,7 @@ async def test_an_empty_estimate_body_is_never_stored_under_another_id(db_sessio
 
     monkeypatch.setattr(zoho_service, "get_estimate", empty)
     await sync.run_pass(db_session)
-    docs = await stored_quotes(db_session)
-    assert set(docs) == {"e1"}
-    assert (docs["e1"].pending, docs["e1"].detail) == (True, None)
+    assert await stored_quotes(db_session) == {}  # dropped, not pending forever: the next full listing re-adds it
 
 
 @pytest.mark.asyncio

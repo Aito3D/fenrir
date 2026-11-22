@@ -18,7 +18,7 @@ from backend.app.services.order_board_actions._common import (
     writing,
 )
 from backend.app.services.order_board_actions.create import store_new_order
-from backend.app.services.order_board_actions.quotes import QuoteNotStored, _fresh, _settle
+from backend.app.services.order_board_actions.quotes import QuoteNotStored, _fresh, _owned_quote, _settle
 from backend.app.services.order_board_quotes import draft_order_id
 from backend.app.services.order_board_sync._recompute import recompute
 from backend.app.services.zoho import ZohoRateLimited, zoho_service
@@ -117,8 +117,7 @@ async def _order_step(db: AsyncSession, estimate_id: str, detail: dict, by: str 
 async def undo_accept(db: AsyncSession, estimate_id: str, salesorder_id: str, *, by: str | None) -> None:
     """Delete the quote's order in Books and mark the quote sent again, while Books shows nothing done on the order."""
     with writing(estimate_id), writing(salesorder_id):
-        if await sync.find_quote(db, estimate_id) is None:
-            raise QuoteNotStored(estimate_id)
+        await _owned_quote(db, estimate_id)
         if await sync.find_stored(db, salesorder_id) is None:
             raise OrderNotOnBoard(salesorder_id)
         if sync.zoho_busy():

@@ -101,7 +101,25 @@ def test_quote_row_without_detail():
 def test_quote_row_prefers_detail_and_flags():
     d = detail(reference_number="R", salesorders=[{"salesorder_id": "so", "salesorder_order_status": "draft"}])
     row = quote_row(header(reference_number="old"), d, {}, {}, TODAY, set())
-    assert row["reference"] == "R" and row["has_draft_order"] and row["editable"]
+    assert row["reference"] == "R" and row["has_draft_order"]
+    assert not row["editable"]  # a linked draft order: edited in Zoho
+
+
+def test_editable_here_refuses_a_quote_with_a_draft_order():
+    assert not editable_here(detail(salesorders=[{"salesorder_id": "so", "salesorder_order_status": "draft"}]))
+
+
+def test_quote_row_line_discount_is_a_string_or_none():
+    def discount(value):
+        d = detail(line_items=[{"item_id": "i1", "discount": value}])
+        return quote_row(header(), d, {}, {}, TODAY, set())["lines"][0]["discount"]
+
+    assert [discount(v) for v in (500, 0, "10.00%", None, "", 12.5)] == ["500", None, "10.00%", None, None, "12.5"]
+
+
+def test_quote_row_of_a_status_the_board_does_not_show_is_none():
+    assert quote_row(header(status="invoiced"), detail(), {}, {}, TODAY, set()) is None
+    assert quote_row(header(status="invoiced"), None, {}, {}, TODAY, set()) is None
 
 
 def test_quote_row_available_and_core():

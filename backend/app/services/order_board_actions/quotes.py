@@ -6,6 +6,7 @@ from datetime import date, timedelta
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from backend.app.models.order_board_doc import OrderBoardDoc
 from backend.app.services import order_board_sync as sync
 from backend.app.services.order_board_actions._common import OrderActionRefused, _log, _num, writing
 from backend.app.services.order_board_actions.create import (
@@ -17,7 +18,8 @@ from backend.app.services.order_board_actions.create import (
     remember,
 )
 from backend.app.services.order_board_quotes import editable_here, is_converted, quote_state
-from backend.app.services.zoho import zoho_service
+from backend.app.services.order_board_sync._quotes import _aito_quote_ids
+from backend.app.services.zoho import ZohoNotFound, zoho_service
 
 logger = logging.getLogger(__name__)
 
@@ -137,11 +139,17 @@ async def reopen_quote(db: AsyncSession, estimate_id: str, *, by: str | None) ->
         await _settle(db, estimate_id, "quote.reopened", by)
 
 
+async def _owned_quote(db: AsyncSession, estimate_id: str) -> OrderBoardDoc:
+    """The stored copy of a quote this board owns; none, or an Aito card's, raises ``QuoteNotStored`` (no Books call)."""
+    doc = await sync.find_quote(db, estimate_id)
+    if doc is None or estimate_id in await _aito_quote_ids(db):
+        raise QuoteNotStored(estimate_id)
+    return doc
+
+
 async def _stored_number(db: AsyncSession, estimate_id: str) -> str:
     """The stored quote's number; no copy means no Books call (``QuoteNotStored``)."""
-    doc = await sync.find_quote(db, estimate_id)
-    if doc is None:
-        raise QuoteNotStored(estimate_id)
+    doc = await _owned_quote(db, estimate_id)
     return str((doc.detail or {}).get("estimate_number") or estimate_id)
 
 
@@ -172,12 +180,17 @@ async def email_quote(db: AsyncSession, estimate_id: str, to: str, *, by: str | 
 async def _fresh(db: AsyncSession, estimate_id: str) -> dict:
     """Entry check of every quote write: a stored copy must exist (no Books call otherwise), and the estimate as Books
     has it now must not be converted to an order or invoice. Returns that fresh estimate."""
-    if await sync.find_quote(db, estimate_id) is None:
-        raise QuoteNotStored(estimate_id)
+    doc = await _owned_quote(db, estimate_id)
     if sync.zoho_busy():
         raise sync.ZohoBusy(estimate_id)
-    with sync._busy_on_rate_limit(estimate_id):
-        detail = await zoho_service.get_estimate(db, estimate_id)
+    try:
+        with sync._busy_on_rate_limit(estimate_id):
+            detail = await zoho_service.get_estimate(db, estimate_id)
+    except ZohoNotFound:  # deleted in Books: drop the copy so the row leaves the list now
+        await db.delete(doc)
+        await db.commit()
+        await sync.announce_board_change(quotes=True)
+        raise QuoteNotStored(estimate_id) from None
     if is_converted(detail):
         try:  # store what Books says, so a stale row (an accepted quote whose order exists) leaves the list now
             await sync.store_quote(db, detail)

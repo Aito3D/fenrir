@@ -314,6 +314,33 @@ async def test_write_on_unstored_quote_is_404_and_sends_nothing(db_session, book
     assert (books.sent, books.calls["estimate"]) == ([], 0)
 
 
+@pytest.mark.asyncio
+@pytest.mark.parametrize("write", ["edit", "decline", "reopen"])
+async def test_write_on_a_quote_deleted_in_books_is_404_and_drops_it(db_session, books, pings, monkeypatch, write):
+    from backend.app.services.zoho import ZohoNotFound
+
+    await _stored(db_session, books, _with_line(1, status="declined"))
+
+    async def gone(db, estimate_id):
+        raise ZohoNotFound("gone")
+
+    monkeypatch.setattr(zoho_service, "get_estimate", gone)
+    with pytest.raises(actions.QuoteNotStored):
+        await _write(db_session, write, "e1")
+    assert books.sent == []
+    assert await sync.find_quote(db_session, "e1") is None
+    assert pings[-1]["quotes"] is True
+
+
+@pytest.mark.asyncio
+async def test_edit_refused_on_a_quote_with_a_draft_order(db_session, books):
+    draft = [{"salesorder_id": "so7", "salesorder_order_status": "draft"}]
+    await _stored(db_session, books, {**_with_line(1, status="accepted"), "salesorders": draft})
+    with pytest.raises(actions.OrderActionRefused, match="quote_not_editable"):
+        await actions.edit_quote(db_session, "e1", "c1", [{"line_id": "ql1", "item_id": "A", "quantity": 1}], by=None)
+    assert books.sent == []
+
+
 async def _write(db, write: str, estimate_id: str) -> None:
     if write == "edit":
         await actions.edit_quote(db, estimate_id, "c1", [{"line_id": "ql1", "item_id": "A", "quantity": 1}], by=None)

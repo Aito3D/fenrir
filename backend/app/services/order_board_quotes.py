@@ -40,13 +40,14 @@ def is_quote_candidate(header: dict, today: date, max_age_days: int, aito_quote_
 
 def editable_here(detail: dict) -> bool:
     """Tax-inclusive with item-level discounts (what the board sends), every line a stocked item, no item on two lines
-    (the board's draft holds one line per item)."""
+    (the board's draft holds one line per item), and no linked draft order (it would no longer match the quote)."""
     ids = [line.get("item_id") for line in detail.get("line_items") or []]
     return (
         detail.get("is_inclusive_tax") is True
         and detail.get("discount_type") == "item_level"
         and all(ids)
         and len(set(ids)) == len(ids)
+        and draft_order_id(detail) is None
     )
 
 
@@ -69,7 +70,7 @@ def quote_row(
     core: set[str],
 ) -> dict | None:
     state = quote_state(header, today)
-    if state == "accepted" and (detail is None or is_converted(detail)):
+    if state is None or (state == "accepted" and (detail is None or is_converted(detail))):
         return None
     src = {**header, **(detail or {})}
     try:
@@ -92,7 +93,8 @@ def quote_row(
                     "sku": raw.get("sku") or "",
                     "quantity": raw.get("quantity"),
                     "rate": raw.get("rate"),
-                    "discount": raw.get("discount"),
+                    # Books sends 500 (an amount), 0 (none) or "10.00%": the page reads a string or nothing.
+                    "discount": None if raw.get("discount") in (None, "", 0) else str(raw["discount"]),
                     "total": raw.get("item_total"),
                     "available": None
                     if item is None

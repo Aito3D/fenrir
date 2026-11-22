@@ -403,3 +403,14 @@ async def test_undo_refused_when_the_quote_doc_goes_before_the_delete(db_session
     with pytest.raises(actions.QuoteNotStored):
         await actions.undo_accept(db_session, "e1", "so9", by=None)
     assert so_books.deleted == []
+
+
+@pytest.mark.asyncio
+async def test_a_quote_books_now_reports_invoiced_leaves_the_rows(db_session, so_books):
+    await _stored(db_session, so_books, quote(1, status="sent"))
+    await sync.run_pass(db_session)
+    assert _quote_rows(await sync.read_quotes(db_session)) == [("e1", "sent")]
+    so_books.estimates["e1"] = {**so_books.estimates["e1"], "status": "invoiced", "invoice_ids": ["i1"]}
+    with pytest.raises(actions.OrderActionRefused, match="quote_converted"):
+        await actions.decline_quote(db_session, "e1", by=None)
+    assert _quote_rows(await sync.read_quotes(db_session)) == []

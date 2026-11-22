@@ -73,6 +73,7 @@ _PO_FIELDS = ("last_modified_time", "status", "billed_status", "received_status"
 
 async def _reconcile_listings(db: AsyncSession, settings: OrderBoardSettings) -> dict[tuple[str, str], OrderBoardDoc]:
     """List Zoho and reconcile the stored rows with it. Returns the stored rows by (kind, id)."""
+    began = time.monotonic()
     listings = (
         ("salesorder", "salesorder_id", _SO_FIELDS, await zoho_service.list_salesorders(db)),
         ("purchaseorder", "purchaseorder_id", _PO_FIELDS, await zoho_service.list_purchaseorders(db)),
@@ -113,7 +114,10 @@ async def _reconcile_listings(db: AsyncSession, settings: OrderBoardSettings) ->
             elif doc.detail is None or any(doc.header.get(f) != header.get(f) for f in fields):
                 doc.pending = True
             doc.header = header
-    gone = set(stored) - listed  # deleted in Zoho
+    # Deleted in Zoho; an order written here since the listing began (a quote's new order) is not in it yet.
+    gone = {
+        key for key in set(stored) - listed if not (key[0] == "salesorder" and _written_at.get(key[1], -1.0) >= began)
+    }
     for key in gone:
         await db.delete(stored.pop(key))
     gone_orders = [zoho_id for kind, zoho_id in gone if kind == "salesorder"]
@@ -181,7 +185,9 @@ async def _fetch_pending_details(db: AsyncSession, stored: dict[tuple[str, str],
             continue  # a write here is newer than this copy: keep it, and the pending mark
         if doc.kind == "estimate":
             if str(fetched.get("estimate_id") or "") != doc.zoho_id:  # never store a body under another id
-                logger.warning("Order board: Books answered estimate %s with another body, left pending", doc.zoho_id)
+                logger.warning("Order board: Books answered estimate %s with another body, dropped", doc.zoho_id)
+                await db.delete(doc)  # as a 404: the next full listing re-adds a real one
+                await db.commit()
                 continue
             await store_quote(db, fetched)  # a quote takes none of the order's payment or alert work
         else:

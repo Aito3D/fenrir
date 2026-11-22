@@ -193,3 +193,27 @@ async def test_quote_events_lists_quote_kinds(async_client, tokens, stored, book
     assert r.status_code == 200
     assert [e["kind"] for e in r.json()["events"]] == ["quote.created"]
     assert r.json()["has_more"] is False
+
+
+@pytest.mark.asyncio
+async def test_a_quote_on_an_aito_card_is_refused_at_once(async_client, tokens, stored, books, db_session):  # noqa: F811
+    from backend.app.models.aito_project import AitoProject
+    from backend.app.services.order_board_sync._common import _state
+
+    state = await _state(db_session)
+    state.detail = {"quotes_listed_at": "2026-11-21T08:00:00+0000"}
+    db_session.add(AitoProject(description="card", board_column="devis", quote_id="e1"))
+    await db_session.commit()
+    h = tokens["both"]
+    assert (await async_client.get("/api/v1/order-board/quotes", headers=h)).json()["rows"] == []
+    for method, url, body in [
+        ("post", f"{BASE}/accept", None),
+        ("put", BASE, {"customer_id": "c1", "lines": [_LINE]}),
+        ("post", f"{BASE}/decline", None),
+        ("post", f"{BASE}/email", {"to": "ana@example.com"}),
+        ("get", f"{BASE}/pdf", None),
+        ("post", f"{BASE}/undo-accept", {"salesorder_id": "so1"}),
+    ]:
+        r = await async_client.request(method, url, json=body, headers=h)
+        assert (r.status_code, r.json()["detail"]) == (404, "Quote not found."), url
+    assert books == []  # nothing reached Books

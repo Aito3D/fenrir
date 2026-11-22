@@ -164,7 +164,12 @@ async def read_quotes(db: AsyncSession) -> dict:
         base = await zoho_service.books_app_url(db, "")
     except ZohoNotConfiguredError:
         base = None
-    rows = (quote_row(d.header, d.detail, items, held, today, core) for d in docs if d.kind == "estimate")
+    aito = await _aito_quote_ids(db)  # imported onto a card since the last pass: the Kanban owns it now
+    rows = (
+        quote_row(d.header, d.detail, items, held, today, core)
+        for d in docs
+        if d.kind == "estimate" and d.zoho_id not in aito
+    )
     return {
         "rows": [{**r, "zoho_url": f"{base}{r['id']}" if base else None} for r in rows if r is not None],
         "loading": loading,

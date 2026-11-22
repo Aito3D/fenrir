@@ -1512,3 +1512,25 @@ def test_an_operator_action_is_not_refused_at_the_background_ceiling(monkeypatch
     assert sync.zoho_busy(sync.CALL_CEILING)
     monkeypatch.setattr(sync_common.zoho_service, "calls_in_last_minute", lambda: sync.OPERATOR_CALL_CEILING)
     assert sync.zoho_busy()
+
+
+@pytest.mark.asyncio
+async def test_an_order_written_after_the_listing_survives_the_pass(db_session, zoho, monkeypatch):
+    zoho.add(order(1))
+    await sync.run_pass(db_session)  # a success: newly listed orders would be news from now on
+    list_po = zoho.list_purchaseorders
+
+    async def order_made_meanwhile(db):  # the sales-order listing has returned; an accept stores its new order now
+        db.add(OrderBoardDoc(kind="salesorder", zoho_id="so9", header=order(9), detail=order(9)))
+        await db.commit()
+        sync.note_write("so9")
+        return await list_po(db)
+
+    monkeypatch.setattr(zoho_service, "list_purchaseorders", order_made_meanwhile)
+    await sync.run_pass(db_session)
+    assert await sync.find_stored(db_session, "so9") is not None
+    monkeypatch.setattr(zoho_service, "list_purchaseorders", list_po)
+    zoho.add(order(9))
+    await sync.run_pass(db_session)
+    alerts = (await db_session.execute(select(OrderBoardDoc).where(OrderBoardDoc.kind == "alert_new"))).scalars().all()
+    assert alerts == []
