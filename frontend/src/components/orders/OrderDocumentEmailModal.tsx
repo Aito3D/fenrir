@@ -34,6 +34,8 @@ export function OrderDocumentEmailModal({ onClose, ...target }: Target & { onClo
     } catch (e) {
       showToast(
         e instanceof ApiError && e.code === 'recipient_recently_edited' ? t('aito.emailRecipientRecentlyEdited')
+        // The once-a-minute guard and the email rate limit answer 409 too: the server's words, not "another action".
+        : quoteId && e instanceof ApiError && e.status === 409 ? t('orders.quotes.emailFailed', { reason: e.message })
         : quoteId ? t('orders.quotes.emailFailed', { reason: quoteReason(t, e) })
         : t(quote ? 'aito.quoteEmailFailed' : 'aito.retainerEmailFailed'),
         'error',
@@ -43,7 +45,7 @@ export function OrderDocumentEmailModal({ onClose, ...target }: Target & { onClo
     showToast(t(quote ? 'aito.quoteEmailed' : 'aito.retainerEmailed', { email: to }), 'success');
   };
 
-  return (
+  const dialog = (
     <SendEmailDialog
       title={t(quote ? 'aito.sendQuoteTitle' : 'aito.sendRetainerTitle')}
       loadFailed={t(quote ? 'aito.sendQuoteLoadFailed' : 'aito.sendRetainerLoadFailed')}
@@ -52,4 +54,10 @@ export function OrderDocumentEmailModal({ onClose, ...target }: Target & { onClo
       onClose={onClose}
     />
   );
+  // A quote of the Devis side wears violet: the shared (Aito) dialog's green primary button is recoloured from here.
+  return quoteId ? (
+    <div data-testid="quote-email-accent" className="contents [&_.bg-bambu-green]:!bg-violet-600 [&_.bg-bambu-green]:!text-white [&_.bg-bambu-green]:hover:!bg-violet-500 [&_.bg-bambu-green]:focus:!ring-violet-500">
+      {dialog}
+    </div>
+  ) : dialog;
 }

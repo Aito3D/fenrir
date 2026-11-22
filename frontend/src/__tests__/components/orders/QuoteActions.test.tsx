@@ -146,14 +146,15 @@ describe('Quote actions', () => {
         subject: 'Devis', body: '<p>Bonjour</p>', recipients: [{ email: 'yann@client.pf', name: 'Yann', contact_person_id: 'cp1' }],
         default_email: 'yann@client.pf', document_id: 'e1', document_number: 'DEV-00412',
       })),
-      http.post('/api/v1/order-board/quotes/e1/email', () => HttpResponse.json({ detail: 'busy' }, { status: 409 })),
+      http.post('/api/v1/order-board/quotes/e1/email', () => HttpResponse.json({ detail: 'This quote was emailed less than a minute ago.' }, { status: 409 })),
     );
     show();
     await user.click((await footer()).getByRole('button', { name: 'Send by email' }));
     const dialog = await screen.findByRole('dialog', { name: 'Send quote by email' });
     await waitFor(() => expect(within(dialog).getByRole('combobox')).toHaveValue('yann@client.pf'));
     await user.click(within(dialog).getByRole('button', { name: 'Send' }));
-    expect(await screen.findByText('Quote not sent: another action on this quote is still running')).toBeInTheDocument();
+    // A 409 on a send is the once-a-minute guard or the email rate limit: the server's own words, not "another action".
+    expect(await screen.findByText('Quote not sent: This quote was emailed less than a minute ago.')).toBeInTheDocument();
   });
 
   it('Send by email sends through the quote endpoint and the pill becomes Sent from the returned list', async () => {

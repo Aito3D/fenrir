@@ -1,10 +1,14 @@
 /** One quote: the collapsed row and the opened panel (lines with stock, customer, document, activity). */
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { screen, within } from '@testing-library/react';
+import { act, screen, within } from '@testing-library/react';
 import { api } from '../../../api/client';
-import type { QuoteLine, QuoteRow } from '../../../api/client';
+import type { QuoteLine, QuoteRow, QuoteState } from '../../../api/client';
+import i18n from '../../../i18n';
 import { render } from '../../utils';
 import { QuoteCard } from '../../../components/orders/QuoteCard';
+import { QuoteStatePill } from '../../../components/orders/QuoteStatePill';
+import { parseDay } from '../../../components/orders/orderBoard';
+import { formatMoney } from '../../../utils/pricing';
 
 afterEach(() => vi.restoreAllMocks());
 
@@ -87,6 +91,40 @@ describe('QuoteCard', () => {
     u2();
     render(<QuoteCard row={quote({ editable: false, zoho_url: null })} open onToggle={vi.fn()} onEdit={onEdit} />);
     expect(screen.queryByTestId('quote-actions')).not.toBeInTheDocument();
+  });
+
+  it('a fixed-amount discount reads as money, a percentage as written, on both layouts', () => {
+    stub();
+    render(<QuoteCard row={quote({ lines: [qline({ discount: '500' }), qline({ id: 'ql2', discount: '10.00%' })] })} open onToggle={vi.fn()} />);
+    const [amount, pct] = within(screen.getByRole('list', { name: 'Item' })).getAllByRole('listitem');
+    const money = formatMoney(500, 'XPF');
+    const cells = (li: HTMLElement) => Array.from(li.querySelectorAll('span'), s => s.textContent);
+    expect(cells(amount)).toContain(money); // the desktop column
+    expect(amount.textContent).toContain(`−${money}`); // the phone line
+    expect(cells(pct)).toContain('10.00%');
+    expect(pct.textContent).toContain('−10.00%');
+  });
+
+  it('writes its dates in the app\'s language', async () => {
+    const previous = i18n.language;
+    try {
+      await act(async () => {
+        await i18n.changeLanguage('fr');
+      });
+      render(<QuoteCard row={quote()} open={false} onToggle={vi.fn()} />);
+      const fr = parseDay('2026-11-10').toLocaleDateString('fr', { year: 'numeric', month: 'short', day: 'numeric' });
+      expect(fr).not.toBe(parseDay('2026-11-10').toLocaleDateString('en', { year: 'numeric', month: 'short', day: 'numeric' }));
+      expect(screen.getByRole('button', { expanded: false })).toHaveTextContent(fr);
+    } finally {
+      await act(async () => {
+        await i18n.changeLanguage(previous);
+      });
+    }
+  });
+
+  it('the state pill renders nothing for a state it does not know', () => {
+    render(<div data-testid="pill-host"><QuoteStatePill state={'invoiced' as QuoteState} /></div>);
+    expect(screen.getByTestId('pill-host')).toBeEmptyDOMElement();
   });
 
   it('a quote this screen cannot edit links to Zoho even for a viewer without the update right', () => {

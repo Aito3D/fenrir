@@ -223,3 +223,30 @@ one real quote is still owed.
 - Exact reuse boundary between order components and quote components (a mode prop or thin siblings).
 - Test set: sync filtering (Aito, age, converted), state derivation, each action's happy path and its
   half-failure (accepted but order creation failed; double submit), draft-key separation, i18n parity.
+
+## As built
+
+Where the build differs from the text above:
+
+- A quote is edited through the "Modifier" dialog. It is edited in Zoho instead (the card links there) when it has a
+  free-text line, tax-exclusive prices, a whole-quote discount, the same item on two lines, or a linked draft order.
+- An order created from a quote mirrors the quote's tax and discount settings; it is not forced tax-inclusive.
+- Changing a quote's customer also moves the contact person to the new customer's primary contact.
+- A kept line always states its discount, so removing a discount in the dialog removes it in Books.
+- A newly created order (from a quote or a counter order) appears on the board at once, without waiting for a pass.
+- Annuler is offered only when the order was created by that click (not for a draft order that already existed). It is
+  refused once anything is packed, invoiced or paid, or when the customer has unused credit on account.
+- The accepted notice floats above the opened order (on a phone above its bottom bar, on a computer at the bottom
+  centre). It closes on the next action.
+- The sync lists every estimate once a day and only the modified ones in between. A failing estimates listing no
+  longer stops the orders from syncing.
+- The Devis count and the chips show numbers as soon as the first listing is done, with a "still loading" line while
+  the details arrive.
+- No stats strip, no "Acceptés" archive, no "Classer" button and no follow-up tooling, as specified.
+
+### Owed
+
+- A watched first live run on one real quote: create, edit (including removing a discount and changing the customer),
+  send to an own address, accept, undo, refuse, reopen. Undo deletes a CONFIRMED order in Books; it has never run live.
+- The first sync after a restart reads about 16 list pages, then about 1,100 quote details over roughly an hour.
+- `static/` is not rebuilt.

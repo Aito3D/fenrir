@@ -1133,6 +1133,13 @@ describe('OrderBoardPage on the phone', () => {
   });
 });
 
+/** Phone width for one test: the page reads `(max-width: 767px)`. Returns the undo. */
+const asPhone = () => {
+  const real = window.matchMedia;
+  window.matchMedia = ((query: string) => ({ ...real(query), matches: query === '(max-width: 767px)' })) as typeof window.matchMedia;
+  return () => { window.matchMedia = real; };
+};
+
 describe('OrderBoardPage Devis side', () => {
   const quote = (o: Partial<QuoteRow> = {}): QuoteRow => ({
     id: 'e1', number: 'DEV-00412', customer: 'Nautic Service', customer_id: 'c1', date: '2026-11-10', expiry_date: '2026-12-10',
@@ -1181,14 +1188,22 @@ describe('OrderBoardPage Devis side', () => {
     expect(window.location.search).toContain('view=quotes');
   });
 
-  it('shows no Devis count while quotes are still loading', async () => {
+  it('counts as soon as the list is ready, even while details still load (the loading line says it is partial)', async () => {
     serve(board());
     serveQuotes(QUOTES, 3);
     window.history.replaceState({}, '', '/orders?view=quotes');
     render(<OrderBoardPage />);
-    // The rows have arrived (the loading line says so), yet the switch shows no partial count.
     expect(await screen.findByText('Loading quotes… 3 remaining')).toBeInTheDocument();
     expect(screen.getByText('Nautic Service')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /^Quotes 2$/ })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /^Current 2$/ })).toBeInTheDocument();
+  });
+
+  it('shows no Devis count before the first listing is done', async () => {
+    serve(board());
+    server.use(http.get('/api/v1/order-board/quotes', () => HttpResponse.json({ rows: [], loading: 0, ready: false })));
+    render(<OrderBoardPage />);
+    await screen.findByText('SO-00412');
     expect(screen.getByRole('button', { name: /^Quotes –$/ })).toBeInTheDocument();
   });
 
@@ -1238,6 +1253,26 @@ describe('OrderBoardPage Devis side', () => {
     expect(window.location.search).toContain('view=quotes');
     expect(screen.queryByRole('dialog', { name: 'New quote' })).not.toBeInTheDocument();
     expect(await screen.findByRole('button', { name: /DEV-00500/, expanded: true })).toBeInTheDocument();
+  });
+
+  it('on a phone the round add button steps aside while a quote is opened', async () => {
+    const restore = asPhone();
+    try {
+      const user = userEvent.setup();
+      serve(board());
+      serveQuotes(QUOTES);
+      server.use(http.get('/api/v1/order-board/quotes/:id/events', () => HttpResponse.json({ events: [], has_more: false })));
+      window.history.replaceState({}, '', '/orders?view=quotes');
+      render(<OrderBoardPage />);
+      await user.click(await screen.findByText('Nautic Service'));
+      await waitFor(() => expect(window.location.search).toContain('quote=e1'));
+      expect(screen.queryByRole('button', { name: 'New quote' })).not.toBeInTheDocument();
+      await user.click(screen.getByText('Nautic Service'));
+      await waitFor(() => expect(window.location.search).not.toContain('quote='));
+      expect(await screen.findByRole('button', { name: 'New quote' })).toBeInTheDocument();
+    } finally {
+      restore();
+    }
   });
 
   it('a quote opened by a link is scrolled into view', async () => {
@@ -1366,6 +1401,29 @@ describe('OrderBoardPage Devis side', () => {
       await user.click(within(await notice()).getByRole('button', { name: 'Undo' }));
       expect(await within(await notice()).findByText(/the order is no longer on the board/i)).toBeInTheDocument();
       expect(within(await notice()).queryByRole('button', { name: 'Undo' })).not.toBeInTheDocument();
+    });
+
+    it('the notice floats on the body, its Undo there once the new order is opened', async () => {
+      const user = userEvent.setup();
+      accept();
+      await user.click(within(await screen.findByTestId('quote-actions')).getByRole('button', { name: 'Accepted' }));
+      expect(await screen.findByRole('button', { name: /SO-00232/, expanded: true })).toBeInTheDocument();
+      expect((await notice()).parentElement).toBe(document.body);
+      expect(within(await notice()).getByRole('button', { name: 'Undo' })).toBeInTheDocument();
+    });
+
+    it('on a phone the notice floats above the opened order, its Undo reachable', async () => {
+      const restore = asPhone();
+      try {
+        const user = userEvent.setup();
+        accept();
+        await user.click(within(await screen.findByTestId('quote-actions')).getByRole('button', { name: 'Accepted' }));
+        expect(await screen.findByTestId('order-mobile')).toBeInTheDocument();
+        expect((await notice()).parentElement).toBe(document.body);
+        expect(within(await notice()).getByRole('button', { name: 'Undo' })).toBeInTheDocument();
+      } finally {
+        restore();
+      }
     });
 
     it('the notice goes when dismissed', async () => {

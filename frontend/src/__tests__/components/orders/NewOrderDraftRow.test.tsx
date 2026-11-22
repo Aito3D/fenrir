@@ -508,6 +508,17 @@ describe('NewOrderDraftRow', () => {
       await waitFor(() => expect(gets).toBe(2));
     });
 
+    it('edits a quote whose discounts are an amount ("500") and a percentage ("10.00%"), with the right total', () => {
+      const lines = [
+        qline({ discount: '500' }), // 4 × 2 500 − 500
+        qline({ id: 'ql2', item_id: 'H', name: 'Bambu Lab H2D', sku: 'H2D', quantity: 1, rate: 239900, discount: '10.00%', total: 215910 }),
+      ];
+      render(<NewOrderDraftRow mode="quote" quote={quote({ lines })} currency="XPF" open={[]} finished={[]} onCreated={vi.fn()} onClose={vi.fn()} />);
+      expect(screen.getByLabelText('Discount · Bambu Lab PLA Basic Noir')).toHaveValue('500');
+      expect(screen.getByLabelText('Discount · Bambu Lab H2D')).toHaveValue('10.00%');
+      expect(screen.getByTestId('draft-total').textContent).toBe(formatMoney(9500 + 215910, 'XPF'));
+    });
+
     it('an expired quote says saving re-dates it to today', () => {
       render(<NewOrderDraftRow mode="quote" quote={quote({ state: 'expired' })} currency="XPF" open={[]} finished={[]} onCreated={vi.fn()} onClose={vi.fn()} />);
       expect(screen.getByText('This quote has expired: saving re-dates it to today.')).toBeInTheDocument();

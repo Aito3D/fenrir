@@ -24,7 +24,8 @@ const EMPTY: Record<QuoteChip, string> = {
   expired: 'orders.quotes.empty.expired',
   declined: 'orders.quotes.empty.declined',
 };
-const PRIMARY = '!bg-violet-600 hover:!bg-violet-500 focus:!ring-violet-500';
+// !text-white: the light theme turns a plain text-white dark, unreadable on violet.
+const PRIMARY = '!bg-violet-600 !text-white hover:!bg-violet-500 focus:!ring-violet-500';
 const chipCls = (on: boolean) =>
   `btn-press shrink-0 rounded-full border px-3 py-1.5 text-xs ${on ? 'border-violet-500 bg-violet-500/15 text-white' : 'border-bambu-dark-tertiary bg-bambu-dark-secondary text-bambu-gray hover:text-white'}`;
 

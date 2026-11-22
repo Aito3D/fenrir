@@ -80,7 +80,7 @@ export function OrderLinesPanel({
   const [pending, setPending] = useState(false);
   const queryClient = useQueryClient();
   // Settings switch, read from the board the page already holds (no fetch here).
-  const scan = useQuery<OrderBoardResponse>({ queryKey: ['order-board'], enabled: false }).data?.scan ?? false;
+  const scan = useQuery<OrderBoardResponse>({ queryKey: ['order-board'], queryFn: api.getOrderBoard, enabled: false }).data?.scan ?? false;
   const { print, busy: printing } = usePrintBlob({ failureMessage: t('orders.prep.printFailed'), downloadFilename: `${row.number}-prep.pdf` });
   // The check being loaded: what a picklist or its parcel may hold is asked from Zoho when the check opens.
   const [opening, setOpening] = useState<string | null>(null);

@@ -124,7 +124,7 @@ export function NewOrderDraftRow({ currency, open, finished, mode = 'order', quo
   const title = quote ? t('orders.newQuote.editTitle') : isQuote ? t('orders.newQuote.title') : t('orders.newOrder.title');
   // Quotes wear violet, orders the board's green: the two documents never look alike.
   const tone = isQuote
-    ? { bg: 'bg-violet-600', lit: 'shadow-violet-600/20 hover:bg-violet-500' }
+    ? { bg: 'bg-violet-600 !text-white', lit: 'shadow-violet-600/20 hover:bg-violet-500' }
     : { bg: 'bg-bambu-green', lit: 'shadow-bambu-green/20 hover:bg-bambu-green-light' };
   const pick = (c: ZohoContact) => {
     setDraft({ ...draft, client: { id: c.id, name: c.name, isDefault: c.id === defaultId } });

@@ -85,6 +85,29 @@ describe('OrderDocumentEmailModal', () => {
     expect(screen.queryByText('Could not send the quote')).not.toBeInTheDocument();
   });
 
+  it('a quote send refused with a 409 shows the server\'s own words, in violet', async () => {
+    server.use(
+      http.get('/api/v1/order-board/quotes/e1/email', () => HttpResponse.json(content)),
+      http.post('/api/v1/order-board/quotes/e1/email', () =>
+        HttpResponse.json({ detail: 'Too many email sends. Please wait a moment and try again.' }, { status: 409 })),
+    );
+    const user = userEvent.setup();
+    render(<OrderDocumentEmailModal quoteId="e1" onClose={vi.fn()} />);
+    await waitFor(() => expect(screen.getByRole('combobox')).toHaveValue('moana@client.pf'));
+    const send = screen.getByRole('button', { name: 'Send' });
+    expect(send.closest('[data-testid="quote-email-accent"]')).not.toBeNull();
+    await user.click(send);
+    expect(await screen.findByText(/Too many email sends/)).toBeInTheDocument();
+    expect(screen.queryByText(/another action/i)).not.toBeInTheDocument();
+  });
+
+  it('an order\'s document email keeps the order colour', async () => {
+    server.use(http.get(url('quote'), () => HttpResponse.json(content)));
+    open('quote');
+    await waitFor(() => expect(screen.getByRole('combobox')).toHaveValue('moana@client.pf'));
+    expect(screen.queryByTestId('quote-email-accent')).not.toBeInTheDocument();
+  });
+
   it.each([
     ['quote', 'Could not load the email details'],
     ['retainer', 'Could not load the retainer email details'],

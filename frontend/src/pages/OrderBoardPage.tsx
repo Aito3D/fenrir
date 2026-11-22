@@ -440,7 +440,7 @@ export function OrderBoardPage() {
     <div className="flex rounded-lg border border-bambu-dark-tertiary bg-bambu-dark-secondary p-0.5 md:inline-flex">
       <button type="button" aria-pressed={quotesView} onClick={() => switchView('quotes')} className={segCls(quotesView, 'bg-violet-500/20 text-violet-700 dark:text-violet-200')}>
         {t('orders.quotes.tab')}{' '}
-        <span className="text-xs opacity-70">{quotes.data?.ready && !quotes.data.loading ? filterQuotes(quotes.data.rows, { chip: 'current', text: '', coreOnly }).length : '–'}</span>
+        <span className="text-xs opacity-70">{quotes.data?.ready ? filterQuotes(quotes.data.rows, { chip: 'current', text: '', coreOnly }).length : '–'}</span>
       </button>
       <button type="button" aria-pressed={!quotesView} onClick={() => switchView('orders')} className={segCls(!quotesView, 'bg-bambu-green/15 text-white')}>
         {t('orders.title')}
@@ -531,7 +531,7 @@ export function OrderBoardPage() {
             <Button
               size="sm"
               onClick={() => setDrafting({ mode: newMode })}
-              className={quotesView ? '!bg-violet-600 hover:!bg-violet-500 focus:!ring-violet-500' : ''}
+              className={quotesView ? '!bg-violet-600 !text-white hover:!bg-violet-500 focus:!ring-violet-500' : ''}
             >
               <Plus aria-hidden="true" className="h-4 w-4" />
               {t(quotesView ? 'orders.newQuote.button' : 'orders.newOrder.button')}
@@ -714,12 +714,13 @@ export function OrderBoardPage() {
           {close => controlsEl('sheet', close)}
         </Sheet>
       )}
-      {phone && hasPermission('orders:update') && !drafting && (
+      {/* Not over an opened quote: its footer (Accepted, Create order) sits where the button would. */}
+      {phone && hasPermission('orders:update') && !drafting && !(quotesView && quoteId) && (
         <button
           type="button"
           aria-label={t(quotesView ? 'orders.newQuote.button' : 'orders.newOrder.button')}
           onClick={() => setDrafting({ mode: newMode })}
-          className={`btn-press fixed bottom-[calc(1.5rem+env(safe-area-inset-bottom))] right-4 z-30 flex h-14 w-14 items-center justify-center rounded-full text-white shadow-lg ${quotesView ? 'bg-violet-600' : 'bg-bambu-green'}`}
+          className={`btn-press fixed bottom-[calc(1.5rem+env(safe-area-inset-bottom))] right-4 z-30 flex h-14 w-14 items-center justify-center rounded-full text-white shadow-lg ${quotesView ? 'bg-violet-600 !text-white' : 'bg-bambu-green'}`}
         >
           <Plus aria-hidden="true" className="h-6 w-6" />
         </button>

@@ -5,6 +5,7 @@ import userEvent from '@testing-library/user-event';
 import { http, HttpResponse } from 'msw';
 import { useQuery } from '@tanstack/react-query';
 import { server } from '../../mocks/server';
+import { api } from '../../../api/client';
 import type { OrderBoardLine, OrderPanelRow } from '../../../api/client';
 
 const mockUseAuth = {
@@ -191,7 +192,9 @@ describe('editing a parcel', () => {
     const user = userEvent.setup();
     server.use(content, http.put(`${BASE}/packages/p1`, () => HttpResponse.json({ detail: 'package_changed' }, { status: 400 })));
     let reads = 0;
-    const Probe = () => { useQuery({ queryKey: ['order-board'], queryFn: () => { reads += 1; return board; }, staleTime: Infinity }); return null; };
+    // Counted at the server: the panel observes the board with the page's own queryFn, which takes over the probe's.
+    server.use(http.get('/api/v1/order-board', () => { reads += 1; return HttpResponse.json(board); }));
+    const Probe = () => { useQuery({ queryKey: ['order-board'], queryFn: api.getOrderBoard, staleTime: Infinity }); return null; };
     render(<><Probe /><OrderLinesPanel row={panelRow()} /></>);
     await waitFor(() => expect(reads).toBe(1));
     await openParcel(user);
@@ -267,7 +270,9 @@ describe('opening a parcel that Books will not give', () => {
     let status = 500;
     server.use(http.get(`${BASE}/packages/p1`, () => HttpResponse.json({ detail: status === 500 ? 'Books is down' : 'unknown_package' }, { status })));
     let reads = 0;
-    const Probe = () => { useQuery({ queryKey: ['order-board'], queryFn: () => { reads += 1; return board; }, staleTime: Infinity }); return null; };
+    // Counted at the server: the panel observes the board with the page's own queryFn, which takes over the probe's.
+    server.use(http.get('/api/v1/order-board', () => { reads += 1; return HttpResponse.json(board); }));
+    const Probe = () => { useQuery({ queryKey: ['order-board'], queryFn: api.getOrderBoard, staleTime: Infinity }); return null; };
     render(<><Probe /><OrderLinesPanel row={panelRow()} /></>);
     await waitFor(() => expect(reads).toBe(1));
     await user.click(parcelButton());

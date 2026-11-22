@@ -14,5 +14,6 @@ const PILL: Record<QuoteState, { cls: string; label: string }> = {
 /** Brouillon / Envoyé / Accepté / Expiré / Refusé. */
 export function QuoteStatePill({ state }: { state: QuoteState }) {
   const { t } = useTranslation();
+  if (!PILL[state]) return null; // a Books status the board does not know: no pill rather than a crash
   return <span className={`inline-flex whitespace-nowrap rounded-full px-2.5 py-1 text-xs ${PILL[state].cls}`}>{t(PILL[state].label)}</span>;
 }

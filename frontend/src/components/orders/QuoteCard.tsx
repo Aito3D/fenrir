@@ -25,8 +25,6 @@ const QUOTE_GRID =
   'lg:[grid-template-areas:none] lg:grid-cols-[minmax(0,1.3fr)_minmax(0,1.6fr)_auto_7.5rem_1.25rem]';
 const LINE_GRID = 'grid grid-cols-[minmax(0,1fr)_auto] gap-x-3 gap-y-0.5 md:grid-cols-[minmax(0,1fr)_7rem_3.5rem_4.5rem_7.5rem] md:items-center';
 
-const day = (iso: string) => parseDay(iso).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
-
 /** "4× PLA Basic · 1× H2D · +2": the first two lines, then how many more. */
 const summary = (lines: QuoteLine[]) =>
   [...lines.slice(0, 2).map(l => `${formatQty(l.quantity)}× ${l.name}`), ...(lines.length > 2 ? [`+${lines.length - 2}`] : [])].join(' · ');
@@ -89,8 +87,11 @@ function QuoteSide({ row }: { row: QuoteRow }) {
 export function QuoteCard({ row, open, onToggle, onEdit, children }: {
   row: QuoteRow; open: boolean; onToggle: () => void; onEdit?: () => void; children?: ReactNode;
 }) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const money = (n: number) => formatMoney(n, row.currency);
+  const day = (iso: string) => parseDay(iso).toLocaleDateString(i18n.language, { year: 'numeric', month: 'short', day: 'numeric' });
+  // "10%" stays as Books wrote it; a fixed amount ("500") reads as money.
+  const discount = (d: string) => (d.endsWith('%') ? d : money(Number(d)));
   const edit = row.editable ? onEdit && (
     <Button variant="secondary" size="sm" onClick={onEdit}>
       <Pencil aria-hidden="true" className="h-4 w-4" />
@@ -149,9 +150,9 @@ export function QuoteCard({ row, open, onToggle, onEdit, children }: {
                           </span>
                           <Stock line={l} />
                           <span className="text-right tabular-nums max-md:hidden">{formatQty(l.quantity)}</span>
-                          <span className="text-right text-bambu-gray max-md:hidden">{l.discount || '—'}</span>
+                          <span className="text-right text-bambu-gray max-md:hidden">{l.discount ? discount(l.discount) : '—'}</span>
                           <span className="text-right tabular-nums text-white">
-                            <span className="text-bambu-gray md:hidden">{formatQty(l.quantity)}×{l.discount ? ` −${l.discount}` : ''} · </span>
+                            <span className="text-bambu-gray md:hidden">{formatQty(l.quantity)}×{l.discount ? ` −${discount(l.discount)}` : ''} · </span>
                             {money(l.total)}
                           </span>
                         </li>
