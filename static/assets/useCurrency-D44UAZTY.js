@@ -1,0 +1,1 @@
+import{t as e}from"./useQuery-BD_KpPiw.js";import{s as t}from"./client-7veoHuaf.js";function n(){let{data:n}=e({queryKey:[`settings`],queryFn:t.getSettings,staleTime:6e4});return n?.currency||`USD`}export{n as t};
