@@ -2,8 +2,17 @@
 ### stdout:
 locale files (16): de.ts en.ts es.ts fr.ts it.ts ja.ts ko.ts nl.ts pl.ts pt-BR.ts ru.ts sv.ts tr.ts uk.ts zh-CN.ts zh-TW.ts
 extra literal keys read by the scope (0): 
---- en values (367 keys)
+--- en values (471 keys)
 nav.revenue = "Revenue"
+revenue.aging.d30 = "1–30 d late"
+revenue.aging.d60 = "31–60 d late"
+revenue.aging.d90 = "61–90 d late"
+revenue.aging.days = "{{n}} d"  placeholders={{n}}
+revenue.aging.dso = "Average payment delay"
+revenue.aging.notDue = "Not due"
+revenue.aging.ofWhichLate = "of which {{amount}} late"  placeholders={{amount}}
+revenue.aging.over = "Over 90 d late"
+revenue.aging.title = "Owed by age"
 revenue.amounts = "Amounts"
 revenue.analysis.classHint = "{{products}} of products · {{revenue}} of revenue"  placeholders={{products}},{{revenue}}
 revenue.analysis.classLabel = "Class {{cls}} · products"  placeholders={{cls}}
@@ -33,6 +42,23 @@ revenue.breakdown.label = "Gross margin breakdown"
 revenue.breakdown.labor = "Labour"
 revenue.breakdown.margin = "Gross margin HT"
 revenue.breakdown.wear = "Printer wear"
+revenue.bridge.current = "This period"
+revenue.bridge.empty = "No sales in either period"
+revenue.bridge.items = "Biggest effects"
+revenue.bridge.kindLost = "no longer sold"
+revenue.bridge.kindNew = "new"
+revenue.bridge.lost = "Items no longer sold"
+revenue.bridge.mix = "Mix"
+revenue.bridge.mixHint = "Units moving between cheaper and dearer items"
+revenue.bridge.new = "New items"
+revenue.bridge.noPrevious = "No earlier period of the same length in the history: pick a shorter period."
+revenue.bridge.previous = "Previous period"
+revenue.bridge.price = "Price"
+revenue.bridge.priceHint = "Change in each item's average selling price"
+revenue.bridge.title = "Why sales moved"
+revenue.bridge.versus = "Compared with {{from}} → {{to}}"  placeholders={{from}},{{to}}
+revenue.bridge.volume = "Volume"
+revenue.bridge.volumeHint = "More or fewer units sold, valued at the old average price"
 revenue.calendar.credit = "credit note"
 revenue.calendar.gridLabel = "Revenue by day"
 revenue.calendar.less = "less"
@@ -96,7 +122,33 @@ revenue.chart.title.day = "Revenue by day"
 revenue.chart.title.month = "Revenue by month"
 revenue.chart.title.week = "Revenue by week"
 revenue.chart.title.year = "Revenue by year"
+revenue.chart.trend = "Trend"
+revenue.chart.trendSlope.day = "{{slope}} / day"  placeholders={{slope}}
+revenue.chart.trendSlope.month = "{{slope}} / month"  placeholders={{slope}}
+revenue.chart.trendSlope.week = "{{slope}} / week"  placeholders={{slope}}
+revenue.chart.trendSlope.year = "{{slope}} / year"  placeholders={{slope}}
 revenue.chart.values = "Values per period"
+revenue.cohorts.after = "M+{{n}}"  placeholders={{n}}
+revenue.cohorts.cell = "{{pct}} % bought again in month +{{n}}"  placeholders={{n}},{{pct}}
+revenue.cohorts.colCustomer = "Customer"
+revenue.cohorts.colLast = "Last purchase"
+revenue.cohorts.colRevenue = "Revenue, 12 months"
+revenue.cohorts.colSince = "Quiet for"
+revenue.cohorts.colUsual = "Usual rhythm"
+revenue.cohorts.days = "{{n}} d"  placeholders={{n}}
+revenue.cohorts.everyDays = "every {{n}} d"  placeholders={{n}}
+revenue.cohorts.intro = "Of the customers who first bought in a month, the share who bought again one month later, two months later, and so on."
+revenue.cohorts.ltvCustomers = "{{n}} customers"  placeholders={{n}}
+revenue.cohorts.ltvEmpty = "No customer has a full year of history yet"
+revenue.cohorts.ltvIntro = "Average revenue excl. tax in the year after a first purchase"
+revenue.cohorts.ltvTitle = "Customer value over 12 months"
+revenue.cohorts.month = "First purchase"
+revenue.cohorts.perCustomer = "Revenue per customer"
+revenue.cohorts.riskEmpty = "No regular customer has gone quiet"
+revenue.cohorts.riskIntro = "Regulars who have been quiet for more than 1.5 times their usual rhythm"
+revenue.cohorts.riskTitle = "Customers to chase"
+revenue.cohorts.size = "Customers"
+revenue.cohorts.title = "Cohorts by first purchase"
 revenue.controls.all = "Since 2024"
 revenue.controls.auto = "Automatic"
 revenue.controls.autoHint = "(based on granularity)"
@@ -176,6 +228,41 @@ revenue.finding.targetBehind.lead = "{{period}} is at {{share}} of the target," 
 revenue.finding.targetBehind.rest = "{{change}} behind {{comparison}}."  placeholders={{change}},{{comparison}}
 revenue.finding.targetLevel.lead = "{{period}} is at {{share}} of the target,"  placeholders={{period}},{{share}}
 revenue.finding.targetLevel.rest = "level with {{comparison}}."  placeholders={{comparison}}
+revenue.fixedCosts.add = "Add a charge"
+revenue.fixedCosts.empty = "No fixed cost yet: add your rent, subscriptions, insurance…"
+revenue.fixedCosts.failed = "Could not save the fixed costs"
+revenue.fixedCosts.hideMenu = "Hide fixed costs"
+revenue.fixedCosts.intro = "Monthly charges that do not depend on sales (rent, subscriptions, insurance…). Enter only the 3D printing share."
+revenue.fixedCosts.invalid = "Each row needs a label and an amount of 0 or more."
+revenue.fixedCosts.label = "Charge"
+revenue.fixedCosts.menu = "Fixed costs"
+revenue.fixedCosts.monthly = "Per month"
+revenue.fixedCosts.remove = "Remove"
+revenue.fixedCosts.save = "Save"
+revenue.fixedCosts.saved = "Fixed costs saved"
+revenue.fixedCosts.title = "Fixed costs"
+revenue.fixedCosts.total = "Total per month"
+revenue.forecast.d30 = "Within 30 d"
+revenue.forecast.d60 = "In 31–60 d"
+revenue.forecast.d90 = "In 61–90 d"
+revenue.forecast.split = "Invoices {{invoices}} · order book {{orders}}"  placeholders={{invoices}},{{orders}}
+revenue.forecast.title = "Expected cash"
+revenue.funnel.accepted = "Accepted"
+revenue.funnel.awaiting = "Awaiting an answer"
+revenue.funnel.between = "{{from}} to {{to}}"  placeholders={{from}},{{to}}
+revenue.funnel.days = "{{n}} d"  placeholders={{n}}
+revenue.funnel.decided = "{{n}} quotes decided"  placeholders={{n}}
+revenue.funnel.declined = "Declined"
+revenue.funnel.delay = "Median time to accept"
+revenue.funnel.empty = "No quote sent in the last 12 months"
+revenue.funnel.expired = "Expired"
+revenue.funnel.over = "{{amount}} and more"  placeholders={{amount}}
+revenue.funnel.quotes = "{{n}} quotes"  placeholders={{n}}
+revenue.funnel.rate = "Acceptance rate"
+revenue.funnel.rateValue = "Acceptance by value"
+revenue.funnel.ratio = "{{accepted}} accepted of {{decided}}"  placeholders={{accepted}},{{decided}}
+revenue.funnel.title = "Quotes sent, last 12 months"
+revenue.funnel.upTo = "Under {{amount}}"  placeholders={{amount}}
 revenue.hero.margin = "Gross margin HT"
 revenue.hero.marginHint = "{{rate}} · cost known on {{coverage}} of revenue"  placeholders={{coverage}},{{rate}}
 revenue.hero.paceCurrent = "at the current pace"
@@ -266,6 +353,23 @@ revenue.pipeline.missingTotal = "No amount: {{n}}"  placeholders={{n}}
 revenue.pipeline.oldest = "Oldest: {{n}} d"  placeholders={{n}}
 revenue.pipeline.retainers = "Deposits already collected"
 revenue.pipeline.title = "Order book"
+revenue.result.breakEven = "Break-even"
+revenue.result.colCoverage = "Cost known"
+revenue.result.colFixed = "Fixed costs"
+revenue.result.colLabor = "Labour"
+revenue.result.colMonth = "Month"
+revenue.result.colResult = "Result"
+revenue.result.colRevenue = "Revenue excl. tax"
+revenue.result.colVariable = "Variable costs"
+revenue.result.expectedOn = "expected on {{day}}"  placeholders={{day}}
+revenue.result.month = "Result this month"
+revenue.result.noFixed = "No fixed cost entered yet: add them under ⋯ → Fixed costs."
+revenue.result.noRate = "Not enough sales and costs yet to compute a break-even"
+revenue.result.notThisMonth = "not this month at this pace"
+revenue.result.partial = "Print and labour costs are tracked since {{day}}: no result before that."  placeholders={{day}}
+revenue.result.reached = "Reached"
+revenue.result.reachedOn = "crossed on {{day}}"  placeholders={{day}}
+revenue.result.title = "Operating result"
 revenue.review.decisions = "Decisions ({{n}})"  placeholders={{n}}
 revenue.review.empty = "Nothing to classify."
 revenue.review.exclude = "Exclude"
@@ -371,11 +475,20 @@ revenue.yoy.toDateAlone = "{{year}} to date: {{amount}} — no comparison with {
 revenue.yoy.toDateVs = "{{year}} to date: {{amount}}, i.e."  placeholders={{amount}},{{year}}
 revenue.yoy.tooltipCumul = "{{month}} · running total"  placeholders={{month}}
 
---- de.ts keys=367 values-sha256=73e698cd2309fded
+--- de.ts keys=471 values-sha256=a8ac402a28864d2c
 missing=[] extra=[]
-same-as-en=5 non-string=[]
+same-as-en=6 non-string=[]
 placeholder-drift=[]
 nav.revenue
+revenue.aging.d30
+revenue.aging.d60
+revenue.aging.d90
+revenue.aging.days
+revenue.aging.dso
+revenue.aging.notDue
+revenue.aging.ofWhichLate
+revenue.aging.over
+revenue.aging.title
 revenue.amounts
 revenue.analysis.classHint
 revenue.analysis.classLabel
@@ -405,6 +518,23 @@ revenue.breakdown.label
 revenue.breakdown.labor
 revenue.breakdown.margin
 revenue.breakdown.wear
+revenue.bridge.current
+revenue.bridge.empty
+revenue.bridge.items
+revenue.bridge.kindLost
+revenue.bridge.kindNew
+revenue.bridge.lost
+revenue.bridge.mix
+revenue.bridge.mixHint
+revenue.bridge.new
+revenue.bridge.noPrevious
+revenue.bridge.previous
+revenue.bridge.price
+revenue.bridge.priceHint
+revenue.bridge.title
+revenue.bridge.versus
+revenue.bridge.volume
+revenue.bridge.volumeHint
 revenue.calendar.credit
 revenue.calendar.gridLabel
 revenue.calendar.less
@@ -468,7 +598,33 @@ revenue.chart.title.day
 revenue.chart.title.month
 revenue.chart.title.week
 revenue.chart.title.year
+revenue.chart.trend
+revenue.chart.trendSlope.day
+revenue.chart.trendSlope.month
+revenue.chart.trendSlope.week
+revenue.chart.trendSlope.year
 revenue.chart.values
+revenue.cohorts.after
+revenue.cohorts.cell
+revenue.cohorts.colCustomer
+revenue.cohorts.colLast
+revenue.cohorts.colRevenue
+revenue.cohorts.colSince
+revenue.cohorts.colUsual
+revenue.cohorts.days
+revenue.cohorts.everyDays
+revenue.cohorts.intro
+revenue.cohorts.ltvCustomers
+revenue.cohorts.ltvEmpty
+revenue.cohorts.ltvIntro
+revenue.cohorts.ltvTitle
+revenue.cohorts.month
+revenue.cohorts.perCustomer
+revenue.cohorts.riskEmpty
+revenue.cohorts.riskIntro
+revenue.cohorts.riskTitle
+revenue.cohorts.size
+revenue.cohorts.title
 revenue.controls.all
 revenue.controls.auto
 revenue.controls.autoHint
@@ -548,6 +704,41 @@ revenue.finding.targetBehind.lead
 revenue.finding.targetBehind.rest
 revenue.finding.targetLevel.lead
 revenue.finding.targetLevel.rest
+revenue.fixedCosts.add
+revenue.fixedCosts.empty
+revenue.fixedCosts.failed
+revenue.fixedCosts.hideMenu
+revenue.fixedCosts.intro
+revenue.fixedCosts.invalid
+revenue.fixedCosts.label
+revenue.fixedCosts.menu
+revenue.fixedCosts.monthly
+revenue.fixedCosts.remove
+revenue.fixedCosts.save
+revenue.fixedCosts.saved
+revenue.fixedCosts.title
+revenue.fixedCosts.total
+revenue.forecast.d30
+revenue.forecast.d60
+revenue.forecast.d90
+revenue.forecast.split
+revenue.forecast.title
+revenue.funnel.accepted
+revenue.funnel.awaiting
+revenue.funnel.between
+revenue.funnel.days
+revenue.funnel.decided
+revenue.funnel.declined
+revenue.funnel.delay
+revenue.funnel.empty
+revenue.funnel.expired
+revenue.funnel.over
+revenue.funnel.quotes
+revenue.funnel.rate
+revenue.funnel.rateValue
+revenue.funnel.ratio
+revenue.funnel.title
+revenue.funnel.upTo
 revenue.hero.margin
 revenue.hero.marginHint
 revenue.hero.paceCurrent
@@ -638,6 +829,23 @@ revenue.pipeline.missingTotal
 revenue.pipeline.oldest
 revenue.pipeline.retainers
 revenue.pipeline.title
+revenue.result.breakEven
+revenue.result.colCoverage
+revenue.result.colFixed
+revenue.result.colLabor
+revenue.result.colMonth
+revenue.result.colResult
+revenue.result.colRevenue
+revenue.result.colVariable
+revenue.result.expectedOn
+revenue.result.month
+revenue.result.noFixed
+revenue.result.noRate
+revenue.result.notThisMonth
+revenue.result.partial
+revenue.result.reached
+revenue.result.reachedOn
+revenue.result.title
 revenue.review.decisions
 revenue.review.empty
 revenue.review.exclude
@@ -743,11 +951,20 @@ revenue.yoy.toDateAlone
 revenue.yoy.toDateVs
 revenue.yoy.tooltipCumul
 
---- en.ts keys=367 values-sha256=16cc6dfe7a959722
+--- en.ts keys=471 values-sha256=bde03316a8ec8764
 missing=[] extra=[]
 same-as-en=0 non-string=[]
 placeholder-drift=[]
 nav.revenue
+revenue.aging.d30
+revenue.aging.d60
+revenue.aging.d90
+revenue.aging.days
+revenue.aging.dso
+revenue.aging.notDue
+revenue.aging.ofWhichLate
+revenue.aging.over
+revenue.aging.title
 revenue.amounts
 revenue.analysis.classHint
 revenue.analysis.classLabel
@@ -777,6 +994,23 @@ revenue.breakdown.label
 revenue.breakdown.labor
 revenue.breakdown.margin
 revenue.breakdown.wear
+revenue.bridge.current
+revenue.bridge.empty
+revenue.bridge.items
+revenue.bridge.kindLost
+revenue.bridge.kindNew
+revenue.bridge.lost
+revenue.bridge.mix
+revenue.bridge.mixHint
+revenue.bridge.new
+revenue.bridge.noPrevious
+revenue.bridge.previous
+revenue.bridge.price
+revenue.bridge.priceHint
+revenue.bridge.title
+revenue.bridge.versus
+revenue.bridge.volume
+revenue.bridge.volumeHint
 revenue.calendar.credit
 revenue.calendar.gridLabel
 revenue.calendar.less
@@ -840,7 +1074,33 @@ revenue.chart.title.day
 revenue.chart.title.month
 revenue.chart.title.week
 revenue.chart.title.year
+revenue.chart.trend
+revenue.chart.trendSlope.day
+revenue.chart.trendSlope.month
+revenue.chart.trendSlope.week
+revenue.chart.trendSlope.year
 revenue.chart.values
+revenue.cohorts.after
+revenue.cohorts.cell
+revenue.cohorts.colCustomer
+revenue.cohorts.colLast
+revenue.cohorts.colRevenue
+revenue.cohorts.colSince
+revenue.cohorts.colUsual
+revenue.cohorts.days
+revenue.cohorts.everyDays
+revenue.cohorts.intro
+revenue.cohorts.ltvCustomers
+revenue.cohorts.ltvEmpty
+revenue.cohorts.ltvIntro
+revenue.cohorts.ltvTitle
+revenue.cohorts.month
+revenue.cohorts.perCustomer
+revenue.cohorts.riskEmpty
+revenue.cohorts.riskIntro
+revenue.cohorts.riskTitle
+revenue.cohorts.size
+revenue.cohorts.title
 revenue.controls.all
 revenue.controls.auto
 revenue.controls.autoHint
@@ -920,6 +1180,41 @@ revenue.finding.targetBehind.lead
 revenue.finding.targetBehind.rest
 revenue.finding.targetLevel.lead
 revenue.finding.targetLevel.rest
+revenue.fixedCosts.add
+revenue.fixedCosts.empty
+revenue.fixedCosts.failed
+revenue.fixedCosts.hideMenu
+revenue.fixedCosts.intro
+revenue.fixedCosts.invalid
+revenue.fixedCosts.label
+revenue.fixedCosts.menu
+revenue.fixedCosts.monthly
+revenue.fixedCosts.remove
+revenue.fixedCosts.save
+revenue.fixedCosts.saved
+revenue.fixedCosts.title
+revenue.fixedCosts.total
+revenue.forecast.d30
+revenue.forecast.d60
+revenue.forecast.d90
+revenue.forecast.split
+revenue.forecast.title
+revenue.funnel.accepted
+revenue.funnel.awaiting
+revenue.funnel.between
+revenue.funnel.days
+revenue.funnel.decided
+revenue.funnel.declined
+revenue.funnel.delay
+revenue.funnel.empty
+revenue.funnel.expired
+revenue.funnel.over
+revenue.funnel.quotes
+revenue.funnel.rate
+revenue.funnel.rateValue
+revenue.funnel.ratio
+revenue.funnel.title
+revenue.funnel.upTo
 revenue.hero.margin
 revenue.hero.marginHint
 revenue.hero.paceCurrent
@@ -1010,6 +1305,23 @@ revenue.pipeline.missingTotal
 revenue.pipeline.oldest
 revenue.pipeline.retainers
 revenue.pipeline.title
+revenue.result.breakEven
+revenue.result.colCoverage
+revenue.result.colFixed
+revenue.result.colLabor
+revenue.result.colMonth
+revenue.result.colResult
+revenue.result.colRevenue
+revenue.result.colVariable
+revenue.result.expectedOn
+revenue.result.month
+revenue.result.noFixed
+revenue.result.noRate
+revenue.result.notThisMonth
+revenue.result.partial
+revenue.result.reached
+revenue.result.reachedOn
+revenue.result.title
 revenue.review.decisions
 revenue.review.empty
 revenue.review.exclude
@@ -1115,11 +1427,20 @@ revenue.yoy.toDateAlone
 revenue.yoy.toDateVs
 revenue.yoy.tooltipCumul
 
---- es.ts keys=367 values-sha256=b910c0d03d404af5
+--- es.ts keys=471 values-sha256=4f4af26c3a9967c4
 missing=[] extra=[]
 same-as-en=4 non-string=[]
 placeholder-drift=[]
 nav.revenue
+revenue.aging.d30
+revenue.aging.d60
+revenue.aging.d90
+revenue.aging.days
+revenue.aging.dso
+revenue.aging.notDue
+revenue.aging.ofWhichLate
+revenue.aging.over
+revenue.aging.title
 revenue.amounts
 revenue.analysis.classHint
 revenue.analysis.classLabel
@@ -1149,6 +1470,23 @@ revenue.breakdown.label
 revenue.breakdown.labor
 revenue.breakdown.margin
 revenue.breakdown.wear
+revenue.bridge.current
+revenue.bridge.empty
+revenue.bridge.items
+revenue.bridge.kindLost
+revenue.bridge.kindNew
+revenue.bridge.lost
+revenue.bridge.mix
+revenue.bridge.mixHint
+revenue.bridge.new
+revenue.bridge.noPrevious
+revenue.bridge.previous
+revenue.bridge.price
+revenue.bridge.priceHint
+revenue.bridge.title
+revenue.bridge.versus
+revenue.bridge.volume
+revenue.bridge.volumeHint
 revenue.calendar.credit
 revenue.calendar.gridLabel
 revenue.calendar.less
@@ -1212,7 +1550,33 @@ revenue.chart.title.day
 revenue.chart.title.month
 revenue.chart.title.week
 revenue.chart.title.year
+revenue.chart.trend
+revenue.chart.trendSlope.day
+revenue.chart.trendSlope.month
+revenue.chart.trendSlope.week
+revenue.chart.trendSlope.year
 revenue.chart.values
+revenue.cohorts.after
+revenue.cohorts.cell
+revenue.cohorts.colCustomer
+revenue.cohorts.colLast
+revenue.cohorts.colRevenue
+revenue.cohorts.colSince
+revenue.cohorts.colUsual
+revenue.cohorts.days
+revenue.cohorts.everyDays
+revenue.cohorts.intro
+revenue.cohorts.ltvCustomers
+revenue.cohorts.ltvEmpty
+revenue.cohorts.ltvIntro
+revenue.cohorts.ltvTitle
+revenue.cohorts.month
+revenue.cohorts.perCustomer
+revenue.cohorts.riskEmpty
+revenue.cohorts.riskIntro
+revenue.cohorts.riskTitle
+revenue.cohorts.size
+revenue.cohorts.title
 revenue.controls.all
 revenue.controls.auto
 revenue.controls.autoHint
@@ -1292,6 +1656,41 @@ revenue.finding.targetBehind.lead
 revenue.finding.targetBehind.rest
 revenue.finding.targetLevel.lead
 revenue.finding.targetLevel.rest
+revenue.fixedCosts.add
+revenue.fixedCosts.empty
+revenue.fixedCosts.failed
+revenue.fixedCosts.hideMenu
+revenue.fixedCosts.intro
+revenue.fixedCosts.invalid
+revenue.fixedCosts.label
+revenue.fixedCosts.menu
+revenue.fixedCosts.monthly
+revenue.fixedCosts.remove
+revenue.fixedCosts.save
+revenue.fixedCosts.saved
+revenue.fixedCosts.title
+revenue.fixedCosts.total
+revenue.forecast.d30
+revenue.forecast.d60
+revenue.forecast.d90
+revenue.forecast.split
+revenue.forecast.title
+revenue.funnel.accepted
+revenue.funnel.awaiting
+revenue.funnel.between
+revenue.funnel.days
+revenue.funnel.decided
+revenue.funnel.declined
+revenue.funnel.delay
+revenue.funnel.empty
+revenue.funnel.expired
+revenue.funnel.over
+revenue.funnel.quotes
+revenue.funnel.rate
+revenue.funnel.rateValue
+revenue.funnel.ratio
+revenue.funnel.title
+revenue.funnel.upTo
 revenue.hero.margin
 revenue.hero.marginHint
 revenue.hero.paceCurrent
@@ -1382,6 +1781,23 @@ revenue.pipeline.missingTotal
 revenue.pipeline.oldest
 revenue.pipeline.retainers
 revenue.pipeline.title
+revenue.result.breakEven
+revenue.result.colCoverage
+revenue.result.colFixed
+revenue.result.colLabor
+revenue.result.colMonth
+revenue.result.colResult
+revenue.result.colRevenue
+revenue.result.colVariable
+revenue.result.expectedOn
+revenue.result.month
+revenue.result.noFixed
+revenue.result.noRate
+revenue.result.notThisMonth
+revenue.result.partial
+revenue.result.reached
+revenue.result.reachedOn
+revenue.result.title
 revenue.review.decisions
 revenue.review.empty
 revenue.review.exclude
@@ -1487,11 +1903,20 @@ revenue.yoy.toDateAlone
 revenue.yoy.toDateVs
 revenue.yoy.tooltipCumul
 
---- fr.ts keys=367 values-sha256=7b0397e8550770aa
+--- fr.ts keys=471 values-sha256=5a0eb09cdf01d0fc
 missing=[] extra=[]
 same-as-en=13 non-string=[]
 placeholder-drift=[]
 nav.revenue
+revenue.aging.d30
+revenue.aging.d60
+revenue.aging.d90
+revenue.aging.days
+revenue.aging.dso
+revenue.aging.notDue
+revenue.aging.ofWhichLate
+revenue.aging.over
+revenue.aging.title
 revenue.amounts
 revenue.analysis.classHint
 revenue.analysis.classLabel
@@ -1521,6 +1946,23 @@ revenue.breakdown.label
 revenue.breakdown.labor
 revenue.breakdown.margin
 revenue.breakdown.wear
+revenue.bridge.current
+revenue.bridge.empty
+revenue.bridge.items
+revenue.bridge.kindLost
+revenue.bridge.kindNew
+revenue.bridge.lost
+revenue.bridge.mix
+revenue.bridge.mixHint
+revenue.bridge.new
+revenue.bridge.noPrevious
+revenue.bridge.previous
+revenue.bridge.price
+revenue.bridge.priceHint
+revenue.bridge.title
+revenue.bridge.versus
+revenue.bridge.volume
+revenue.bridge.volumeHint
 revenue.calendar.credit
 revenue.calendar.gridLabel
 revenue.calendar.less
@@ -1584,7 +2026,33 @@ revenue.chart.title.day
 revenue.chart.title.month
 revenue.chart.title.week
 revenue.chart.title.year
+revenue.chart.trend
+revenue.chart.trendSlope.day
+revenue.chart.trendSlope.month
+revenue.chart.trendSlope.week
+revenue.chart.trendSlope.year
 revenue.chart.values
+revenue.cohorts.after
+revenue.cohorts.cell
+revenue.cohorts.colCustomer
+revenue.cohorts.colLast
+revenue.cohorts.colRevenue
+revenue.cohorts.colSince
+revenue.cohorts.colUsual
+revenue.cohorts.days
+revenue.cohorts.everyDays
+revenue.cohorts.intro
+revenue.cohorts.ltvCustomers
+revenue.cohorts.ltvEmpty
+revenue.cohorts.ltvIntro
+revenue.cohorts.ltvTitle
+revenue.cohorts.month
+revenue.cohorts.perCustomer
+revenue.cohorts.riskEmpty
+revenue.cohorts.riskIntro
+revenue.cohorts.riskTitle
+revenue.cohorts.size
+revenue.cohorts.title
 revenue.controls.all
 revenue.controls.auto
 revenue.controls.autoHint
@@ -1664,6 +2132,41 @@ revenue.finding.targetBehind.lead
 revenue.finding.targetBehind.rest
 revenue.finding.targetLevel.lead
 revenue.finding.targetLevel.rest
+revenue.fixedCosts.add
+revenue.fixedCosts.empty
+revenue.fixedCosts.failed
+revenue.fixedCosts.hideMenu
+revenue.fixedCosts.intro
+revenue.fixedCosts.invalid
+revenue.fixedCosts.label
+revenue.fixedCosts.menu
+revenue.fixedCosts.monthly
+revenue.fixedCosts.remove
+revenue.fixedCosts.save
+revenue.fixedCosts.saved
+revenue.fixedCosts.title
+revenue.fixedCosts.total
+revenue.forecast.d30
+revenue.forecast.d60
+revenue.forecast.d90
+revenue.forecast.split
+revenue.forecast.title
+revenue.funnel.accepted
+revenue.funnel.awaiting
+revenue.funnel.between
+revenue.funnel.days
+revenue.funnel.decided
+revenue.funnel.declined
+revenue.funnel.delay
+revenue.funnel.empty
+revenue.funnel.expired
+revenue.funnel.over
+revenue.funnel.quotes
+revenue.funnel.rate
+revenue.funnel.rateValue
+revenue.funnel.ratio
+revenue.funnel.title
+revenue.funnel.upTo
 revenue.hero.margin
 revenue.hero.marginHint
 revenue.hero.paceCurrent
@@ -1754,6 +2257,23 @@ revenue.pipeline.missingTotal
 revenue.pipeline.oldest
 revenue.pipeline.retainers
 revenue.pipeline.title
+revenue.result.breakEven
+revenue.result.colCoverage
+revenue.result.colFixed
+revenue.result.colLabor
+revenue.result.colMonth
+revenue.result.colResult
+revenue.result.colRevenue
+revenue.result.colVariable
+revenue.result.expectedOn
+revenue.result.month
+revenue.result.noFixed
+revenue.result.noRate
+revenue.result.notThisMonth
+revenue.result.partial
+revenue.result.reached
+revenue.result.reachedOn
+revenue.result.title
 revenue.review.decisions
 revenue.review.empty
 revenue.review.exclude
@@ -1859,11 +2379,20 @@ revenue.yoy.toDateAlone
 revenue.yoy.toDateVs
 revenue.yoy.tooltipCumul
 
---- it.ts keys=367 values-sha256=56db4e3d922c69d2
+--- it.ts keys=471 values-sha256=ba3303d63fa71ffb
 missing=[] extra=[]
 same-as-en=3 non-string=[]
 placeholder-drift=[]
 nav.revenue
+revenue.aging.d30
+revenue.aging.d60
+revenue.aging.d90
+revenue.aging.days
+revenue.aging.dso
+revenue.aging.notDue
+revenue.aging.ofWhichLate
+revenue.aging.over
+revenue.aging.title
 revenue.amounts
 revenue.analysis.classHint
 revenue.analysis.classLabel
@@ -1893,6 +2422,23 @@ revenue.breakdown.label
 revenue.breakdown.labor
 revenue.breakdown.margin
 revenue.breakdown.wear
+revenue.bridge.current
+revenue.bridge.empty
+revenue.bridge.items
+revenue.bridge.kindLost
+revenue.bridge.kindNew
+revenue.bridge.lost
+revenue.bridge.mix
+revenue.bridge.mixHint
+revenue.bridge.new
+revenue.bridge.noPrevious
+revenue.bridge.previous
+revenue.bridge.price
+revenue.bridge.priceHint
+revenue.bridge.title
+revenue.bridge.versus
+revenue.bridge.volume
+revenue.bridge.volumeHint
 revenue.calendar.credit
 revenue.calendar.gridLabel
 revenue.calendar.less
@@ -1956,7 +2502,33 @@ revenue.chart.title.day
 revenue.chart.title.month
 revenue.chart.title.week
 revenue.chart.title.year
+revenue.chart.trend
+revenue.chart.trendSlope.day
+revenue.chart.trendSlope.month
+revenue.chart.trendSlope.week
+revenue.chart.trendSlope.year
 revenue.chart.values
+revenue.cohorts.after
+revenue.cohorts.cell
+revenue.cohorts.colCustomer
+revenue.cohorts.colLast
+revenue.cohorts.colRevenue
+revenue.cohorts.colSince
+revenue.cohorts.colUsual
+revenue.cohorts.days
+revenue.cohorts.everyDays
+revenue.cohorts.intro
+revenue.cohorts.ltvCustomers
+revenue.cohorts.ltvEmpty
+revenue.cohorts.ltvIntro
+revenue.cohorts.ltvTitle
+revenue.cohorts.month
+revenue.cohorts.perCustomer
+revenue.cohorts.riskEmpty
+revenue.cohorts.riskIntro
+revenue.cohorts.riskTitle
+revenue.cohorts.size
+revenue.cohorts.title
 revenue.controls.all
 revenue.controls.auto
 revenue.controls.autoHint
@@ -2036,6 +2608,41 @@ revenue.finding.targetBehind.lead
 revenue.finding.targetBehind.rest
 revenue.finding.targetLevel.lead
 revenue.finding.targetLevel.rest
+revenue.fixedCosts.add
+revenue.fixedCosts.empty
+revenue.fixedCosts.failed
+revenue.fixedCosts.hideMenu
+revenue.fixedCosts.intro
+revenue.fixedCosts.invalid
+revenue.fixedCosts.label
+revenue.fixedCosts.menu
+revenue.fixedCosts.monthly
+revenue.fixedCosts.remove
+revenue.fixedCosts.save
+revenue.fixedCosts.saved
+revenue.fixedCosts.title
+revenue.fixedCosts.total
+revenue.forecast.d30
+revenue.forecast.d60
+revenue.forecast.d90
+revenue.forecast.split
+revenue.forecast.title
+revenue.funnel.accepted
+revenue.funnel.awaiting
+revenue.funnel.between
+revenue.funnel.days
+revenue.funnel.decided
+revenue.funnel.declined
+revenue.funnel.delay
+revenue.funnel.empty
+revenue.funnel.expired
+revenue.funnel.over
+revenue.funnel.quotes
+revenue.funnel.rate
+revenue.funnel.rateValue
+revenue.funnel.ratio
+revenue.funnel.title
+revenue.funnel.upTo
 revenue.hero.margin
 revenue.hero.marginHint
 revenue.hero.paceCurrent
@@ -2126,6 +2733,23 @@ revenue.pipeline.missingTotal
 revenue.pipeline.oldest
 revenue.pipeline.retainers
 revenue.pipeline.title
+revenue.result.breakEven
+revenue.result.colCoverage
+revenue.result.colFixed
+revenue.result.colLabor
+revenue.result.colMonth
+revenue.result.colResult
+revenue.result.colRevenue
+revenue.result.colVariable
+revenue.result.expectedOn
+revenue.result.month
+revenue.result.noFixed
+revenue.result.noRate
+revenue.result.notThisMonth
+revenue.result.partial
+revenue.result.reached
+revenue.result.reachedOn
+revenue.result.title
 revenue.review.decisions
 revenue.review.empty
 revenue.review.exclude
@@ -2231,11 +2855,20 @@ revenue.yoy.toDateAlone
 revenue.yoy.toDateVs
 revenue.yoy.tooltipCumul
 
---- ja.ts keys=367 values-sha256=8efbf2f093116866
+--- ja.ts keys=471 values-sha256=dee281af0956fedb
 missing=[] extra=[]
 same-as-en=3 non-string=[]
 placeholder-drift=[]
 nav.revenue
+revenue.aging.d30
+revenue.aging.d60
+revenue.aging.d90
+revenue.aging.days
+revenue.aging.dso
+revenue.aging.notDue
+revenue.aging.ofWhichLate
+revenue.aging.over
+revenue.aging.title
 revenue.amounts
 revenue.analysis.classHint
 revenue.analysis.classLabel
@@ -2265,6 +2898,23 @@ revenue.breakdown.label
 revenue.breakdown.labor
 revenue.breakdown.margin
 revenue.breakdown.wear
+revenue.bridge.current
+revenue.bridge.empty
+revenue.bridge.items
+revenue.bridge.kindLost
+revenue.bridge.kindNew
+revenue.bridge.lost
+revenue.bridge.mix
+revenue.bridge.mixHint
+revenue.bridge.new
+revenue.bridge.noPrevious
+revenue.bridge.previous
+revenue.bridge.price
+revenue.bridge.priceHint
+revenue.bridge.title
+revenue.bridge.versus
+revenue.bridge.volume
+revenue.bridge.volumeHint
 revenue.calendar.credit
 revenue.calendar.gridLabel
 revenue.calendar.less
@@ -2328,7 +2978,33 @@ revenue.chart.title.day
 revenue.chart.title.month
 revenue.chart.title.week
 revenue.chart.title.year
+revenue.chart.trend
+revenue.chart.trendSlope.day
+revenue.chart.trendSlope.month
+revenue.chart.trendSlope.week
+revenue.chart.trendSlope.year
 revenue.chart.values
+revenue.cohorts.after
+revenue.cohorts.cell
+revenue.cohorts.colCustomer
+revenue.cohorts.colLast
+revenue.cohorts.colRevenue
+revenue.cohorts.colSince
+revenue.cohorts.colUsual
+revenue.cohorts.days
+revenue.cohorts.everyDays
+revenue.cohorts.intro
+revenue.cohorts.ltvCustomers
+revenue.cohorts.ltvEmpty
+revenue.cohorts.ltvIntro
+revenue.cohorts.ltvTitle
+revenue.cohorts.month
+revenue.cohorts.perCustomer
+revenue.cohorts.riskEmpty
+revenue.cohorts.riskIntro
+revenue.cohorts.riskTitle
+revenue.cohorts.size
+revenue.cohorts.title
 revenue.controls.all
 revenue.controls.auto
 revenue.controls.autoHint
@@ -2408,6 +3084,41 @@ revenue.finding.targetBehind.lead
 revenue.finding.targetBehind.rest
 revenue.finding.targetLevel.lead
 revenue.finding.targetLevel.rest
+revenue.fixedCosts.add
+revenue.fixedCosts.empty
+revenue.fixedCosts.failed
+revenue.fixedCosts.hideMenu
+revenue.fixedCosts.intro
+revenue.fixedCosts.invalid
+revenue.fixedCosts.label
+revenue.fixedCosts.menu
+revenue.fixedCosts.monthly
+revenue.fixedCosts.remove
+revenue.fixedCosts.save
+revenue.fixedCosts.saved
+revenue.fixedCosts.title
+revenue.fixedCosts.total
+revenue.forecast.d30
+revenue.forecast.d60
+revenue.forecast.d90
+revenue.forecast.split
+revenue.forecast.title
+revenue.funnel.accepted
+revenue.funnel.awaiting
+revenue.funnel.between
+revenue.funnel.days
+revenue.funnel.decided
+revenue.funnel.declined
+revenue.funnel.delay
+revenue.funnel.empty
+revenue.funnel.expired
+revenue.funnel.over
+revenue.funnel.quotes
+revenue.funnel.rate
+revenue.funnel.rateValue
+revenue.funnel.ratio
+revenue.funnel.title
+revenue.funnel.upTo
 revenue.hero.margin
 revenue.hero.marginHint
 revenue.hero.paceCurrent
@@ -2498,6 +3209,23 @@ revenue.pipeline.missingTotal
 revenue.pipeline.oldest
 revenue.pipeline.retainers
 revenue.pipeline.title
+revenue.result.breakEven
+revenue.result.colCoverage
+revenue.result.colFixed
+revenue.result.colLabor
+revenue.result.colMonth
+revenue.result.colResult
+revenue.result.colRevenue
+revenue.result.colVariable
+revenue.result.expectedOn
+revenue.result.month
+revenue.result.noFixed
+revenue.result.noRate
+revenue.result.notThisMonth
+revenue.result.partial
+revenue.result.reached
+revenue.result.reachedOn
+revenue.result.title
 revenue.review.decisions
 revenue.review.empty
 revenue.review.exclude
@@ -2603,11 +3331,20 @@ revenue.yoy.toDateAlone
 revenue.yoy.toDateVs
 revenue.yoy.tooltipCumul
 
---- ko.ts keys=367 values-sha256=fb6a2038e65b0403
+--- ko.ts keys=471 values-sha256=8680b83024deffff
 missing=[] extra=[]
 same-as-en=3 non-string=[]
 placeholder-drift=[]
 nav.revenue
+revenue.aging.d30
+revenue.aging.d60
+revenue.aging.d90
+revenue.aging.days
+revenue.aging.dso
+revenue.aging.notDue
+revenue.aging.ofWhichLate
+revenue.aging.over
+revenue.aging.title
 revenue.amounts
 revenue.analysis.classHint
 revenue.analysis.classLabel
@@ -2637,6 +3374,23 @@ revenue.breakdown.label
 revenue.breakdown.labor
 revenue.breakdown.margin
 revenue.breakdown.wear
+revenue.bridge.current
+revenue.bridge.empty
+revenue.bridge.items
+revenue.bridge.kindLost
+revenue.bridge.kindNew
+revenue.bridge.lost
+revenue.bridge.mix
+revenue.bridge.mixHint
+revenue.bridge.new
+revenue.bridge.noPrevious
+revenue.bridge.previous
+revenue.bridge.price
+revenue.bridge.priceHint
+revenue.bridge.title
+revenue.bridge.versus
+revenue.bridge.volume
+revenue.bridge.volumeHint
 revenue.calendar.credit
 revenue.calendar.gridLabel
 revenue.calendar.less
@@ -2700,7 +3454,33 @@ revenue.chart.title.day
 revenue.chart.title.month
 revenue.chart.title.week
 revenue.chart.title.year
+revenue.chart.trend
+revenue.chart.trendSlope.day
+revenue.chart.trendSlope.month
+revenue.chart.trendSlope.week
+revenue.chart.trendSlope.year
 revenue.chart.values
+revenue.cohorts.after
+revenue.cohorts.cell
+revenue.cohorts.colCustomer
+revenue.cohorts.colLast
+revenue.cohorts.colRevenue
+revenue.cohorts.colSince
+revenue.cohorts.colUsual
+revenue.cohorts.days
+revenue.cohorts.everyDays
+revenue.cohorts.intro
+revenue.cohorts.ltvCustomers
+revenue.cohorts.ltvEmpty
+revenue.cohorts.ltvIntro
+revenue.cohorts.ltvTitle
+revenue.cohorts.month
+revenue.cohorts.perCustomer
+revenue.cohorts.riskEmpty
+revenue.cohorts.riskIntro
+revenue.cohorts.riskTitle
+revenue.cohorts.size
+revenue.cohorts.title
 revenue.controls.all
 revenue.controls.auto
 revenue.controls.autoHint
@@ -2780,6 +3560,41 @@ revenue.finding.targetBehind.lead
 revenue.finding.targetBehind.rest
 revenue.finding.targetLevel.lead
 revenue.finding.targetLevel.rest
+revenue.fixedCosts.add
+revenue.fixedCosts.empty
+revenue.fixedCosts.failed
+revenue.fixedCosts.hideMenu
+revenue.fixedCosts.intro
+revenue.fixedCosts.invalid
+revenue.fixedCosts.label
+revenue.fixedCosts.menu
+revenue.fixedCosts.monthly
+revenue.fixedCosts.remove
+revenue.fixedCosts.save
+revenue.fixedCosts.saved
+revenue.fixedCosts.title
+revenue.fixedCosts.total
+revenue.forecast.d30
+revenue.forecast.d60
+revenue.forecast.d90
+revenue.forecast.split
+revenue.forecast.title
+revenue.funnel.accepted
+revenue.funnel.awaiting
+revenue.funnel.between
+revenue.funnel.days
+revenue.funnel.decided
+revenue.funnel.declined
+revenue.funnel.delay
+revenue.funnel.empty
+revenue.funnel.expired
+revenue.funnel.over
+revenue.funnel.quotes
+revenue.funnel.rate
+revenue.funnel.rateValue
+revenue.funnel.ratio
+revenue.funnel.title
+revenue.funnel.upTo
 revenue.hero.margin
 revenue.hero.marginHint
 revenue.hero.paceCurrent
@@ -2870,6 +3685,23 @@ revenue.pipeline.missingTotal
 revenue.pipeline.oldest
 revenue.pipeline.retainers
 revenue.pipeline.title
+revenue.result.breakEven
+revenue.result.colCoverage
+revenue.result.colFixed
+revenue.result.colLabor
+revenue.result.colMonth
+revenue.result.colResult
+revenue.result.colRevenue
+revenue.result.colVariable
+revenue.result.expectedOn
+revenue.result.month
+revenue.result.noFixed
+revenue.result.noRate
+revenue.result.notThisMonth
+revenue.result.partial
+revenue.result.reached
+revenue.result.reachedOn
+revenue.result.title
 revenue.review.decisions
 revenue.review.empty
 revenue.review.exclude
@@ -2975,11 +3807,20 @@ revenue.yoy.toDateAlone
 revenue.yoy.toDateVs
 revenue.yoy.tooltipCumul
 
---- nl.ts keys=367 values-sha256=1f57ea6711f957f4
+--- nl.ts keys=471 values-sha256=29788bd713d752a3
 missing=[] extra=[]
 same-as-en=5 non-string=[]
 placeholder-drift=[]
 nav.revenue
+revenue.aging.d30
+revenue.aging.d60
+revenue.aging.d90
+revenue.aging.days
+revenue.aging.dso
+revenue.aging.notDue
+revenue.aging.ofWhichLate
+revenue.aging.over
+revenue.aging.title
 revenue.amounts
 revenue.analysis.classHint
 revenue.analysis.classLabel
@@ -3009,6 +3850,23 @@ revenue.breakdown.label
 revenue.breakdown.labor
 revenue.breakdown.margin
 revenue.breakdown.wear
+revenue.bridge.current
+revenue.bridge.empty
+revenue.bridge.items
+revenue.bridge.kindLost
+revenue.bridge.kindNew
+revenue.bridge.lost
+revenue.bridge.mix
+revenue.bridge.mixHint
+revenue.bridge.new
+revenue.bridge.noPrevious
+revenue.bridge.previous
+revenue.bridge.price
+revenue.bridge.priceHint
+revenue.bridge.title
+revenue.bridge.versus
+revenue.bridge.volume
+revenue.bridge.volumeHint
 revenue.calendar.credit
 revenue.calendar.gridLabel
 revenue.calendar.less
@@ -3072,7 +3930,33 @@ revenue.chart.title.day
 revenue.chart.title.month
 revenue.chart.title.week
 revenue.chart.title.year
+revenue.chart.trend
+revenue.chart.trendSlope.day
+revenue.chart.trendSlope.month
+revenue.chart.trendSlope.week
+revenue.chart.trendSlope.year
 revenue.chart.values
+revenue.cohorts.after
+revenue.cohorts.cell
+revenue.cohorts.colCustomer
+revenue.cohorts.colLast
+revenue.cohorts.colRevenue
+revenue.cohorts.colSince
+revenue.cohorts.colUsual
+revenue.cohorts.days
+revenue.cohorts.everyDays
+revenue.cohorts.intro
+revenue.cohorts.ltvCustomers
+revenue.cohorts.ltvEmpty
+revenue.cohorts.ltvIntro
+revenue.cohorts.ltvTitle
+revenue.cohorts.month
+revenue.cohorts.perCustomer
+revenue.cohorts.riskEmpty
+revenue.cohorts.riskIntro
+revenue.cohorts.riskTitle
+revenue.cohorts.size
+revenue.cohorts.title
 revenue.controls.all
 revenue.controls.auto
 revenue.controls.autoHint
@@ -3152,6 +4036,41 @@ revenue.finding.targetBehind.lead
 revenue.finding.targetBehind.rest
 revenue.finding.targetLevel.lead
 revenue.finding.targetLevel.rest
+revenue.fixedCosts.add
+revenue.fixedCosts.empty
+revenue.fixedCosts.failed
+revenue.fixedCosts.hideMenu
+revenue.fixedCosts.intro
+revenue.fixedCosts.invalid
+revenue.fixedCosts.label
+revenue.fixedCosts.menu
+revenue.fixedCosts.monthly
+revenue.fixedCosts.remove
+revenue.fixedCosts.save
+revenue.fixedCosts.saved
+revenue.fixedCosts.title
+revenue.fixedCosts.total
+revenue.forecast.d30
+revenue.forecast.d60
+revenue.forecast.d90
+revenue.forecast.split
+revenue.forecast.title
+revenue.funnel.accepted
+revenue.funnel.awaiting
+revenue.funnel.between
+revenue.funnel.days
+revenue.funnel.decided
+revenue.funnel.declined
+revenue.funnel.delay
+revenue.funnel.empty
+revenue.funnel.expired
+revenue.funnel.over
+revenue.funnel.quotes
+revenue.funnel.rate
+revenue.funnel.rateValue
+revenue.funnel.ratio
+revenue.funnel.title
+revenue.funnel.upTo
 revenue.hero.margin
 revenue.hero.marginHint
 revenue.hero.paceCurrent
@@ -3242,6 +4161,23 @@ revenue.pipeline.missingTotal
 revenue.pipeline.oldest
 revenue.pipeline.retainers
 revenue.pipeline.title
+revenue.result.breakEven
+revenue.result.colCoverage
+revenue.result.colFixed
+revenue.result.colLabor
+revenue.result.colMonth
+revenue.result.colResult
+revenue.result.colRevenue
+revenue.result.colVariable
+revenue.result.expectedOn
+revenue.result.month
+revenue.result.noFixed
+revenue.result.noRate
+revenue.result.notThisMonth
+revenue.result.partial
+revenue.result.reached
+revenue.result.reachedOn
+revenue.result.title
 revenue.review.decisions
 revenue.review.empty
 revenue.review.exclude
@@ -3347,11 +4283,20 @@ revenue.yoy.toDateAlone
 revenue.yoy.toDateVs
 revenue.yoy.tooltipCumul
 
---- pl.ts keys=367 values-sha256=e16f4192d14c5d27
+--- pl.ts keys=471 values-sha256=b0f19f8ba33d4e31
 missing=[] extra=[]
 same-as-en=4 non-string=[]
 placeholder-drift=[]
 nav.revenue
+revenue.aging.d30
+revenue.aging.d60
+revenue.aging.d90
+revenue.aging.days
+revenue.aging.dso
+revenue.aging.notDue
+revenue.aging.ofWhichLate
+revenue.aging.over
+revenue.aging.title
 revenue.amounts
 revenue.analysis.classHint
 revenue.analysis.classLabel
@@ -3381,6 +4326,23 @@ revenue.breakdown.label
 revenue.breakdown.labor
 revenue.breakdown.margin
 revenue.breakdown.wear
+revenue.bridge.current
+revenue.bridge.empty
+revenue.bridge.items
+revenue.bridge.kindLost
+revenue.bridge.kindNew
+revenue.bridge.lost
+revenue.bridge.mix
+revenue.bridge.mixHint
+revenue.bridge.new
+revenue.bridge.noPrevious
+revenue.bridge.previous
+revenue.bridge.price
+revenue.bridge.priceHint
+revenue.bridge.title
+revenue.bridge.versus
+revenue.bridge.volume
+revenue.bridge.volumeHint
 revenue.calendar.credit
 revenue.calendar.gridLabel
 revenue.calendar.less
@@ -3444,7 +4406,33 @@ revenue.chart.title.day
 revenue.chart.title.month
 revenue.chart.title.week
 revenue.chart.title.year
+revenue.chart.trend
+revenue.chart.trendSlope.day
+revenue.chart.trendSlope.month
+revenue.chart.trendSlope.week
+revenue.chart.trendSlope.year
 revenue.chart.values
+revenue.cohorts.after
+revenue.cohorts.cell
+revenue.cohorts.colCustomer
+revenue.cohorts.colLast
+revenue.cohorts.colRevenue
+revenue.cohorts.colSince
+revenue.cohorts.colUsual
+revenue.cohorts.days
+revenue.cohorts.everyDays
+revenue.cohorts.intro
+revenue.cohorts.ltvCustomers
+revenue.cohorts.ltvEmpty
+revenue.cohorts.ltvIntro
+revenue.cohorts.ltvTitle
+revenue.cohorts.month
+revenue.cohorts.perCustomer
+revenue.cohorts.riskEmpty
+revenue.cohorts.riskIntro
+revenue.cohorts.riskTitle
+revenue.cohorts.size
+revenue.cohorts.title
 revenue.controls.all
 revenue.controls.auto
 revenue.controls.autoHint
@@ -3524,6 +4512,41 @@ revenue.finding.targetBehind.lead
 revenue.finding.targetBehind.rest
 revenue.finding.targetLevel.lead
 revenue.finding.targetLevel.rest
+revenue.fixedCosts.add
+revenue.fixedCosts.empty
+revenue.fixedCosts.failed
+revenue.fixedCosts.hideMenu
+revenue.fixedCosts.intro
+revenue.fixedCosts.invalid
+revenue.fixedCosts.label
+revenue.fixedCosts.menu
+revenue.fixedCosts.monthly
+revenue.fixedCosts.remove
+revenue.fixedCosts.save
+revenue.fixedCosts.saved
+revenue.fixedCosts.title
+revenue.fixedCosts.total
+revenue.forecast.d30
+revenue.forecast.d60
+revenue.forecast.d90
+revenue.forecast.split
+revenue.forecast.title
+revenue.funnel.accepted
+revenue.funnel.awaiting
+revenue.funnel.between
+revenue.funnel.days
+revenue.funnel.decided
+revenue.funnel.declined
+revenue.funnel.delay
+revenue.funnel.empty
+revenue.funnel.expired
+revenue.funnel.over
+revenue.funnel.quotes
+revenue.funnel.rate
+revenue.funnel.rateValue
+revenue.funnel.ratio
+revenue.funnel.title
+revenue.funnel.upTo
 revenue.hero.margin
 revenue.hero.marginHint
 revenue.hero.paceCurrent
@@ -3614,6 +4637,23 @@ revenue.pipeline.missingTotal
 revenue.pipeline.oldest
 revenue.pipeline.retainers
 revenue.pipeline.title
+revenue.result.breakEven
+revenue.result.colCoverage
+revenue.result.colFixed
+revenue.result.colLabor
+revenue.result.colMonth
+revenue.result.colResult
+revenue.result.colRevenue
+revenue.result.colVariable
+revenue.result.expectedOn
+revenue.result.month
+revenue.result.noFixed
+revenue.result.noRate
+revenue.result.notThisMonth
+revenue.result.partial
+revenue.result.reached
+revenue.result.reachedOn
+revenue.result.title
 revenue.review.decisions
 revenue.review.empty
 revenue.review.exclude
@@ -3719,11 +4759,20 @@ revenue.yoy.toDateAlone
 revenue.yoy.toDateVs
 revenue.yoy.tooltipCumul
 
---- pt-BR.ts keys=367 values-sha256=c731749afb0250c7
+--- pt-BR.ts keys=471 values-sha256=f6e7835639525234
 missing=[] extra=[]
 same-as-en=4 non-string=[]
 placeholder-drift=[]
 nav.revenue
+revenue.aging.d30
+revenue.aging.d60
+revenue.aging.d90
+revenue.aging.days
+revenue.aging.dso
+revenue.aging.notDue
+revenue.aging.ofWhichLate
+revenue.aging.over
+revenue.aging.title
 revenue.amounts
 revenue.analysis.classHint
 revenue.analysis.classLabel
@@ -3753,6 +4802,23 @@ revenue.breakdown.label
 revenue.breakdown.labor
 revenue.breakdown.margin
 revenue.breakdown.wear
+revenue.bridge.current
+revenue.bridge.empty
+revenue.bridge.items
+revenue.bridge.kindLost
+revenue.bridge.kindNew
+revenue.bridge.lost
+revenue.bridge.mix
+revenue.bridge.mixHint
+revenue.bridge.new
+revenue.bridge.noPrevious
+revenue.bridge.previous
+revenue.bridge.price
+revenue.bridge.priceHint
+revenue.bridge.title
+revenue.bridge.versus
+revenue.bridge.volume
+revenue.bridge.volumeHint
 revenue.calendar.credit
 revenue.calendar.gridLabel
 revenue.calendar.less
@@ -3816,7 +4882,33 @@ revenue.chart.title.day
 revenue.chart.title.month
 revenue.chart.title.week
 revenue.chart.title.year
+revenue.chart.trend
+revenue.chart.trendSlope.day
+revenue.chart.trendSlope.month
+revenue.chart.trendSlope.week
+revenue.chart.trendSlope.year
 revenue.chart.values
+revenue.cohorts.after
+revenue.cohorts.cell
+revenue.cohorts.colCustomer
+revenue.cohorts.colLast
+revenue.cohorts.colRevenue
+revenue.cohorts.colSince
+revenue.cohorts.colUsual
+revenue.cohorts.days
+revenue.cohorts.everyDays
+revenue.cohorts.intro
+revenue.cohorts.ltvCustomers
+revenue.cohorts.ltvEmpty
+revenue.cohorts.ltvIntro
+revenue.cohorts.ltvTitle
+revenue.cohorts.month
+revenue.cohorts.perCustomer
+revenue.cohorts.riskEmpty
+revenue.cohorts.riskIntro
+revenue.cohorts.riskTitle
+revenue.cohorts.size
+revenue.cohorts.title
 revenue.controls.all
 revenue.controls.auto
 revenue.controls.autoHint
@@ -3896,6 +4988,41 @@ revenue.finding.targetBehind.lead
 revenue.finding.targetBehind.rest
 revenue.finding.targetLevel.lead
 revenue.finding.targetLevel.rest
+revenue.fixedCosts.add
+revenue.fixedCosts.empty
+revenue.fixedCosts.failed
+revenue.fixedCosts.hideMenu
+revenue.fixedCosts.intro
+revenue.fixedCosts.invalid
+revenue.fixedCosts.label
+revenue.fixedCosts.menu
+revenue.fixedCosts.monthly
+revenue.fixedCosts.remove
+revenue.fixedCosts.save
+revenue.fixedCosts.saved
+revenue.fixedCosts.title
+revenue.fixedCosts.total
+revenue.forecast.d30
+revenue.forecast.d60
+revenue.forecast.d90
+revenue.forecast.split
+revenue.forecast.title
+revenue.funnel.accepted
+revenue.funnel.awaiting
+revenue.funnel.between
+revenue.funnel.days
+revenue.funnel.decided
+revenue.funnel.declined
+revenue.funnel.delay
+revenue.funnel.empty
+revenue.funnel.expired
+revenue.funnel.over
+revenue.funnel.quotes
+revenue.funnel.rate
+revenue.funnel.rateValue
+revenue.funnel.ratio
+revenue.funnel.title
+revenue.funnel.upTo
 revenue.hero.margin
 revenue.hero.marginHint
 revenue.hero.paceCurrent
@@ -3986,6 +5113,23 @@ revenue.pipeline.missingTotal
 revenue.pipeline.oldest
 revenue.pipeline.retainers
 revenue.pipeline.title
+revenue.result.breakEven
+revenue.result.colCoverage
+revenue.result.colFixed
+revenue.result.colLabor
+revenue.result.colMonth
+revenue.result.colResult
+revenue.result.colRevenue
+revenue.result.colVariable
+revenue.result.expectedOn
+revenue.result.month
+revenue.result.noFixed
+revenue.result.noRate
+revenue.result.notThisMonth
+revenue.result.partial
+revenue.result.reached
+revenue.result.reachedOn
+revenue.result.title
 revenue.review.decisions
 revenue.review.empty
 revenue.review.exclude
@@ -4091,11 +5235,20 @@ revenue.yoy.toDateAlone
 revenue.yoy.toDateVs
 revenue.yoy.tooltipCumul
 
---- ru.ts keys=367 values-sha256=3e1f75c9358c58e8
+--- ru.ts keys=471 values-sha256=6cd1389315609968
 missing=[] extra=[]
 same-as-en=3 non-string=[]
 placeholder-drift=[]
 nav.revenue
+revenue.aging.d30
+revenue.aging.d60
+revenue.aging.d90
+revenue.aging.days
+revenue.aging.dso
+revenue.aging.notDue
+revenue.aging.ofWhichLate
+revenue.aging.over
+revenue.aging.title
 revenue.amounts
 revenue.analysis.classHint
 revenue.analysis.classLabel
@@ -4125,6 +5278,23 @@ revenue.breakdown.label
 revenue.breakdown.labor
 revenue.breakdown.margin
 revenue.breakdown.wear
+revenue.bridge.current
+revenue.bridge.empty
+revenue.bridge.items
+revenue.bridge.kindLost
+revenue.bridge.kindNew
+revenue.bridge.lost
+revenue.bridge.mix
+revenue.bridge.mixHint
+revenue.bridge.new
+revenue.bridge.noPrevious
+revenue.bridge.previous
+revenue.bridge.price
+revenue.bridge.priceHint
+revenue.bridge.title
+revenue.bridge.versus
+revenue.bridge.volume
+revenue.bridge.volumeHint
 revenue.calendar.credit
 revenue.calendar.gridLabel
 revenue.calendar.less
@@ -4188,7 +5358,33 @@ revenue.chart.title.day
 revenue.chart.title.month
 revenue.chart.title.week
 revenue.chart.title.year
+revenue.chart.trend
+revenue.chart.trendSlope.day
+revenue.chart.trendSlope.month
+revenue.chart.trendSlope.week
+revenue.chart.trendSlope.year
 revenue.chart.values
+revenue.cohorts.after
+revenue.cohorts.cell
+revenue.cohorts.colCustomer
+revenue.cohorts.colLast
+revenue.cohorts.colRevenue
+revenue.cohorts.colSince
+revenue.cohorts.colUsual
+revenue.cohorts.days
+revenue.cohorts.everyDays
+revenue.cohorts.intro
+revenue.cohorts.ltvCustomers
+revenue.cohorts.ltvEmpty
+revenue.cohorts.ltvIntro
+revenue.cohorts.ltvTitle
+revenue.cohorts.month
+revenue.cohorts.perCustomer
+revenue.cohorts.riskEmpty
+revenue.cohorts.riskIntro
+revenue.cohorts.riskTitle
+revenue.cohorts.size
+revenue.cohorts.title
 revenue.controls.all
 revenue.controls.auto
 revenue.controls.autoHint
@@ -4268,6 +5464,41 @@ revenue.finding.targetBehind.lead
 revenue.finding.targetBehind.rest
 revenue.finding.targetLevel.lead
 revenue.finding.targetLevel.rest
+revenue.fixedCosts.add
+revenue.fixedCosts.empty
+revenue.fixedCosts.failed
+revenue.fixedCosts.hideMenu
+revenue.fixedCosts.intro
+revenue.fixedCosts.invalid
+revenue.fixedCosts.label
+revenue.fixedCosts.menu
+revenue.fixedCosts.monthly
+revenue.fixedCosts.remove
+revenue.fixedCosts.save
+revenue.fixedCosts.saved
+revenue.fixedCosts.title
+revenue.fixedCosts.total
+revenue.forecast.d30
+revenue.forecast.d60
+revenue.forecast.d90
+revenue.forecast.split
+revenue.forecast.title
+revenue.funnel.accepted
+revenue.funnel.awaiting
+revenue.funnel.between
+revenue.funnel.days
+revenue.funnel.decided
+revenue.funnel.declined
+revenue.funnel.delay
+revenue.funnel.empty
+revenue.funnel.expired
+revenue.funnel.over
+revenue.funnel.quotes
+revenue.funnel.rate
+revenue.funnel.rateValue
+revenue.funnel.ratio
+revenue.funnel.title
+revenue.funnel.upTo
 revenue.hero.margin
 revenue.hero.marginHint
 revenue.hero.paceCurrent
@@ -4358,6 +5589,23 @@ revenue.pipeline.missingTotal
 revenue.pipeline.oldest
 revenue.pipeline.retainers
 revenue.pipeline.title
+revenue.result.breakEven
+revenue.result.colCoverage
+revenue.result.colFixed
+revenue.result.colLabor
+revenue.result.colMonth
+revenue.result.colResult
+revenue.result.colRevenue
+revenue.result.colVariable
+revenue.result.expectedOn
+revenue.result.month
+revenue.result.noFixed
+revenue.result.noRate
+revenue.result.notThisMonth
+revenue.result.partial
+revenue.result.reached
+revenue.result.reachedOn
+revenue.result.title
 revenue.review.decisions
 revenue.review.empty
 revenue.review.exclude
@@ -4463,11 +5711,20 @@ revenue.yoy.toDateAlone
 revenue.yoy.toDateVs
 revenue.yoy.tooltipCumul
 
---- sv.ts keys=367 values-sha256=129d7ddb1591033f
+--- sv.ts keys=471 values-sha256=6560aa1329661173
 missing=[] extra=[]
 same-as-en=5 non-string=[]
 placeholder-drift=[]
 nav.revenue
+revenue.aging.d30
+revenue.aging.d60
+revenue.aging.d90
+revenue.aging.days
+revenue.aging.dso
+revenue.aging.notDue
+revenue.aging.ofWhichLate
+revenue.aging.over
+revenue.aging.title
 revenue.amounts
 revenue.analysis.classHint
 revenue.analysis.classLabel
@@ -4497,6 +5754,23 @@ revenue.breakdown.label
 revenue.breakdown.labor
 revenue.breakdown.margin
 revenue.breakdown.wear
+revenue.bridge.current
+revenue.bridge.empty
+revenue.bridge.items
+revenue.bridge.kindLost
+revenue.bridge.kindNew
+revenue.bridge.lost
+revenue.bridge.mix
+revenue.bridge.mixHint
+revenue.bridge.new
+revenue.bridge.noPrevious
+revenue.bridge.previous
+revenue.bridge.price
+revenue.bridge.priceHint
+revenue.bridge.title
+revenue.bridge.versus
+revenue.bridge.volume
+revenue.bridge.volumeHint
 revenue.calendar.credit
 revenue.calendar.gridLabel
 revenue.calendar.less
@@ -4560,7 +5834,33 @@ revenue.chart.title.day
 revenue.chart.title.month
 revenue.chart.title.week
 revenue.chart.title.year
+revenue.chart.trend
+revenue.chart.trendSlope.day
+revenue.chart.trendSlope.month
+revenue.chart.trendSlope.week
+revenue.chart.trendSlope.year
 revenue.chart.values
+revenue.cohorts.after
+revenue.cohorts.cell
+revenue.cohorts.colCustomer
+revenue.cohorts.colLast
+revenue.cohorts.colRevenue
+revenue.cohorts.colSince
+revenue.cohorts.colUsual
+revenue.cohorts.days
+revenue.cohorts.everyDays
+revenue.cohorts.intro
+revenue.cohorts.ltvCustomers
+revenue.cohorts.ltvEmpty
+revenue.cohorts.ltvIntro
+revenue.cohorts.ltvTitle
+revenue.cohorts.month
+revenue.cohorts.perCustomer
+revenue.cohorts.riskEmpty
+revenue.cohorts.riskIntro
+revenue.cohorts.riskTitle
+revenue.cohorts.size
+revenue.cohorts.title
 revenue.controls.all
 revenue.controls.auto
 revenue.controls.autoHint
@@ -4640,6 +5940,41 @@ revenue.finding.targetBehind.lead
 revenue.finding.targetBehind.rest
 revenue.finding.targetLevel.lead
 revenue.finding.targetLevel.rest
+revenue.fixedCosts.add
+revenue.fixedCosts.empty
+revenue.fixedCosts.failed
+revenue.fixedCosts.hideMenu
+revenue.fixedCosts.intro
+revenue.fixedCosts.invalid
+revenue.fixedCosts.label
+revenue.fixedCosts.menu
+revenue.fixedCosts.monthly
+revenue.fixedCosts.remove
+revenue.fixedCosts.save
+revenue.fixedCosts.saved
+revenue.fixedCosts.title
+revenue.fixedCosts.total
+revenue.forecast.d30
+revenue.forecast.d60
+revenue.forecast.d90
+revenue.forecast.split
+revenue.forecast.title
+revenue.funnel.accepted
+revenue.funnel.awaiting
+revenue.funnel.between
+revenue.funnel.days
+revenue.funnel.decided
+revenue.funnel.declined
+revenue.funnel.delay
+revenue.funnel.empty
+revenue.funnel.expired
+revenue.funnel.over
+revenue.funnel.quotes
+revenue.funnel.rate
+revenue.funnel.rateValue
+revenue.funnel.ratio
+revenue.funnel.title
+revenue.funnel.upTo
 revenue.hero.margin
 revenue.hero.marginHint
 revenue.hero.paceCurrent
@@ -4730,6 +6065,23 @@ revenue.pipeline.missingTotal
 revenue.pipeline.oldest
 revenue.pipeline.retainers
 revenue.pipeline.title
+revenue.result.breakEven
+revenue.result.colCoverage
+revenue.result.colFixed
+revenue.result.colLabor
+revenue.result.colMonth
+revenue.result.colResult
+revenue.result.colRevenue
+revenue.result.colVariable
+revenue.result.expectedOn
+revenue.result.month
+revenue.result.noFixed
+revenue.result.noRate
+revenue.result.notThisMonth
+revenue.result.partial
+revenue.result.reached
+revenue.result.reachedOn
+revenue.result.title
 revenue.review.decisions
 revenue.review.empty
 revenue.review.exclude
@@ -4835,11 +6187,20 @@ revenue.yoy.toDateAlone
 revenue.yoy.toDateVs
 revenue.yoy.tooltipCumul
 
---- tr.ts keys=367 values-sha256=e8fa36ecfffd4099
+--- tr.ts keys=471 values-sha256=2a3ab10db4191bd6
 missing=[] extra=[]
 same-as-en=4 non-string=[]
 placeholder-drift=[]
 nav.revenue
+revenue.aging.d30
+revenue.aging.d60
+revenue.aging.d90
+revenue.aging.days
+revenue.aging.dso
+revenue.aging.notDue
+revenue.aging.ofWhichLate
+revenue.aging.over
+revenue.aging.title
 revenue.amounts
 revenue.analysis.classHint
 revenue.analysis.classLabel
@@ -4869,6 +6230,23 @@ revenue.breakdown.label
 revenue.breakdown.labor
 revenue.breakdown.margin
 revenue.breakdown.wear
+revenue.bridge.current
+revenue.bridge.empty
+revenue.bridge.items
+revenue.bridge.kindLost
+revenue.bridge.kindNew
+revenue.bridge.lost
+revenue.bridge.mix
+revenue.bridge.mixHint
+revenue.bridge.new
+revenue.bridge.noPrevious
+revenue.bridge.previous
+revenue.bridge.price
+revenue.bridge.priceHint
+revenue.bridge.title
+revenue.bridge.versus
+revenue.bridge.volume
+revenue.bridge.volumeHint
 revenue.calendar.credit
 revenue.calendar.gridLabel
 revenue.calendar.less
@@ -4932,7 +6310,33 @@ revenue.chart.title.day
 revenue.chart.title.month
 revenue.chart.title.week
 revenue.chart.title.year
+revenue.chart.trend
+revenue.chart.trendSlope.day
+revenue.chart.trendSlope.month
+revenue.chart.trendSlope.week
+revenue.chart.trendSlope.year
 revenue.chart.values
+revenue.cohorts.after
+revenue.cohorts.cell
+revenue.cohorts.colCustomer
+revenue.cohorts.colLast
+revenue.cohorts.colRevenue
+revenue.cohorts.colSince
+revenue.cohorts.colUsual
+revenue.cohorts.days
+revenue.cohorts.everyDays
+revenue.cohorts.intro
+revenue.cohorts.ltvCustomers
+revenue.cohorts.ltvEmpty
+revenue.cohorts.ltvIntro
+revenue.cohorts.ltvTitle
+revenue.cohorts.month
+revenue.cohorts.perCustomer
+revenue.cohorts.riskEmpty
+revenue.cohorts.riskIntro
+revenue.cohorts.riskTitle
+revenue.cohorts.size
+revenue.cohorts.title
 revenue.controls.all
 revenue.controls.auto
 revenue.controls.autoHint
@@ -5012,6 +6416,41 @@ revenue.finding.targetBehind.lead
 revenue.finding.targetBehind.rest
 revenue.finding.targetLevel.lead
 revenue.finding.targetLevel.rest
+revenue.fixedCosts.add
+revenue.fixedCosts.empty
+revenue.fixedCosts.failed
+revenue.fixedCosts.hideMenu
+revenue.fixedCosts.intro
+revenue.fixedCosts.invalid
+revenue.fixedCosts.label
+revenue.fixedCosts.menu
+revenue.fixedCosts.monthly
+revenue.fixedCosts.remove
+revenue.fixedCosts.save
+revenue.fixedCosts.saved
+revenue.fixedCosts.title
+revenue.fixedCosts.total
+revenue.forecast.d30
+revenue.forecast.d60
+revenue.forecast.d90
+revenue.forecast.split
+revenue.forecast.title
+revenue.funnel.accepted
+revenue.funnel.awaiting
+revenue.funnel.between
+revenue.funnel.days
+revenue.funnel.decided
+revenue.funnel.declined
+revenue.funnel.delay
+revenue.funnel.empty
+revenue.funnel.expired
+revenue.funnel.over
+revenue.funnel.quotes
+revenue.funnel.rate
+revenue.funnel.rateValue
+revenue.funnel.ratio
+revenue.funnel.title
+revenue.funnel.upTo
 revenue.hero.margin
 revenue.hero.marginHint
 revenue.hero.paceCurrent
@@ -5102,6 +6541,23 @@ revenue.pipeline.missingTotal
 revenue.pipeline.oldest
 revenue.pipeline.retainers
 revenue.pipeline.title
+revenue.result.breakEven
+revenue.result.colCoverage
+revenue.result.colFixed
+revenue.result.colLabor
+revenue.result.colMonth
+revenue.result.colResult
+revenue.result.colRevenue
+revenue.result.colVariable
+revenue.result.expectedOn
+revenue.result.month
+revenue.result.noFixed
+revenue.result.noRate
+revenue.result.notThisMonth
+revenue.result.partial
+revenue.result.reached
+revenue.result.reachedOn
+revenue.result.title
 revenue.review.decisions
 revenue.review.empty
 revenue.review.exclude
@@ -5207,11 +6663,20 @@ revenue.yoy.toDateAlone
 revenue.yoy.toDateVs
 revenue.yoy.tooltipCumul
 
---- uk.ts keys=367 values-sha256=4d23661cd1dd3e2b
+--- uk.ts keys=471 values-sha256=e2e179fd37fd97dc
 missing=[] extra=[]
 same-as-en=3 non-string=[]
 placeholder-drift=[]
 nav.revenue
+revenue.aging.d30
+revenue.aging.d60
+revenue.aging.d90
+revenue.aging.days
+revenue.aging.dso
+revenue.aging.notDue
+revenue.aging.ofWhichLate
+revenue.aging.over
+revenue.aging.title
 revenue.amounts
 revenue.analysis.classHint
 revenue.analysis.classLabel
@@ -5241,6 +6706,23 @@ revenue.breakdown.label
 revenue.breakdown.labor
 revenue.breakdown.margin
 revenue.breakdown.wear
+revenue.bridge.current
+revenue.bridge.empty
+revenue.bridge.items
+revenue.bridge.kindLost
+revenue.bridge.kindNew
+revenue.bridge.lost
+revenue.bridge.mix
+revenue.bridge.mixHint
+revenue.bridge.new
+revenue.bridge.noPrevious
+revenue.bridge.previous
+revenue.bridge.price
+revenue.bridge.priceHint
+revenue.bridge.title
+revenue.bridge.versus
+revenue.bridge.volume
+revenue.bridge.volumeHint
 revenue.calendar.credit
 revenue.calendar.gridLabel
 revenue.calendar.less
@@ -5304,7 +6786,33 @@ revenue.chart.title.day
 revenue.chart.title.month
 revenue.chart.title.week
 revenue.chart.title.year
+revenue.chart.trend
+revenue.chart.trendSlope.day
+revenue.chart.trendSlope.month
+revenue.chart.trendSlope.week
+revenue.chart.trendSlope.year
 revenue.chart.values
+revenue.cohorts.after
+revenue.cohorts.cell
+revenue.cohorts.colCustomer
+revenue.cohorts.colLast
+revenue.cohorts.colRevenue
+revenue.cohorts.colSince
+revenue.cohorts.colUsual
+revenue.cohorts.days
+revenue.cohorts.everyDays
+revenue.cohorts.intro
+revenue.cohorts.ltvCustomers
+revenue.cohorts.ltvEmpty
+revenue.cohorts.ltvIntro
+revenue.cohorts.ltvTitle
+revenue.cohorts.month
+revenue.cohorts.perCustomer
+revenue.cohorts.riskEmpty
+revenue.cohorts.riskIntro
+revenue.cohorts.riskTitle
+revenue.cohorts.size
+revenue.cohorts.title
 revenue.controls.all
 revenue.controls.auto
 revenue.controls.autoHint
@@ -5384,6 +6892,41 @@ revenue.finding.targetBehind.lead
 revenue.finding.targetBehind.rest
 revenue.finding.targetLevel.lead
 revenue.finding.targetLevel.rest
+revenue.fixedCosts.add
+revenue.fixedCosts.empty
+revenue.fixedCosts.failed
+revenue.fixedCosts.hideMenu
+revenue.fixedCosts.intro
+revenue.fixedCosts.invalid
+revenue.fixedCosts.label
+revenue.fixedCosts.menu
+revenue.fixedCosts.monthly
+revenue.fixedCosts.remove
+revenue.fixedCosts.save
+revenue.fixedCosts.saved
+revenue.fixedCosts.title
+revenue.fixedCosts.total
+revenue.forecast.d30
+revenue.forecast.d60
+revenue.forecast.d90
+revenue.forecast.split
+revenue.forecast.title
+revenue.funnel.accepted
+revenue.funnel.awaiting
+revenue.funnel.between
+revenue.funnel.days
+revenue.funnel.decided
+revenue.funnel.declined
+revenue.funnel.delay
+revenue.funnel.empty
+revenue.funnel.expired
+revenue.funnel.over
+revenue.funnel.quotes
+revenue.funnel.rate
+revenue.funnel.rateValue
+revenue.funnel.ratio
+revenue.funnel.title
+revenue.funnel.upTo
 revenue.hero.margin
 revenue.hero.marginHint
 revenue.hero.paceCurrent
@@ -5474,6 +7017,23 @@ revenue.pipeline.missingTotal
 revenue.pipeline.oldest
 revenue.pipeline.retainers
 revenue.pipeline.title
+revenue.result.breakEven
+revenue.result.colCoverage
+revenue.result.colFixed
+revenue.result.colLabor
+revenue.result.colMonth
+revenue.result.colResult
+revenue.result.colRevenue
+revenue.result.colVariable
+revenue.result.expectedOn
+revenue.result.month
+revenue.result.noFixed
+revenue.result.noRate
+revenue.result.notThisMonth
+revenue.result.partial
+revenue.result.reached
+revenue.result.reachedOn
+revenue.result.title
 revenue.review.decisions
 revenue.review.empty
 revenue.review.exclude
@@ -5579,11 +7139,20 @@ revenue.yoy.toDateAlone
 revenue.yoy.toDateVs
 revenue.yoy.tooltipCumul
 
---- zh-CN.ts keys=367 values-sha256=47f20f0a4994759f
+--- zh-CN.ts keys=471 values-sha256=052963492e91b05c
 missing=[] extra=[]
 same-as-en=3 non-string=[]
 placeholder-drift=[]
 nav.revenue
+revenue.aging.d30
+revenue.aging.d60
+revenue.aging.d90
+revenue.aging.days
+revenue.aging.dso
+revenue.aging.notDue
+revenue.aging.ofWhichLate
+revenue.aging.over
+revenue.aging.title
 revenue.amounts
 revenue.analysis.classHint
 revenue.analysis.classLabel
@@ -5613,6 +7182,23 @@ revenue.breakdown.label
 revenue.breakdown.labor
 revenue.breakdown.margin
 revenue.breakdown.wear
+revenue.bridge.current
+revenue.bridge.empty
+revenue.bridge.items
+revenue.bridge.kindLost
+revenue.bridge.kindNew
+revenue.bridge.lost
+revenue.bridge.mix
+revenue.bridge.mixHint
+revenue.bridge.new
+revenue.bridge.noPrevious
+revenue.bridge.previous
+revenue.bridge.price
+revenue.bridge.priceHint
+revenue.bridge.title
+revenue.bridge.versus
+revenue.bridge.volume
+revenue.bridge.volumeHint
 revenue.calendar.credit
 revenue.calendar.gridLabel
 revenue.calendar.less
@@ -5676,7 +7262,33 @@ revenue.chart.title.day
 revenue.chart.title.month
 revenue.chart.title.week
 revenue.chart.title.year
+revenue.chart.trend
+revenue.chart.trendSlope.day
+revenue.chart.trendSlope.month
+revenue.chart.trendSlope.week
+revenue.chart.trendSlope.year
 revenue.chart.values
+revenue.cohorts.after
+revenue.cohorts.cell
+revenue.cohorts.colCustomer
+revenue.cohorts.colLast
+revenue.cohorts.colRevenue
+revenue.cohorts.colSince
+revenue.cohorts.colUsual
+revenue.cohorts.days
+revenue.cohorts.everyDays
+revenue.cohorts.intro
+revenue.cohorts.ltvCustomers
+revenue.cohorts.ltvEmpty
+revenue.cohorts.ltvIntro
+revenue.cohorts.ltvTitle
+revenue.cohorts.month
+revenue.cohorts.perCustomer
+revenue.cohorts.riskEmpty
+revenue.cohorts.riskIntro
+revenue.cohorts.riskTitle
+revenue.cohorts.size
+revenue.cohorts.title
 revenue.controls.all
 revenue.controls.auto
 revenue.controls.autoHint
@@ -5756,6 +7368,41 @@ revenue.finding.targetBehind.lead
 revenue.finding.targetBehind.rest
 revenue.finding.targetLevel.lead
 revenue.finding.targetLevel.rest
+revenue.fixedCosts.add
+revenue.fixedCosts.empty
+revenue.fixedCosts.failed
+revenue.fixedCosts.hideMenu
+revenue.fixedCosts.intro
+revenue.fixedCosts.invalid
+revenue.fixedCosts.label
+revenue.fixedCosts.menu
+revenue.fixedCosts.monthly
+revenue.fixedCosts.remove
+revenue.fixedCosts.save
+revenue.fixedCosts.saved
+revenue.fixedCosts.title
+revenue.fixedCosts.total
+revenue.forecast.d30
+revenue.forecast.d60
+revenue.forecast.d90
+revenue.forecast.split
+revenue.forecast.title
+revenue.funnel.accepted
+revenue.funnel.awaiting
+revenue.funnel.between
+revenue.funnel.days
+revenue.funnel.decided
+revenue.funnel.declined
+revenue.funnel.delay
+revenue.funnel.empty
+revenue.funnel.expired
+revenue.funnel.over
+revenue.funnel.quotes
+revenue.funnel.rate
+revenue.funnel.rateValue
+revenue.funnel.ratio
+revenue.funnel.title
+revenue.funnel.upTo
 revenue.hero.margin
 revenue.hero.marginHint
 revenue.hero.paceCurrent
@@ -5846,6 +7493,23 @@ revenue.pipeline.missingTotal
 revenue.pipeline.oldest
 revenue.pipeline.retainers
 revenue.pipeline.title
+revenue.result.breakEven
+revenue.result.colCoverage
+revenue.result.colFixed
+revenue.result.colLabor
+revenue.result.colMonth
+revenue.result.colResult
+revenue.result.colRevenue
+revenue.result.colVariable
+revenue.result.expectedOn
+revenue.result.month
+revenue.result.noFixed
+revenue.result.noRate
+revenue.result.notThisMonth
+revenue.result.partial
+revenue.result.reached
+revenue.result.reachedOn
+revenue.result.title
 revenue.review.decisions
 revenue.review.empty
 revenue.review.exclude
@@ -5951,11 +7615,20 @@ revenue.yoy.toDateAlone
 revenue.yoy.toDateVs
 revenue.yoy.tooltipCumul
 
---- zh-TW.ts keys=367 values-sha256=5f9034205bbf5614
+--- zh-TW.ts keys=471 values-sha256=d2f70e993bee0b92
 missing=[] extra=[]
 same-as-en=3 non-string=[]
 placeholder-drift=[]
 nav.revenue
+revenue.aging.d30
+revenue.aging.d60
+revenue.aging.d90
+revenue.aging.days
+revenue.aging.dso
+revenue.aging.notDue
+revenue.aging.ofWhichLate
+revenue.aging.over
+revenue.aging.title
 revenue.amounts
 revenue.analysis.classHint
 revenue.analysis.classLabel
@@ -5985,6 +7658,23 @@ revenue.breakdown.label
 revenue.breakdown.labor
 revenue.breakdown.margin
 revenue.breakdown.wear
+revenue.bridge.current
+revenue.bridge.empty
+revenue.bridge.items
+revenue.bridge.kindLost
+revenue.bridge.kindNew
+revenue.bridge.lost
+revenue.bridge.mix
+revenue.bridge.mixHint
+revenue.bridge.new
+revenue.bridge.noPrevious
+revenue.bridge.previous
+revenue.bridge.price
+revenue.bridge.priceHint
+revenue.bridge.title
+revenue.bridge.versus
+revenue.bridge.volume
+revenue.bridge.volumeHint
 revenue.calendar.credit
 revenue.calendar.gridLabel
 revenue.calendar.less
@@ -6048,7 +7738,33 @@ revenue.chart.title.day
 revenue.chart.title.month
 revenue.chart.title.week
 revenue.chart.title.year
+revenue.chart.trend
+revenue.chart.trendSlope.day
+revenue.chart.trendSlope.month
+revenue.chart.trendSlope.week
+revenue.chart.trendSlope.year
 revenue.chart.values
+revenue.cohorts.after
+revenue.cohorts.cell
+revenue.cohorts.colCustomer
+revenue.cohorts.colLast
+revenue.cohorts.colRevenue
+revenue.cohorts.colSince
+revenue.cohorts.colUsual
+revenue.cohorts.days
+revenue.cohorts.everyDays
+revenue.cohorts.intro
+revenue.cohorts.ltvCustomers
+revenue.cohorts.ltvEmpty
+revenue.cohorts.ltvIntro
+revenue.cohorts.ltvTitle
+revenue.cohorts.month
+revenue.cohorts.perCustomer
+revenue.cohorts.riskEmpty
+revenue.cohorts.riskIntro
+revenue.cohorts.riskTitle
+revenue.cohorts.size
+revenue.cohorts.title
 revenue.controls.all
 revenue.controls.auto
 revenue.controls.autoHint
@@ -6128,6 +7844,41 @@ revenue.finding.targetBehind.lead
 revenue.finding.targetBehind.rest
 revenue.finding.targetLevel.lead
 revenue.finding.targetLevel.rest
+revenue.fixedCosts.add
+revenue.fixedCosts.empty
+revenue.fixedCosts.failed
+revenue.fixedCosts.hideMenu
+revenue.fixedCosts.intro
+revenue.fixedCosts.invalid
+revenue.fixedCosts.label
+revenue.fixedCosts.menu
+revenue.fixedCosts.monthly
+revenue.fixedCosts.remove
+revenue.fixedCosts.save
+revenue.fixedCosts.saved
+revenue.fixedCosts.title
+revenue.fixedCosts.total
+revenue.forecast.d30
+revenue.forecast.d60
+revenue.forecast.d90
+revenue.forecast.split
+revenue.forecast.title
+revenue.funnel.accepted
+revenue.funnel.awaiting
+revenue.funnel.between
+revenue.funnel.days
+revenue.funnel.decided
+revenue.funnel.declined
+revenue.funnel.delay
+revenue.funnel.empty
+revenue.funnel.expired
+revenue.funnel.over
+revenue.funnel.quotes
+revenue.funnel.rate
+revenue.funnel.rateValue
+revenue.funnel.ratio
+revenue.funnel.title
+revenue.funnel.upTo
 revenue.hero.margin
 revenue.hero.marginHint
 revenue.hero.paceCurrent
@@ -6218,6 +7969,23 @@ revenue.pipeline.missingTotal
 revenue.pipeline.oldest
 revenue.pipeline.retainers
 revenue.pipeline.title
+revenue.result.breakEven
+revenue.result.colCoverage
+revenue.result.colFixed
+revenue.result.colLabor
+revenue.result.colMonth
+revenue.result.colResult
+revenue.result.colRevenue
+revenue.result.colVariable
+revenue.result.expectedOn
+revenue.result.month
+revenue.result.noFixed
+revenue.result.noRate
+revenue.result.notThisMonth
+revenue.result.partial
+revenue.result.reached
+revenue.result.reachedOn
+revenue.result.title
 revenue.review.decisions
 revenue.review.empty
 revenue.review.exclude

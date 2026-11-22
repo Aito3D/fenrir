@@ -8506,11 +8506,58 @@
  },
  "cash": {
   "build_cash": {
+   "aging": {
+    "buckets": {
+     "d30": 0,
+     "d60": 8500,
+     "d90": 0,
+     "notDue": 2000,
+     "over": 200
+    },
+    "byCustomer": [
+     {
+      "balance": 7000,
+      "customerName": "Client",
+      "oldestDays": 38,
+      "overdue": 7000
+     },
+     {
+      "balance": 3500,
+      "customerName": "Client",
+      "oldestDays": 60,
+      "overdue": 1500
+     },
+     {
+      "balance": 200,
+      "customerName": "Client",
+      "oldestDays": 161,
+      "overdue": 200
+     }
+    ]
+   },
    "coverage": {
     "known": 26300,
     "unknown": 1400
    },
+   "dso": null,
    "error": null,
+   "forecast": [
+    {
+     "invoices": 10700,
+     "orders": 0,
+     "window": "d30"
+    },
+    {
+     "invoices": 0,
+     "orders": 0,
+     "window": "d60"
+    },
+    {
+     "invoices": 0,
+     "orders": 0,
+     "window": "d90"
+    }
+   ],
    "months": [
     {
      "collected": 0,
@@ -8620,11 +8667,39 @@
    ]
   },
   "build_cash_empty": {
+   "aging": {
+    "buckets": {
+     "d30": 0,
+     "d60": 0,
+     "d90": 0,
+     "notDue": 0,
+     "over": 0
+    },
+    "byCustomer": []
+   },
    "coverage": {
     "known": 0,
     "unknown": 0
    },
+   "dso": null,
    "error": "boom",
+   "forecast": [
+    {
+     "invoices": 0,
+     "orders": 0,
+     "window": "d30"
+    },
+    {
+     "invoices": 0,
+     "orders": 0,
+     "window": "d60"
+    },
+    {
+     "invoices": 0,
+     "orders": 0,
+     "window": "d90"
+    }
+   ],
    "months": [
     {
      "collected": 0,
