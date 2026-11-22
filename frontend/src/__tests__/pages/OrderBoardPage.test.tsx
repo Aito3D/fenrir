@@ -1281,7 +1281,8 @@ describe('OrderBoardPage Devis side', () => {
       await user.click(await screen.findByText('Nautic Service'));
       await waitFor(() => expect(window.location.search).toContain('quote=e1'));
       expect(screen.queryByRole('button', { name: 'New quote' })).not.toBeInTheDocument();
-      await user.click(screen.getByText('Nautic Service'));
+      // The opened quote's contact block repeats the name once it has loaded: the row is the first match.
+      await user.click(screen.getAllByText('Nautic Service')[0]);
       await waitFor(() => expect(window.location.search).not.toContain('quote='));
       expect(await screen.findByRole('button', { name: 'New quote' })).toBeInTheDocument();
     } finally {
