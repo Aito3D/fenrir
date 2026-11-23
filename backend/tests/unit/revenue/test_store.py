@@ -458,6 +458,35 @@ async def test_a_scope_decision_forgets_every_invoice_share_so_the_cash_step_re_
     assert inv["share"] is None
 
 
+async def test_a_share_computed_before_a_scope_change_is_left_queued(engine, db):
+    row = {
+        "invoice_id": "inv1",
+        "number": "INV-1",
+        "customer_id": "c1",
+        "customer_name": "C",
+        "date": "2026-10-01",
+        "due_date": "2026-10-10",
+        "total": 100.0,
+        "balance": 100.0,
+        "share": 0.5,
+    }
+    for change in (
+        lambda: store.set_decision(db, "i9", True, NOW),
+        lambda: store.set_decision(db, "i9", True, NOW),  # re-set to the same value still invalidates
+        lambda: store.clear_decision(db, "i-none"),  # a delete that matches nothing still invalidates
+    ):
+        generation = store._current_decisions_generation()
+        await change()
+        await store.save_invoice_detail(db, dict(row), NOW, generation)
+        async with store.snapshot(engine) as conn:
+            [inv] = await store.read_invoice_shares(conn)
+        assert inv["share"] is None
+    await store.save_invoice_detail(db, dict(row), NOW, store._current_decisions_generation())
+    async with store.snapshot(engine) as conn:
+        [inv] = await store.read_invoice_shares(conn)
+    assert inv["share"] == 0.5
+
+
 async def test_the_shops_own_production_line_is_a_transfer_not_a_sale(engine, db):
     from backend.app.models.revenue import RevenueCustomer
 
@@ -468,3 +497,49 @@ async def test_the_shops_own_production_line_is_a_transfer_not_a_sale(engine, db
     assert [x.customer_id for x in await read_lines(engine, "2026-05-15", "2026-05-15")] == ["c-real"]
     async with store.snapshot(engine) as conn:
         assert [x.customer_id for x in await store.customer_item_first_lines(conn)] == ["c-real"]
+
+
+async def _shared_invoice(engine, db, items):
+    await store.replace_items(db, items, NOW)
+    row = {
+        "invoice_id": "inv1",
+        "number": "INV-1",
+        "customer_id": "c1",
+        "customer_name": "C",
+        "date": "2026-10-01",
+        "due_date": "2026-10-10",
+        "total": 100.0,
+        "balance": 100.0,
+        "share": 0.5,
+    }
+    await store.save_invoice_detail(db, row, NOW, store._current_decisions_generation())
+    async with store.snapshot(engine) as conn:
+        return (await store.read_invoice_shares(conn))[0]["share"]
+
+
+async def _share(engine):
+    async with store.snapshot(engine) as conn:
+        return (await store.read_invoice_shares(conn))[0]["share"]
+
+
+async def test_relisting_items_with_a_changed_classification_forgets_the_shares(engine, db):
+    assert await _shared_invoice(engine, db, [{"item_id": "a", "nature": "Filaments"}]) == 0.5
+    generation = store._current_decisions_generation()
+    await store.replace_items(db, [{"item_id": "a", "nature": "Boats"}], LATER)
+    assert await _share(engine) is None
+    assert store._current_decisions_generation() != generation
+
+
+async def test_the_first_item_listing_forgets_shares_pinned_against_no_items(engine, db):
+    assert await _shared_invoice(engine, db, []) == 0.5
+    await store.replace_items(db, [{"item_id": "a", "nature": "Filaments"}], LATER)
+    assert await _share(engine) is None
+
+
+async def test_an_identical_relisting_keeps_the_shares(engine, db):
+    items = [{"item_id": "a", "nature": "Filaments", "brand": "X"}]
+    assert await _shared_invoice(engine, db, items) == 0.5
+    generation = store._current_decisions_generation()
+    await store.replace_items(db, [{**items[0], "name": "renamed"}], LATER)
+    assert await _share(engine) == 0.5
+    assert store._current_decisions_generation() == generation
