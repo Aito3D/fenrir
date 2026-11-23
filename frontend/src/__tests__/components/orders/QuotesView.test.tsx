@@ -95,4 +95,16 @@ describe('QuotesView', () => {
     expect(await screen.findByText('Lycée Vauban')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /^Expired 1/ })).toHaveAttribute('aria-pressed', 'true');
   });
+
+  it('shows the load-failed state and loads the rows after Retry', async () => {
+    const user = userEvent.setup();
+    server.use(http.get('/api/v1/order-board/quotes', () => HttpResponse.json({ detail: 'boom' }, { status: 500 })));
+    show();
+    expect(await screen.findByText('Could not load the quotes.')).toBeInTheDocument();
+    expect(screen.queryByText('Nautic Service')).not.toBeInTheDocument();
+    serve();
+    await user.click(screen.getByRole('button', { name: 'Retry' }));
+    expect(await screen.findByText('Nautic Service')).toBeInTheDocument();
+    expect(screen.queryByText('Could not load the quotes.')).not.toBeInTheDocument();
+  });
 });
