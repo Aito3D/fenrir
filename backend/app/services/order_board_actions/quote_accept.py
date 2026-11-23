@@ -33,6 +33,13 @@ _FLAGS = ("is_inclusive_tax", "discount_type", "is_discount_before_tax")
 _made: dict[str, str] = {}  # estimate_id -> salesorder_id, only orders an accept click created itself
 
 
+def _remember_made(estimate_id: str, salesorder_id: str) -> None:
+    """Record the order an accept click created, dropping the oldest entries past the cap."""
+    _made[estimate_id] = salesorder_id
+    while len(_made) > _KEEP_REFS:
+        del _made[next(iter(_made))]
+
+
 def _made_here(estimate_id: str, salesorder_id: str) -> bool:
     """True while ``salesorder_id`` is the order this board's accept created for the quote (the only one undo may delete)."""
     return _made.get(estimate_id) == salesorder_id
@@ -118,9 +125,7 @@ async def _order_step(db: AsyncSession, estimate_id: str, detail: dict, by: str 
         sync.note_write(salesorder_id)
     logger.info("Order board write: order=%s step=open", salesorder_id)
     if created_here:
-        _made[estimate_id] = salesorder_id
-        while len(_made) > _KEEP_REFS:
-            del _made[next(iter(_made))]
+        _remember_made(estimate_id, salesorder_id)
     await store_new_order(db, created)  # its re-read rebuilds the board
     await _log(db, salesorder_id, "order.created", by)
     await _settle(db, estimate_id, None, by)  # converted now: the quote leaves the rows
@@ -179,7 +184,7 @@ async def undo_accept(db: AsyncSession, estimate_id: str, salesorder_id: str, *,
 async def _payment_in_flight(db: AsyncSession, salesorder_id: str) -> bool:
     """An open payment link or an unfinished terminal charge, read as the order page reads them."""
     link = await current_link(db, ("order", salesorder_id), kind=None)
-    if link is not None and link.status == "pending":  # also a reservation still being minted
+    if link is not None and link.heimdall_id is not None and link.status == "pending":  # minted: a customer may pay it
         return True
     charge = await current_terminal_payment(db, ("order", salesorder_id))
     if charge is None:

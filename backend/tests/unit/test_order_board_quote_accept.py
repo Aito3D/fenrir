@@ -595,12 +595,27 @@ async def test_undo_refused_while_a_payment_is_in_flight(db_session, so_books, l
 
 
 @pytest.mark.asyncio
-async def test_undo_refused_while_a_payment_link_is_still_being_made(db_session, so_books):
+async def test_undo_deletes_when_a_payment_link_reservation_was_never_minted(db_session, so_books):
+    """An unminted pending reservation seen outside the order's lock is no live link: undo goes ahead."""
     await _accepted_on_board(db_session, so_books)
     await _payment_rows(db_session, link="pending", minted=False)
-    with pytest.raises(actions.OrderActionRefused, match="undo_too_late"):
-        await actions.undo_accept(db_session, "e1", "so9", by=None)
-    assert so_books.deleted == []
+    await actions.undo_accept(db_session, "e1", "so9", by=None)
+    assert so_books.deleted == ["so9"]
+
+
+@pytest.mark.asyncio
+async def test_undo_deletes_after_a_failed_payment_link_mint(db_session, so_books):
+    """A failed mint stores sync_error and leaves the reservation pending with no Heimdall id: undo goes ahead."""
+    from sqlalchemy import update
+
+    from backend.app.models.aito_payment_link import AitoPaymentLink
+
+    await _accepted_on_board(db_session, so_books)
+    await _payment_rows(db_session, link="pending", minted=False)
+    await db_session.execute(update(AitoPaymentLink).values(sync_error="HeimdallNotConfigured"))
+    await db_session.commit()
+    await actions.undo_accept(db_session, "e1", "so9", by=None)
+    assert so_books.deleted == ["so9"]
 
 
 @pytest.mark.asyncio
