@@ -1,71 +1,83 @@
-# Refactor loop — final report, campaign O6 (order code, wide)
+# Refactor loop — final report (campaign RV2, Revenue page)
 
-Date: 2026-11-21 · Branch `auto-refactor-loop` · Based on main `ce593fab9` · BASE `f827bb26e` (tag `o6/refactor-base`)
+Branch `auto-refactor-loop`, based on upstream `6672584de`. Base tag `refactor-base` (ed4d8c82f).
 
-## Outcome
+## Summary
 
-- **Why it ended:** stopped by the user after iteration 6 ("stop now, merge all and clean"). Not converged, not at MAX_ITER (6 of 8 used).
-- **Iterations:** 6, each verified PASS by a blind verifier. Tags `o6/loop-1` … `o6/loop-6`.
-- **Survey rounds:** 2 of 3.
-- **Tasks:** 18 filed in the plan · 17 DONE · 1 OPEN (T-143) · 8 in TRIAGE.md.
-- **Diff vs BASE:** 25 files, +818 / −111 (mostly tests).
+- Iterations run: 2 of 8 · survey rounds completed: 2 of 3
+- Commits: 3. They are the setup commit, `loop-1` (64214cad1) and `loop-2` (ea1305de6). This report is a fourth commit.
+- Tags: `refactor-base`, `loop-1`, `loop-2`
+- **Why it ended:** the user stopped the campaign after iteration 2, before the round-3 survey. It did not converge or hit MAX_ROUNDS or MAX_ITER.
+- Diff: 7 files, +229 / −5. Production changes are in `services/revenue/store.py`, `services/revenue/sync.py` and `routes/revenue.py`; the rest is tests and BASELINE-CHANGELOG.md.
 
-## Scope
+## User-approved behavior changes
 
-The services and integrations under the order page: `zoho.py`, `heimdall.py`, `aito_{payment_links,terminal_payments,manual_payments,customer_credit,payment_documents,client_rating,events,tracking}.py`, routes `aito_payments.py`, `zoho.py`, `heimdall.py`; the order-board services, actions and sync; `OrderTrackPage`; plus O5's 8 leftovers on routes/order_board and components/orders. Out of scope: `aito.py`, `aito_quote_sync.py`. Seven files with uncommitted edits in the primary checkout were hands-off and never touched.
+These are all in BASELINE-CHANGELOG.md:
 
-## User-approved behaviour changes (BASELINE-CHANGELOG.md)
+- **T-010** (approved after the fact): a cash refresh no longer saves an invoice share computed before a scope change. The share is left queued and is re-read later.
+- **T-011:** when Zoho re-lists items and the nature or brand of an item changes, the stored invoice shares are cleared.
+- **T-012:** when the month check gets a 5xx from Zoho, the month is set to retry and the cash refresh still runs.
+- **T-021** (approved after the fact; widens T-011): the T-011 comparison also looks at item name and item type.
+- **T-022:** `/pvm` with a `from` date before the revenue history start returns a 422 instead of a 500.
 
-| Task | Where | What the operator sees now |
-|---|---|---|
-| T-136 | `order_board_sync/_finished.py` | A finished order keeps its unused quote deposit after a re-read: "left to pay", payment caps and apply-credit are right again. |
-| T-135 | `order_board_actions/create.py` | A new walk-in order is on the board (and in the create response) at once. |
-| T-137 | `order_board_sync/_catalog.py` | The item-catalogue refresh re-checks the Zoho budget per page, resumes a cut-short sweep on the next pass, backs off 5 min after a real failure. |
-| T-128 | `routes/heimdall.py` | Heimdall Test uses a typed URL only together with a typed token; never signs the saved key for a typed URL. |
-| T-142 | `aito_payment_documents.py` | A settled link/terminal payment labels a board event of the same amount, else a summed one (board amount kept), else records its own event. Residual: a board amount below the settled one can still be told twice. |
-| T-144 | `order_board_actions/create.py` | A counter order whose confirm and clean-up void both failed goes into the pending-void retry (then `order.void_failed`). |
-| T-145 | `routes/order_board/payment.py` | A manual payment and a terminal charge on the same order are serialised; the second gets 409 "A payment is already in progress for this order". |
+T-020 (the share save re-checks the scope generation at commit time) is covered by the T-010 entry.
 
-## What each survey round found
+## Survey rounds
 
 | Round | Security | Robustness | Cleanliness | Tests |
 |---|---|---|---|---|
-| 1 | 1 (T-128) | 3 (T-135..T-137) | clean (partial: machine load ~200) | 2 + 4 triaged |
-| 2 | clean | 4 (T-142..T-145) | 3 triaged | 1 triaged |
+| 1 | clean | 3 filed (T-010 P1; T-011, T-012 behavior changes, approved) | 3 triaged | 6 triaged |
+| 2 | clean | 1 filed (T-022, approved); 3 triaged (T-020, T-021 promoted by the user; T-023 left) | 3 triaged | 4 triaged |
 
-## Findings by auditor (plan.py stats)
+## Findings by auditor
 
-| Source | DONE | OPEN | Triaged |
-|---|---|---|---|
-| audit-security | 1 | 0 | 0 |
-| audit-robustness | 6 | 1 (T-143) | 0 |
-| audit-cleanliness | 0 | 0 | 3 (T-139..T-141) |
-| audit-tests | 2 | 0 | 5 (T-131..T-134, T-138) |
-| carried from O5 (survey) | 8 | 0 | — |
+| Auditor | Filed to PLAN | DONE | BLOCKED | WONTFIX-AUTO | Triaged this campaign |
+|---|---|---|---|---|---|
+| audit-security | 0 | 0 | 0 | 0 | 0 |
+| audit-robustness | 6 (4 filed directly + 2 promoted) | 6 | 0 | 0 | 3 (2 later promoted) |
+| audit-cleanliness | 0 | 0 | 0 | 0 | 6 |
+| audit-tests | 0 | 0 | 0 | 0 | 10 |
 
-## Done, by iteration
+- 19 findings were triaged in total. 2 were promoted, so 17 remain in TRIAGE.md.
+- TRIAGE.md is untracked and holds the full evidence for each one.
+- To work one, run `python3 tools/plan.py promote T-xxx --iteration N`. The `--iteration` flag is required.
 
-| Tag | Tasks |
-|---|---|
-| loop-1 | T-129, T-130 payment-link failure tests · T-136 |
-| loop-2 | T-135 · T-137 · T-120 board.py docstring |
-| loop-3 | T-121, T-122, T-123 order panel dedupes |
-| loop-4 | T-124, T-125, T-126 filter and cart tests |
-| loop-5 | T-127 deterministic waits in order tests · T-128 |
-| loop-6 | T-142 · T-144 · T-145 |
+## Verification
 
-Orchestrator review sent three fixes back before verification: T-137 (restart-from-page-1 would never refresh a large catalogue), T-127 (microtask flush made msw-backed negatives vacuous), T-142 (exact-match rule double-listed summed passes; user chose the hybrid).
-
-## Gates
-
-- Coverage (scoped statements): backend 98.37% → 98.50% · frontend 97.35% → 97.67%.
-- Snapshot probes: 31/31 matching (7 re-recorded at setup for post-O5 drift; `orders-http` re-recorded for T-136).
-- SURFACE.md: unchanged.
-- known_broken: the printer-hours time-of-day test, unchanged (passes outside 14:00-24:00).
-- Load flakes seen and cleared by isolated reruns: PrintModal, FileManagerPage, StreamOverlayPage, ArchivesPage, OrderPackFlow, NotificationBell, timelapse_clock_match, oidc/mfa; `test_order_board_actions.py` fails when a run spans midnight (T-138).
+- **Coverage (scoped statements):** backend 99.05% → 99.06%; frontend 95.21% → 95.21%.
+- **Known-broken tests:** none before, none after.
+- **Golden probes:** 9/9 match.
+- **SURFACE.md:** unchanged.
+- **Verifier runs:** each iteration first FAILed because a fix (T-010, then T-021) had no changelog entry yet. After the user approved each one and its changelog entry was committed, the rerun PASSed.
+- **Load flakes:** these failed only under full-suite load and passed when run alone: StreamOverlayPage, PrintModal, FileManagerPage, test_aito_routes import_thousand and the terminal-payments lock test.
 
 ## Left for humans
 
-- **OPEN:** T-143 — order payments don't expire the cached client rating (approved, not worked).
-- **TRIAGE.md:** T-131..T-134 (test gaps), T-138 (midnight test flake), T-139..T-141 (small dedupes). `plan.py promote <id> --iteration N` in a future campaign.
-- Hands-off files' sleeps (`OrderBoardPage.test.tsx`, `OrderPackFlow.test.tsx`) were not reviewed.
+- In PLAN.md, no tasks are OPEN, BLOCKED or WONTFIX-AUTO.
+- These are the 17 triaged findings, kept here at the user's request:
+
+| ID | Pri | Auditor | File | Finding |
+|---|---|---|---|---|
+| T-001 | P2 | tests | services/revenue/sync.py | The page-cap guards in the month check and the item listing (`_DayTooLarge`, `ZohoUpstreamError`) are never exercised |
+| T-002 | P2 | tests | services/revenue/sync.py | The malformed-row warning and the budget-low paths of the background loop and the item refresh are untested |
+| T-004 | P2 | tests | components/revenue/RevenueLabor.tsx | The labor provider's validation bounds, save failure and load-error retry are untested |
+| T-005 | P2 | tests | components/revenue/RevenueFixedCosts.tsx | The fixed-costs editor's failure paths and validation are untested (81.66% covered) |
+| T-013 | P2 | cleanliness | services/revenue/cohorts.py | `cohorts._shift` duplicates `dates._month_shift` |
+| T-014 | P2 | cleanliness | components/revenue/RevenueLabor.tsx | RevenueLabor and RevenueFixedCosts repeat the same load, save, error and retry block |
+| T-016 | P2 | tests | components/revenue/RevenueTable.tsx | The checkOk date is formatted in the machine's local timezone, while the test expects 'Nov 18' |
+| T-017 | P2 | tests | components/revenue/RevenueChart.tsx | The chart tooltip's MarginBreakdown branch, including the margin-mode case with no costParts, is not asserted |
+| T-003 | P3 | tests | api/routes/revenue.py | The from/to date validation (422) and the last-sale loop for dormant products are not covered |
+| T-006 | P3 | tests | components/revenue/RevenueMovers.tsx | RevenueMovers tests use a real 20 ms sleep to prove no refetch happens |
+| T-007 | P3 | cleanliness | api/routes/revenue.py | `get_items` inlines `series.item_breakdown` instead of calling `_breakdown()` |
+| T-008 | P3 | cleanliness | api/routes/revenue.py | The day-range line filter is repeated four times |
+| T-009 | P3 | cleanliness | api/routes/revenue.py | `get_pipeline` and `get_funnel` have near-identical route bodies |
+| T-015 | P3 | cleanliness | components/revenue/RevenueNotes.tsx | Four files each define an INPUT constant with the same input classes |
+| T-018 | P3 | tests | components/revenue/MarginBreakdown.tsx | MarginBreakdown has no unit test; the null-cost fallback and a negative margin are unchecked |
+| T-019 | P3 | tests | components/revenue/RevenuePace.tsx | RevenuePace branches (76% covered) past the target, and the no-sales cases, are not asserted |
+| T-023 | P3 | robustness | services/revenue/store.py | `revenue_data_stamp()` keys labor on `Settings.updated_at`, which has one-second resolution. A second labor save within the same second leaves the GET / memo stale |
+
+## Caveats
+
+- The share-race fixes (T-010, T-020) assume a single backend process.
+- basedpyright was not run in its pinned environment. Locally it reports 75 errors, none of them in touched files, so the CI run is the authority.
+- In T-021, an item with no `name` is compared as an empty string. If Zoho ever omits the name, every re-listing would clear the shares again. That costs extra Zoho reads but does not produce wrong figures.
