@@ -431,3 +431,15 @@ def test_redated_expiry_defaults_to_16_days_when_the_dates_are_unusable(detail):
     from backend.app.services.order_board_actions.quotes import _redated_expiry
 
     assert _redated_expiry(detail) == TODAY + timedelta(days=16)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(("stored", "asked", "sent"), [(12.5, {}, 0), (0, {}, 0), (12.5, {"discount": "5%"}, "5%")])
+async def test_edit_kept_line_with_a_numeric_stored_discount(db_session, books, stored, asked, sent):
+    """Books stores the line discount as a number; the edit replaces it with what was asked, 0 when nothing."""
+    await _stored(db_session, books, _with_line(1, discount=stored))
+    await actions.edit_quote(
+        db_session, "e1", "c1", [{"line_id": "ql1", "item_id": "A", "quantity": 1, **asked}], by=None
+    )
+    assert books.sent[0][2][0]["discount"] == sent
+    assert type(books.sent[0][2][0]["discount"]) is type(sent)

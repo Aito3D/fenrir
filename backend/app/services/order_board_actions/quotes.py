@@ -10,6 +10,7 @@ from backend.app.models.order_board_doc import OrderBoardDoc
 from backend.app.services import order_board_sync as sync
 from backend.app.services.order_board_actions._common import OrderActionRefused, _log, _num, writing
 from backend.app.services.order_board_actions.create import (
+    _check_discount_fits,
     _discount,
     _fingerprint,
     checked_quantity,
@@ -85,8 +86,7 @@ async def edit_quote(
             raw = raws[line_id]
             q = checked_quantity(entry.get("quantity"))
             discount = _discount(entry.get("discount"))
-            if discount is not None and not discount[1] and discount[0] > q * _num(raw.get("rate")) + 1e-9:
-                raise OrderActionRefused("bad_discount")
+            _check_discount_fits(discount, q, _num(raw.get("rate")))
             kept.append(
                 {
                     **{k: raw[k] for k in _KEPT_FIELDS if k in raw},

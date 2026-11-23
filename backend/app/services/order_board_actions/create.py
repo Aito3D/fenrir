@@ -79,6 +79,12 @@ def _discount(raw: str | None) -> tuple[float, bool] | None:
     return value, percent
 
 
+def _check_discount_fits(discount: tuple[float, bool] | None, q: float, rate: float) -> None:
+    """A fixed-amount line discount may not exceed the line total (q x rate)."""
+    if discount is not None and not discount[1] and discount[0] > q * rate + 1e-9:
+        raise OrderActionRefused("bad_discount")
+
+
 async def create_counter_order(
     db: AsyncSession, customer_id: str, lines: list[dict], client_ref: str, *, by: str | None
 ) -> str:
@@ -141,8 +147,7 @@ async def priced_lines(db: AsyncSession, key: str, lines: list[dict]) -> list[di
     body_lines = []
     for item_id, (q, raw, discount) in wanted.items():
         rate = float(_num(items[item_id].get("rate")))
-        if discount is not None and not discount[1] and discount[0] > q * rate + 1e-9:
-            raise OrderActionRefused("bad_discount")
+        _check_discount_fits(discount, q, rate)
         body_lines.append({"item_id": item_id, "quantity": q, "rate": rate, **({"discount": raw} if discount else {})})
     return body_lines
 

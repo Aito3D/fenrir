@@ -603,3 +603,17 @@ async def test_undo_still_deletes_when_the_payment_is_final(db_session, so_books
     await _payment_rows(db_session, link=link, charge=charge)
     await actions.undo_accept(db_session, "e1", "so9", by=None)
     assert so_books.deleted == ["so9"]
+
+
+@pytest.mark.asyncio
+async def test_accept_sends_numeric_line_discounts_as_numbers(db_session, so_books):
+    """Books' prefill states the line discount as a number: 12.5 and a real 0 reach the order as they are."""
+    so_books.prefill_lines = [
+        {**PREFILL_LINE, "item_id": "A", "discount": 12.5},
+        {**PREFILL_LINE, "item_id": "B", "discount": 0},
+    ]
+    await _stored(db_session, so_books, quote(1, status="sent"))
+    await actions.accept_quote(db_session, "e1", by=None)
+    sent = [(line["item_id"], line["discount"]) for line in so_books.so_payloads[0]["line_items"]]
+    assert sent == [("A", 12.5), ("B", 0)]
+    assert [type(d) for _, d in sent] == [float, int]
