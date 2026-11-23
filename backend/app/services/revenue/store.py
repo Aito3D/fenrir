@@ -225,6 +225,20 @@ async def clear_month(db: AsyncSession, month: str) -> int:
     return cast(CursorResult, result).rowcount
 
 
+_decisions_generation = (
+    0  # bumped on every scope change; a cash refresh compares it to drop shares it computed too early
+)
+
+
+def _current_decisions_generation() -> int:
+    return _decisions_generation
+
+
+def _bump_decisions_generation() -> None:
+    global _decisions_generation
+    _decisions_generation += 1
+
+
 async def read_decisions(conn: AsyncConnection) -> list[RevenueDecision]:
     rows = await conn.execute(select(RevenueScopeDecision).order_by(RevenueScopeDecision.item_id))
     return [RevenueDecision(r.item_id, bool(r.included), r.decided_at) for r in rows]
@@ -239,16 +253,20 @@ async def set_decision(db: AsyncSession, item_id: str, included: bool, now: date
         row.included, row.decided_at = included, decided_at
     await _forget_invoice_shares(db)
     await db.commit()
+    _bump_decisions_generation()
     return {"itemId": item_id, "included": included, "decidedAt": decided_at}
 
 
 async def clear_decision(db: AsyncSession, item_id: str) -> bool:
     await _forget_invoice_shares(db)
-    return await _delete_one(db, delete(RevenueScopeDecision).where(RevenueScopeDecision.item_id == item_id))
+    deleted = await _delete_one(db, delete(RevenueScopeDecision).where(RevenueScopeDecision.item_id == item_id))
+    _bump_decisions_generation()
+    return deleted
 
 
 async def _forget_invoice_shares(db: AsyncSession) -> None:
     """A scope decision changes what counts as 3D: the cash step re-reads the invoices it had split."""
+    _bump_decisions_generation()
     await db.execute(update(RevenueInvoiceShare).values(share=None, share_total=None))
 
 
@@ -366,6 +384,11 @@ async def read_scope_items(conn: AsyncConnection) -> dict[str, ScopeItem]:
 async def replace_items(db: AsyncSession, items: list[dict], now: datetime) -> None:
     """Swaps the whole item table for a fresh Zoho listing and stamps the refresh; items are dicts of RevenueItem columns."""
     stamp = now.isoformat()
+    # Only these columns reach classify_revenue_item (name and item_type via service_nature); a change invalidates shares.
+    cols = (RevenueItem.item_id, RevenueItem.nature, RevenueItem.brand, RevenueItem.name, RevenueItem.item_type)
+    old = set((await db.execute(select(*cols))).all())
+    if old != {(i["item_id"], i.get("nature"), i.get("brand"), i.get("name", ""), i.get("item_type")) for i in items}:
+        await _forget_invoice_shares(db)
     await db.execute(delete(RevenueItem))
     if items:
         blank = {c.name: None for c in RevenueItem.__table__.columns}
@@ -525,8 +548,11 @@ async def save_unpaid_invoices(db: AsyncSession, rows: list[dict], zero_missing:
     await db.commit()
 
 
-async def save_invoice_detail(db: AsyncSession, row: dict, now: datetime) -> None:
-    """One read invoice (dict of RevenueInvoiceShare columns, `share` included); the share is pinned to its total."""
+async def save_invoice_detail(db: AsyncSession, row: dict, now: datetime, generation: int | None = None) -> None:
+    """One read invoice (dict of RevenueInvoiceShare columns, `share` included); the share is pinned to its total.
+
+    A `generation` that is no longer current means the scope changed while the share was computed: it stays queued.
+    """
     inv = await db.get(RevenueInvoiceShare, row["invoice_id"])
     if inv is None:
         inv = RevenueInvoiceShare(invoice_id=row["invoice_id"])
@@ -535,6 +561,10 @@ async def save_invoice_detail(db: AsyncSession, row: dict, now: datetime) -> Non
         setattr(inv, k, v)
     inv.share_total = row["total"]
     inv.fetched_at = now.isoformat()
+    # Once flushed this session holds the write lock, so a later scope change forgets after our commit; check here.
+    await db.flush()
+    if generation is not None and generation != _decisions_generation:
+        inv.share = inv.share_total = None
     await db.commit()
 
 

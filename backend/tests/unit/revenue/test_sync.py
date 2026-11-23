@@ -797,6 +797,11 @@ async def cash_rows(engine):
         )
 
 
+async def seed_items():
+    async with database.async_session() as db:
+        await store.replace_items(db, [{"item_id": "seed"}], sync._utcnow())
+
+
 async def refresh_cash():
     async with database.async_session() as db:
         await sync._refresh_cash(db)
@@ -936,6 +941,7 @@ async def test_unpaid_listings_union_and_a_paid_invoice_drops_to_zero_unless_a_l
 
 
 async def test_detail_reads_stay_within_the_budget_payments_first_newest_first(zoho, engine):
+    await seed_items()
     n = SYNC.cash_detail_budget + 5
 
     async def pages(since, page):
@@ -985,6 +991,8 @@ async def test_detail_reads_fill_applications_and_invoice_shares(zoho, engine):
 
 
 async def test_a_payment_deleted_in_books_is_dropped_and_the_others_still_read(zoho, engine):
+    await seed_items()
+
     async def pages(since, page):
         return [payment("gone", "t1"), payment("kept", "t2")], False
 
@@ -1002,6 +1010,8 @@ async def test_a_payment_deleted_in_books_is_dropped_and_the_others_still_read(z
 
 
 async def test_an_invoice_gone_from_books_is_saved_with_no_share_and_not_asked_again(zoho, engine):
+    await seed_items()
+
     async def pages(since, page):
         return [payment("p1", "t1")], False
 
@@ -1115,6 +1125,18 @@ async def test_a_month_check_zoho_refuses_waits_and_does_not_fail_the_batch(with
     assert with_september.range_calls == []
 
 
+async def test_a_month_check_zoho_answers_with_a_5xx_waits_and_the_cash_still_refreshes(with_september, engine):
+    async def range_rows(from_date, to_date, page):
+        raise ZohoAmbiguous("Zoho Books error (HTTP 502)")
+
+    with_september.range_rows = range_rows
+    await sync.run_revenue_sync_batch()
+    r = await sync.run_revenue_sync_batch()
+    assert r["checked"] is None
+    assert [k for k in sync._step_retry if k.startswith("m:")] == ["m:2026-09"]
+    assert "payments" in cash_kinds(with_september)
+
+
 async def test_cash_still_refreshes_while_a_day_waits_out_its_back_off(zoho):
     zoho.sales = _fail_on(BAD_DAY, ZohoRequestRejected("bad day"))
     with pytest.raises(ZohoUpstreamError):
@@ -1135,6 +1157,7 @@ async def test_a_rate_limit_in_the_cash_step_reaches_the_loop(zoho, monkeypatch)
 
 
 async def test_a_refused_cash_detail_is_parked_and_the_step_still_completes(zoho, engine):
+    await seed_items()
     n = SYNC.cash_detail_budget + 1
     ids = [f"p{i:02d}" for i in range(n)]
 
@@ -1159,6 +1182,8 @@ async def test_a_refused_cash_detail_is_parked_and_the_step_still_completes(zoho
 
 
 async def test_a_5xx_invoice_detail_is_parked_while_the_next_one_is_read(zoho, engine):
+    await seed_items()
+
     async def unpaid(status, page):
         return ([invoice("bad", 100), invoice("good", 50)] if status == "unpaid" else []), False
 
@@ -1197,3 +1222,16 @@ def test_a_low_budget_reading_is_not_trusted_after_the_probe_age_and_a_changed_r
     assert sync._budget_low() is True  # a fresh low reading starts its own wait
     sync.reset_revenue_sync_state_for_tests()
     assert sync._low_seen is None
+
+
+async def test_cash_detail_step_waits_for_the_first_item_listing(zoho, engine):
+    async def unpaid(status, page):
+        return ([invoice("open", 100)] if status == "unpaid" else []), False
+
+    zoho.unpaid_pages = unpaid
+    await refresh_cash()
+    assert [c for c in zoho.cash_calls if c[0] in ("payment", "invoice")] == []
+    assert "open" in (await cash_rows(engine))[1]  # the invoice list was still saved
+    await seed_items()
+    await refresh_cash()
+    assert [c for c in zoho.cash_calls if c[0] == "invoice"] == [("invoice", "open")]

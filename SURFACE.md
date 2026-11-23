@@ -22,9 +22,12 @@ key or a test id — and fails the iteration unless the user approved it.
 ['GET'] /api/v1/revenue/annotations get_annotations status=None response_model=None
 ['GET'] /api/v1/revenue/checks get_checks status=None response_model=None
 ['GET'] /api/v1/revenue/customers get_customers status=None response_model=None
+['GET'] /api/v1/revenue/cohorts get_cohorts status=None response_model=None
 ['GET'] /api/v1/revenue/cash get_cash status=None response_model=None
 ['GET'] /api/v1/revenue/pipeline get_pipeline status=None response_model=None
+['GET'] /api/v1/revenue/funnel get_funnel status=None response_model=None
 ['GET'] /api/v1/revenue/movers get_movers status=None response_model=None
+['GET'] /api/v1/revenue/pvm get_pvm status=None response_model=None
 ['GET'] /api/v1/revenue/analysis get_analysis status=None response_model=None
 ['PUT'] /api/v1/revenue/scope/{item_id} put_scope status=None response_model=None
 ['DELETE'] /api/v1/revenue/scope/{item_id} delete_scope status=None response_model=None
@@ -32,6 +35,9 @@ key or a test id — and fails the iteration unless the user approved it.
 ['DELETE'] /api/v1/revenue/targets/{month} delete_target status=None response_model=None
 ['GET'] /api/v1/revenue/labor get_labor status=None response_model=None
 ['PUT'] /api/v1/revenue/labor put_labor status=None response_model=None
+['GET'] /api/v1/revenue/result get_result status=None response_model=None
+['GET'] /api/v1/revenue/fixed-costs get_fixed_costs status=None response_model=None
+['PUT'] /api/v1/revenue/fixed-costs put_fixed_costs status=None response_model=None
 ['POST'] /api/v1/revenue/annotations post_annotation status=201 response_model=None
 ['DELETE'] /api/v1/revenue/annotations/{annotation_id} delete_annotation status=None response_model=None
 ['POST'] /api/v1/revenue/checks/{month}/refetch refetch_month status=None response_model=None
@@ -64,9 +70,12 @@ router.get('/targets') get_targets params= perms=RequirePermissionIfAuthEnabled(
 router.get('/annotations') get_annotations params= perms=RequirePermissionIfAuthEnabled(Permission.REVENUE_READ)
 router.get('/checks') get_checks params= perms=RequirePermissionIfAuthEnabled(Permission.REVENUE_READ)
 router.get('/customers') get_customers params=from_,to,items,brand,kind,segment,granularity perms=RequirePermissionIfAuthEnabled(Permission.REVENUE_READ, Permission.REVENUE_VIEW_CUSTOMERS)
+router.get('/cohorts') get_cohorts params= perms=RequirePermissionIfAuthEnabled(Permission.REVENUE_READ, Permission.REVENUE_VIEW_CUSTOMERS)
 router.get('/cash') get_cash params= perms=RequirePermissionIfAuthEnabled(Permission.REVENUE_READ)
 router.get('/pipeline') get_pipeline params= perms=RequirePermissionIfAuthEnabled(Permission.REVENUE_READ)
+router.get('/funnel') get_funnel params= perms=RequirePermissionIfAuthEnabled(Permission.REVENUE_READ)
 router.get('/movers') get_movers params=granularity,key,from_,to,cfrom,cto,items,brand,kind,segment perms=RequirePermissionIfAuthEnabled(Permission.REVENUE_READ)
+router.get('/pvm') get_pvm params=from_,to,items,brand,kind,segment perms=RequirePermissionIfAuthEnabled(Permission.REVENUE_READ)
 router.get('/analysis') get_analysis params=from_,to,items,brand,kind,segment perms=RequirePermissionIfAuthEnabled(Permission.REVENUE_READ)
 router.put('/scope/{item_id}') put_scope params=item_id perms=RequirePermissionIfAuthEnabled(Permission.REVENUE_MANAGE_SCOPE)
 router.delete('/scope/{item_id}') delete_scope params=item_id perms=RequirePermissionIfAuthEnabled(Permission.REVENUE_MANAGE_SCOPE)
@@ -74,6 +83,9 @@ router.put('/targets/{month}') put_target params=month perms=RequirePermissionIf
 router.delete('/targets/{month}') delete_target params=month perms=RequirePermissionIfAuthEnabled(Permission.REVENUE_MANAGE_TARGETS)
 router.get('/labor') get_labor params= perms=RequirePermissionIfAuthEnabled(Permission.REVENUE_READ, Permission.REVENUE_VIEW_MARGIN)
 router.put('/labor') put_labor params=body perms=RequirePermissionIfAuthEnabled(Permission.REVENUE_VIEW_MARGIN, Permission.REVENUE_MANAGE_TARGETS)
+router.get('/result') get_result params= perms=RequirePermissionIfAuthEnabled(Permission.REVENUE_READ, Permission.REVENUE_VIEW_MARGIN)
+router.get('/fixed-costs') get_fixed_costs params= perms=RequirePermissionIfAuthEnabled(Permission.REVENUE_READ, Permission.REVENUE_VIEW_MARGIN)
+router.put('/fixed-costs') put_fixed_costs params=body perms=RequirePermissionIfAuthEnabled(Permission.REVENUE_VIEW_MARGIN, Permission.REVENUE_MANAGE_TARGETS)
 router.post('/annotations', status_code=201) post_annotation params= perms=RequirePermissionIfAuthEnabled(Permission.REVENUE_MANAGE_NOTES)
 router.delete('/annotations/{annotation_id}') delete_annotation params=annotation_id perms=RequirePermissionIfAuthEnabled(Permission.REVENUE_MANAGE_NOTES)
 router.post('/checks/{month}/refetch') refetch_month params=month perms=RequirePermissionIfAuthEnabled(Permission.REVENUE_SYNC)
@@ -99,14 +111,19 @@ async def get_annotations(
 CHECK_TOLERANCE =
 async def get_checks(
 async def get_customers(
+async def get_cohorts(
 async def get_cash(
 async def get_pipeline(
+async def get_funnel(
 async def get_movers(
+async def get_pvm(
 async def get_analysis(
 class ScopeBody(BaseModel):
 class TargetBody(BaseModel):
 class LaborProvider(BaseModel):
 class LaborBody(BaseModel):
+class FixedCost(BaseModel):
+class FixedCostsBody(BaseModel):
 class AnnotationBody(BaseModel):
 async def put_scope(
 async def delete_scope(
@@ -114,6 +131,9 @@ async def put_target(
 async def delete_target(
 async def get_labor(
 async def put_labor(
+async def get_result(
+async def get_fixed_costs(
+async def put_fixed_costs(
 async def post_annotation(
 async def delete_annotation(
 async def refetch_month(
@@ -129,9 +149,15 @@ def abc_analysis(
 def margin_by(
 def dormant_ranges(
 def dormant_items(
+PVM_ROWS =
+def price_volume_mix(
 # backend/app/services/revenue/cash.py
 CASH_MONTHS =
 TOP_OVERDUE =
+AGING_BUCKETS =
+AGING_CUSTOMERS =
+FORECAST_WINDOWS =
+DSO_DAYS =
 FORECAST_DAYS =
 STALE_OVERDUE_DAYS =
 def last_months(
@@ -141,9 +167,22 @@ def customer_share(
 def invoice_share(
 def detail_queue(
 def collected_by_month(
+def aging(
+def dso(
+def accepted_open(
+def forecast(
+def invoiced_ttc_since(
 def outstanding(
 def invoiced_ttc_by_month(
 def build_cash(
+# backend/app/services/revenue/cohorts.py
+COHORT_MONTHS =
+LTV_DAYS =
+RISK_MIN_DAYS =
+RISK_FACTOR =
+RISK_MIN_SILENCE =
+RISK_ROWS =
+def build_cohorts(
 # backend/app/services/revenue/config.py
 REVENUE_HISTORY_START =
 REVENUE_LINE_FORMAT =
@@ -200,10 +239,16 @@ AWAITING_STATUSES =
 async def pipeline_stamp(
 async def read_cards(
 def build_pipeline(
+FUNNEL_DAYS =
+FUNNEL_BANDS =
+DECIDED =
+async def read_funnel_cards(
+def build_funnel(
 # backend/app/services/revenue/production.py
 COSTS_START =
 MAX_RUN_SECONDS =
 LABOR_KEY =
+FIXED_COSTS_KEY =
 class MachineRate:
 class Run:
 PARTS =
@@ -218,6 +263,9 @@ def costs_by_day(
 def labor_by_day(
 async def read_labor(
 async def save_labor(
+async def read_fixed_costs(
+async def save_fixed_costs(
+def fixed_monthly(
 async def read_production_costs(
 # backend/app/services/revenue/products.py
 MAX_BRAND_LENGTH =
@@ -231,6 +279,9 @@ def build_product_list(
 def parse_brands(
 def parse_item_ids(
 def parse_series_filters(
+# backend/app/services/revenue/result.py
+TRAILING_MONTHS =
+def build_result(
 # backend/app/services/revenue/scope.py
 ITEM_ID_RE =
 class ScopeItem:
@@ -241,6 +292,7 @@ def brand_key(
 def classify_revenue_item(
 def is_service_item(
 def matches_kind(
+def service_nature(
 def item_display_name(
 def unit_cost_of(
 def build_review_list(
@@ -360,6 +412,8 @@ for n, c in sorted(vars(mod).items()):
 " 2>/dev/null```
 ```
 AnnotationBody: day: Any, label: Any
+FixedCost: label: <class 'str'>, monthly: <class 'float'>
+FixedCostsBody: costs: list[backend.app.api.routes.revenue.FixedCost]
 LaborBody: providers: list[backend.app.api.routes.revenue.LaborProvider]
 LaborProvider: name: <class 'str'>, hourlyRate: <class 'float'>, hoursPerDay: <class 'float'>, daysPerWeek: <class 'int'>, since: str | None
 ScopeBody: included: Any
@@ -530,6 +584,7 @@ app.include_router(revenue.router, prefix=app_settings.api_prefix)
 ```regen: { grep -hoE "^[A-Z_]+_KEY = \"[a-z_]+\"" backend/app/services/revenue/*.py; grep -rhoE --include=\"*.py\" "env_get\([^)]*\)|os\.environ[^ ]*|\b(app_)?settings\.[a-z_]+" backend/app/services/revenue backend/app/api/routes/revenue.py; } | sort -u```
 ```
 CASH_SYNCED_KEY = "revenue_cash_synced_at"
+FIXED_COSTS_KEY = "revenue_fixed_costs"
 ITEMS_SYNCED_KEY = "revenue_items_synced_at"
 LABOR_KEY = "revenue_labor"
 PAYMENTS_SINCE_KEY = "revenue_payments_since"
@@ -540,14 +595,17 @@ PAYMENTS_SINCE_KEY = "revenue_payments_since"
 ```
 frontend/src/components/revenue/MarginBreakdown.tsx:export function MarginBreakdown
 frontend/src/components/revenue/RevenueAnalysis.tsx:export function RevenueAnalysis
+frontend/src/components/revenue/RevenueBridge.tsx:export function RevenueBridge
 frontend/src/components/revenue/RevenueCalendar.tsx:export function RevenueCalendar
 frontend/src/components/revenue/RevenueCash.tsx:export function RevenueCash
 frontend/src/components/revenue/RevenueChart.tsx:export function RevenueChart
 frontend/src/components/revenue/RevenueClosablePanel.tsx:export function RevenueClosablePanel
+frontend/src/components/revenue/RevenueCohorts.tsx:export function RevenueCohorts
 frontend/src/components/revenue/RevenueControls.tsx:export const PICK_CLS
 frontend/src/components/revenue/RevenueControls.tsx:export function RevenuePopover
 frontend/src/components/revenue/RevenueControls.tsx:export function RevenueControls
 frontend/src/components/revenue/RevenueCustomers.tsx:export function RevenueCustomers
+frontend/src/components/revenue/RevenueFixedCosts.tsx:export function RevenueFixedCosts
 frontend/src/components/revenue/RevenueHero.tsx:export function RevenueFinding
 frontend/src/components/revenue/RevenueHero.tsx:export function RevenueHero
 frontend/src/components/revenue/RevenueLabor.tsx:export interface LaborProvider
@@ -558,6 +616,7 @@ frontend/src/components/revenue/RevenueNotes.tsx:export function RevenueNotes
 frontend/src/components/revenue/RevenuePace.tsx:export function RevenuePace
 frontend/src/components/revenue/RevenueProductSearch.tsx:export function RevenueChip
 frontend/src/components/revenue/RevenueProductSearch.tsx:export function RevenueProductSearch
+frontend/src/components/revenue/RevenueResult.tsx:export function RevenueResult
 frontend/src/components/revenue/RevenueReview.tsx:export function RevenueReview
 frontend/src/components/revenue/RevenueSegmented.tsx:export function RevenueSegmented
 frontend/src/components/revenue/RevenueSyncBanner.tsx:export function RevenueSyncBanner
@@ -593,6 +652,7 @@ frontend/src/components/revenue/lib/chart.ts:export function stackColumns
 frontend/src/components/revenue/lib/chart.ts:export function cumulativeScale
 frontend/src/components/revenue/lib/chart.ts:export function yFor
 frontend/src/components/revenue/lib/chart.ts:export function niceTicks
+frontend/src/components/revenue/lib/chart.ts:export function linearTrend
 frontend/src/components/revenue/lib/csv.ts:export function toCsv
 frontend/src/components/revenue/lib/dashboard.ts:export const isRevenueGranularity
 frontend/src/components/revenue/lib/dashboard.ts:export const isRevenueKind
@@ -614,6 +674,7 @@ frontend/src/components/revenue/lib/dashboard.ts:export function failureMessage
 frontend/src/components/revenue/lib/dashboard.ts:export type BannerKind
 frontend/src/components/revenue/lib/dashboard.ts:export function bannerState
 frontend/src/components/revenue/lib/dashboard.ts:export function withId
+frontend/src/components/revenue/lib/dashboard.ts:export const ROW_LEAVE_MS
 frontend/src/components/revenue/lib/dashboard.ts:export function withoutId
 frontend/src/components/revenue/lib/dashboard.ts:export function toggleInSet
 frontend/src/components/revenue/lib/dashboard.ts:export const REVENUE_STORAGE_KEYS
@@ -701,6 +762,7 @@ frontend/src/components/revenue/lib/types.ts:export interface RevenueResponse
 frontend/src/components/revenue/lib/types.ts:export interface RevenueMonthCheck
 frontend/src/components/revenue/lib/types.ts:export interface ChecksResponse
 frontend/src/components/revenue/lib/types.ts:export interface CashMonth
+frontend/src/components/revenue/lib/types.ts:export type AgingBucket
 frontend/src/components/revenue/lib/types.ts:export interface CashResponse
 frontend/src/components/revenue/lib/types.ts:export interface PipelineResponse
 frontend/src/components/revenue/lib/types.ts:export interface ItemsResponse
@@ -716,6 +778,13 @@ frontend/src/components/revenue/lib/types.ts:export interface RetentionRow
 frontend/src/components/revenue/lib/types.ts:export interface CustomersResponse
 frontend/src/components/revenue/lib/types.ts:export interface MoversResponse
 frontend/src/components/revenue/lib/types.ts:export interface AnalysisResponse
+frontend/src/components/revenue/lib/types.ts:export interface FixedCost
+frontend/src/components/revenue/lib/types.ts:export interface ResultMonth
+frontend/src/components/revenue/lib/types.ts:export interface ResultResponse
+frontend/src/components/revenue/lib/types.ts:export interface PvmResponse
+frontend/src/components/revenue/lib/types.ts:export interface CohortsResponse
+frontend/src/components/revenue/lib/types.ts:export type FunnelOutcome
+frontend/src/components/revenue/lib/types.ts:export interface FunnelResponse
 frontend/src/components/revenue/lib/url.ts:export interface UrlControls
 frontend/src/components/revenue/lib/url.ts:export function controlsFromSearch
 frontend/src/components/revenue/lib/url.ts:export function controlsToSearch
@@ -748,20 +817,25 @@ export interface AitoStatsService { service: string; tasks: number; revenue: num
 /api/v1/revenue/annotations', 'POST', { day, label: trimmed });
 /api/v1/revenue/annotations', 0);
 /api/v1/revenue/annotations/${a.id}
-/api/v1/revenue/cash', version);
+/api/v1/revenue/cash
 /api/v1/revenue/checks', data);
 /api/v1/revenue/checks/${month}/refetch
+/api/v1/revenue/cohorts', version);
 /api/v1/revenue/customers?from=${p.from}&to=${p.to}&granularity=${p.granularity}${p.filterParams}
 /api/v1/revenue/daily${query ? 
 /api/v1/revenue/daily?from=${cur.start}&to=${cur.end}${filterParams}
 /api/v1/revenue/daily?from=${prev.start}&to=${prev.end}${filterParams}
+/api/v1/revenue/fi
+/api/v1/revenue/funnel
 /api/v1/revenue/items?from=${bucket.start}&to=${bucket.end}${filterParams}
 /api/v1/revenue/labor', {
 /api/v1/revenue/labor', { headers: bearerAuthHeaders() });
 /api/v1/revenue/movers?from=${compare.from}&to=${compare.to}&cfrom=${compare.cfrom}&cto=${compare.cto}${p.filterParams}
 /api/v1/revenue/movers?granularity=${p.granularity}${p.bucketKey ? 
-/api/v1/revenue/pipeline', version);
+/api/v1/revenue/pipeline
 /api/v1/revenue/products', productsVersion);
+/api/v1/revenue/pvm?from=${from}&to=${to}${filterParams}
+/api/v1/revenue/result', version);
 /api/v1/revenue/review', { headers: bearerAuthHeaders() });
 /api/v1/revenue/scope/${encodeURIComponent(itemId)}
 /api/v1/revenue/sync', { method: 'POST', headers: bearerAuthHeaders() });
@@ -776,11 +850,13 @@ export interface AitoStatsService { service: string; tasks: number; revenue: num
 ## "revenue-*" string literals in the UI (localStorage keys, ids)
 ```regen: grep -rhoE "\"revenue-[a-z-]+\"" $(find frontend/src/components/revenue -type f | sort) frontend/src/pages/RevenuePage.tsx | sort -u```
 ```
+"revenue-aging-bar"
+"revenue-bridge"
 "revenue-cash-bar"
-"revenue-cash-forecast"
 "revenue-chart"
 "revenue-controls"
 "revenue-finding"
+"revenue-funnel-bar"
 "revenue-granularity"
 "revenue-kind"
 "revenue-menu"
@@ -796,6 +872,15 @@ export interface AitoStatsService { service: string; tasks: number; revenue: num
 ```regen: LC_ALL=C node tools/probe_revenue_i18n.cjs | sed -n "/^--- en values/,/^$/p" | sed -E "s/ = .*//" | grep -v "^---" | grep -v "^$"```
 ```
 nav.revenue
+revenue.aging.d30
+revenue.aging.d60
+revenue.aging.d90
+revenue.aging.days
+revenue.aging.dso
+revenue.aging.notDue
+revenue.aging.ofWhichLate
+revenue.aging.over
+revenue.aging.title
 revenue.amounts
 revenue.analysis.classHint
 revenue.analysis.classLabel
@@ -825,6 +910,23 @@ revenue.breakdown.label
 revenue.breakdown.labor
 revenue.breakdown.margin
 revenue.breakdown.wear
+revenue.bridge.current
+revenue.bridge.empty
+revenue.bridge.items
+revenue.bridge.kindLost
+revenue.bridge.kindNew
+revenue.bridge.lost
+revenue.bridge.mix
+revenue.bridge.mixHint
+revenue.bridge.new
+revenue.bridge.noPrevious
+revenue.bridge.previous
+revenue.bridge.price
+revenue.bridge.priceHint
+revenue.bridge.title
+revenue.bridge.versus
+revenue.bridge.volume
+revenue.bridge.volumeHint
 revenue.calendar.credit
 revenue.calendar.gridLabel
 revenue.calendar.less
@@ -888,7 +990,33 @@ revenue.chart.title.day
 revenue.chart.title.month
 revenue.chart.title.week
 revenue.chart.title.year
+revenue.chart.trend
+revenue.chart.trendSlope.day
+revenue.chart.trendSlope.month
+revenue.chart.trendSlope.week
+revenue.chart.trendSlope.year
 revenue.chart.values
+revenue.cohorts.after
+revenue.cohorts.cell
+revenue.cohorts.colCustomer
+revenue.cohorts.colLast
+revenue.cohorts.colRevenue
+revenue.cohorts.colSince
+revenue.cohorts.colUsual
+revenue.cohorts.days
+revenue.cohorts.everyDays
+revenue.cohorts.intro
+revenue.cohorts.ltvCustomers
+revenue.cohorts.ltvEmpty
+revenue.cohorts.ltvIntro
+revenue.cohorts.ltvTitle
+revenue.cohorts.month
+revenue.cohorts.perCustomer
+revenue.cohorts.riskEmpty
+revenue.cohorts.riskIntro
+revenue.cohorts.riskTitle
+revenue.cohorts.size
+revenue.cohorts.title
 revenue.controls.all
 revenue.controls.auto
 revenue.controls.autoHint
@@ -968,6 +1096,41 @@ revenue.finding.targetBehind.lead
 revenue.finding.targetBehind.rest
 revenue.finding.targetLevel.lead
 revenue.finding.targetLevel.rest
+revenue.fixedCosts.add
+revenue.fixedCosts.empty
+revenue.fixedCosts.failed
+revenue.fixedCosts.hideMenu
+revenue.fixedCosts.intro
+revenue.fixedCosts.invalid
+revenue.fixedCosts.label
+revenue.fixedCosts.menu
+revenue.fixedCosts.monthly
+revenue.fixedCosts.remove
+revenue.fixedCosts.save
+revenue.fixedCosts.saved
+revenue.fixedCosts.title
+revenue.fixedCosts.total
+revenue.forecast.d30
+revenue.forecast.d60
+revenue.forecast.d90
+revenue.forecast.split
+revenue.forecast.title
+revenue.funnel.accepted
+revenue.funnel.awaiting
+revenue.funnel.between
+revenue.funnel.days
+revenue.funnel.decided
+revenue.funnel.declined
+revenue.funnel.delay
+revenue.funnel.empty
+revenue.funnel.expired
+revenue.funnel.over
+revenue.funnel.quotes
+revenue.funnel.rate
+revenue.funnel.rateValue
+revenue.funnel.ratio
+revenue.funnel.title
+revenue.funnel.upTo
 revenue.hero.margin
 revenue.hero.marginHint
 revenue.hero.paceCurrent
@@ -1058,6 +1221,23 @@ revenue.pipeline.missingTotal
 revenue.pipeline.oldest
 revenue.pipeline.retainers
 revenue.pipeline.title
+revenue.result.breakEven
+revenue.result.colCoverage
+revenue.result.colFixed
+revenue.result.colLabor
+revenue.result.colMonth
+revenue.result.colResult
+revenue.result.colRevenue
+revenue.result.colVariable
+revenue.result.expectedOn
+revenue.result.month
+revenue.result.noFixed
+revenue.result.noRate
+revenue.result.notThisMonth
+revenue.result.partial
+revenue.result.reached
+revenue.result.reachedOn
+revenue.result.title
 revenue.review.decisions
 revenue.review.empty
 revenue.review.exclude
@@ -1167,6 +1347,10 @@ revenue.yoy.tooltipCumul
 ## Translation keys the scope files name literally
 ```regen: perl -nle "print \$1 while /[\x27\"\x60]((?:revenue|common|nav|settings)\.[\w.]*\w)[\x27\"\x60]/g" $(find frontend/src/components/revenue -type f | sort) frontend/src/pages/RevenuePage.tsx | sort -u```
 ```
+revenue.aging.days
+revenue.aging.dso
+revenue.aging.ofWhichLate
+revenue.aging.title
 revenue.amounts
 revenue.analysis.classHint
 revenue.analysis.classLabel
@@ -1191,6 +1375,15 @@ revenue.analysis.showFirst
 revenue.breakdown.costedHt
 revenue.breakdown.label
 revenue.breakdown.margin
+revenue.bridge.current
+revenue.bridge.empty
+revenue.bridge.items
+revenue.bridge.kindLost
+revenue.bridge.kindNew
+revenue.bridge.noPrevious
+revenue.bridge.previous
+revenue.bridge.title
+revenue.bridge.versus
 revenue.calendar.credit
 revenue.calendar.gridLabel
 revenue.calendar.less
@@ -1207,12 +1400,6 @@ revenue.cash.coverage
 revenue.cash.daysLate
 revenue.cash.empty
 revenue.cash.error
-revenue.cash.forecast.dueSoon
-revenue.cash.forecast.lateOld
-revenue.cash.forecast.lateRecent
-revenue.cash.forecast.title
-revenue.cash.forecast.toInvoice
-revenue.cash.forecast.toInvoiceNote
 revenue.cash.invoiced
 revenue.cash.invoices
 revenue.cash.overdue
@@ -1240,7 +1427,29 @@ revenue.chart.roleDescription
 revenue.chart.stack.nature
 revenue.chart.stackBy
 revenue.chart.target
+revenue.chart.trend
 revenue.chart.values
+revenue.cohorts.after
+revenue.cohorts.cell
+revenue.cohorts.colCustomer
+revenue.cohorts.colLast
+revenue.cohorts.colRevenue
+revenue.cohorts.colSince
+revenue.cohorts.colUsual
+revenue.cohorts.days
+revenue.cohorts.everyDays
+revenue.cohorts.intro
+revenue.cohorts.ltvCustomers
+revenue.cohorts.ltvEmpty
+revenue.cohorts.ltvIntro
+revenue.cohorts.ltvTitle
+revenue.cohorts.month
+revenue.cohorts.perCustomer
+revenue.cohorts.riskEmpty
+revenue.cohorts.riskIntro
+revenue.cohorts.riskTitle
+revenue.cohorts.size
+revenue.cohorts.title
 revenue.controls.auto
 revenue.controls.autoHint
 revenue.controls.custom
@@ -1293,6 +1502,35 @@ revenue.filters.segment
 revenue.filters.selection
 revenue.filters.services
 revenue.filters.type
+revenue.fixedCosts.add
+revenue.fixedCosts.empty
+revenue.fixedCosts.failed
+revenue.fixedCosts.hideMenu
+revenue.fixedCosts.intro
+revenue.fixedCosts.invalid
+revenue.fixedCosts.label
+revenue.fixedCosts.menu
+revenue.fixedCosts.monthly
+revenue.fixedCosts.remove
+revenue.fixedCosts.save
+revenue.fixedCosts.saved
+revenue.fixedCosts.title
+revenue.fixedCosts.total
+revenue.forecast.d30
+revenue.forecast.split
+revenue.forecast.title
+revenue.funnel.between
+revenue.funnel.days
+revenue.funnel.decided
+revenue.funnel.delay
+revenue.funnel.empty
+revenue.funnel.over
+revenue.funnel.quotes
+revenue.funnel.rate
+revenue.funnel.rateValue
+revenue.funnel.ratio
+revenue.funnel.title
+revenue.funnel.upTo
 revenue.hero.margin
 revenue.hero.marginHint
 revenue.hero.paceCurrent
@@ -1375,6 +1613,17 @@ revenue.pipeline.missingTotal
 revenue.pipeline.oldest
 revenue.pipeline.retainers
 revenue.pipeline.title
+revenue.result.breakEven
+revenue.result.colMonth
+revenue.result.expectedOn
+revenue.result.month
+revenue.result.noFixed
+revenue.result.noRate
+revenue.result.notThisMonth
+revenue.result.partial
+revenue.result.reached
+revenue.result.reachedOn
+revenue.result.title
 revenue.review.decisions
 revenue.review.empty
 revenue.review.exclude
@@ -1481,8 +1730,10 @@ revenue.yoy.tooltipCumul
 ```regen: grep -rhoE "data-testid=\"[^\"]+\"|testId=\"[^\"]+\"|data-testid=\{[^}]+\}" $(find frontend/src/components/revenue -type f | sort) frontend/src/pages/RevenuePage.tsx | sort | uniq -c | sed "s/^ *//"```
 ```
 1 data-testid="calendar-readout"
+1 data-testid="revenue-aging-bar"
+1 data-testid="revenue-bridge"
 1 data-testid="revenue-cash-bar"
-1 data-testid="revenue-cash-forecast"
+1 data-testid="revenue-funnel-bar"
 1 data-testid="revenue-sparkline"
 1 data-testid="yoy-to-date"
 1 testId="revenue-chart"
@@ -1490,229 +1741,3 @@ revenue.yoy.tooltipCumul
 1 testId="weekday-means"
 ```
 
-## O6 — public functions, classes and constants (integration + payment services)
-```regen: for f in backend/app/services/zoho.py backend/app/services/heimdall.py backend/app/services/aito_payment_links.py backend/app/services/aito_terminal_payments.py backend/app/services/aito_manual_payments.py backend/app/services/aito_customer_credit.py backend/app/services/aito_payment_documents.py backend/app/services/aito_client_rating.py backend/app/services/aito_events.py backend/app/services/aito_tracking.py backend/app/api/routes/aito_payments.py backend/app/api/routes/zoho.py backend/app/api/routes/heimdall.py; do echo "# $f"; grep -E "^(def|class|async def) [a-zA-Z]|^[A-Z][A-Z_0-9]* = |^[A-Z][A-Z_0-9]*: " "$f" | sed -E "s/ = .*/ =/; s/(def [a-zA-Z_0-9]+)\(.*/\1(/"; done```
-```
-# backend/app/services/zoho.py
-DEFAULT_CONTACT_ID_FALLBACK =
-DEFAULT_CONTACT_NAME_FALLBACK =
-class ZohoNotConfiguredError(Exception):
-class ZohoUpstreamError(Exception):
-class ZohoUnreachable(ZohoUpstreamError):
-class ZohoAmbiguous(ZohoUpstreamError):
-class ZohoRequestRejected(ZohoUpstreamError):
-class ZohoNotFound(ZohoUpstreamError):
-class ZohoAmbiguousReferenceError(ZohoUpstreamError):
-class ZohoRateLimited(ZohoUpstreamError):
-def normalize_display_name(
-class ModifiedSinceRows(list):
-class ZohoService:
-# backend/app/services/heimdall.py
-class HeimdallNotConfigured(Exception):
-class HeimdallUpstreamError(Exception):
-class HeimdallAuthError(HeimdallUpstreamError):
-class HeimdallNotFound(HeimdallUpstreamError):
-class HeimdallConflict(HeimdallUpstreamError):
-class HeimdallRateLimited(HeimdallUpstreamError):
-class HeimdallUnreachable(HeimdallUpstreamError):
-class HeimdallAmbiguous(HeimdallUpstreamError):
-class HeimdallInvalid(HeimdallUpstreamError):
-class LinkView:
-def parse_credential(
-def sign(
-class HeimdallService:
-# backend/app/services/aito_payment_links.py
-async def deposit_pct(
-def required_amount(
-def outstanding_amount(
-MAX_POLLS_PER_TICK =
-ABANDONED_RESERVATION_SECONDS =
-class Wanted:
-QUOTE_VALIDITY =
-def wanted_link(
-def expires_in_days(
-def needs_action(
-class PatchDidNotConverge(Exception):
-async def current_link(
-async def current_links(
-async def reconcile_project(
-async def poll_link(
-async def reconcile_payment_links(
-def link_view(
-class InvoiceLinkExists(Exception):
-class QuoteLinkManaged(Exception):
-async def create_invoice_link(
-async def create_order_invoice_link(
-async def cancel_order_link(
-async def cancel_invoice_link(
-# backend/app/services/aito_terminal_payments.py
-OPEN_STATUSES =
-BLOCKING_STATUSES =
-STATUSES =
-REFRESH_MIN_SECONDS =
-ABANDONED_RESERVATION_SECONDS =
-SETTLED_STATUSES =
-EFFECTS_REDRIVE_GRACE_SECONDS =
-MAX_EFFECTS_REDRIVE_FAILURES =
-async def current_terminal_payment(
-async def current_terminal_payments(
-def terminal_view(
-class TerminalInProgress(Exception):
-async def start_terminal_payment(
-async def start_order_terminal_payment(
-async def apply_terminal_state(
-async def refresh_terminal_payment(
-async def poll_open_terminal_payments(
-# backend/app/services/aito_manual_payments.py
-DUPLICATE_WINDOW_SECONDS =
-MODE_SETTINGS =
-class DuplicateManualPayment(Exception):
-class AmountAboveBalance(Exception):
-class ManualPaymentPartial(Exception):
-class ManualPaymentUnrecorded(Exception):
-class ManualPaymentOutcomeUnknown(Exception):
-class ManualPaymentResult:
-async def record_manual_payment(
-async def record_order_manual_payment(
-async def settle_invoiced_deposits(
-async def refresh_after_payment(
-# backend/app/services/aito_customer_credit.py
-def unused_credit_total(
-async def read_customer_credit(
-async def unlinked_retainers(
-# backend/app/services/aito_payment_documents.py
-class DocumentMismatch(Exception):
-class PaymentDocument:
-async def resolve_document(
-def scope_where(
-def scope_columns(
-async def resolve_order_document(
-async def record_order_payment(
-async def refresh_order_after_payment(
-# backend/app/services/aito_client_rating.py
-class RatingProfile:
-INDIVIDUAL_PROFILE =
-COMPANY_PROFILE =
-GRACE_DAYS =
-ON_TIME_SLACK_DAYS =
-GOOD_MIN_ON_TIME_RATIO =
-CHRONIC_MIN_SETTLED =
-CHRONIC_MAX_ON_TIME_RATIO =
-COMPANY_SUB_TYPE =
-HISTORY_MONTHS =
-CACHE_TTL =
-REFRESH_MIN_AGE =
-PAID_ON_FIELD =
-class ClientRating:
-def rate_invoices(
-async def expire_client_rating(
-async def read_client_rating(
-# backend/app/services/aito_events.py
-def utc_now_naive(
-KINDS: dict[str, str] =
-COALESCE_WINDOW =
-COALESCING_KINDS: frozenset[str] =
-def kinds_for_depth(
-def contact_mark_kind(
-def diff_fields(
-async def record(
-# backend/app/services/aito_tracking.py
-TOKEN_ALPHABET =
-TOKEN_LENGTH =
-LEGACY_TOKEN_MIN_LENGTH =
-TRACKING_TTL_AFTER_DONE =
-TRACKING_TTL_DORMANT =
-DORMANT_COLUMNS =
-CLOSED_QUOTE_STATUSES =
-PAYABLE_QUOTE_STATUSES =
-NOTES_PREFIX =
-NOTES_CODE_PREFIX =
-SMS_PREFIX =
-SMS_SIGNATURE =
-SMS_SIGNATURE_SEP =
-def mint_token(
-def normalize_token(
-async def mint_unique_token(
-async def external_url(
-def tracking_url_for(
-def tracking_notes(
-def with_tracking_sms(
-def with_opening_hours_sms(
-async def shop_opening_hours(
-def with_tracking_notes(
-async def ensure_tracking_token(
-async def build_tracking_url(
-async def done_at(
-def is_expired(
-TASK_FALLBACK =
-def invoice_state(
-async def payment_state(
-async def invoice_pay_url(
-def tracking_balance(
-INVOICE_CURRENCY =
-async def balance_state(
-def task_quantity(
-async def last_activity(
-VIEW_DEDUP_WINDOW =
-async def log_view(
-async def purge_tracking_views(
-async def compute_tracking(
-# backend/app/api/routes/aito_payments.py
-async def start_terminal_payment_route(
-async def get_terminal_payment(
-async def record_manual_payment_route(
-async def create_invoice_payment_link(
-async def cancel_invoice_payment_link(
-async def get_unlinked_retainers(
-async def link_retainer(
-async def heimdall_webhook(
-# backend/app/api/routes/zoho.py
-class ZohoStatus(BaseModel):
-class ZohoContact(BaseModel):
-class ZohoContactDetail(ZohoContact):
-async def zoho_status(
-async def search_contacts(
-class ZohoContactCreate(BaseModel):
-class ZohoContactPerson(BaseModel):
-class ZohoContactPersonCreate(BaseModel):
-async def get_contact(
-async def create_contact(
-class ZohoContactPatch(BaseModel):
-async def patch_contact(
-async def list_contact_persons(
-async def create_contact_person(
-class ZohoEstimateSummary(BaseModel):
-class ZohoQuoteInfo(BaseModel):
-class ZohoQuoteClient(BaseModel):
-class ZohoSkippedLine(BaseModel):
-class ZohoDiscountIssue(BaseModel):
-class ZohoQuoteShipping(BaseModel):
-class ZohoQuotePreview(BaseModel):
-async def search_estimates(
-async def preview_estimate(
-# backend/app/api/routes/heimdall.py
-async def test_heimdall(
-```
-
-## O6 — route decorators (aito_payments, zoho, heimdall)
-```regen: grep -HE "^@router\.(get|post|put|delete|patch)\(" backend/app/api/routes/aito_payments.py backend/app/api/routes/zoho.py backend/app/api/routes/heimdall.py```
-```
-backend/app/api/routes/aito_payments.py:@router.post(
-backend/app/api/routes/aito_payments.py:@router.get("/{project_id}/terminal-payment/{payment_id}", response_model=AitoTerminalPaymentView)
-backend/app/api/routes/aito_payments.py:@router.post("/{project_id}/manual-payment", response_model=AitoProjectResponse)
-backend/app/api/routes/aito_payments.py:@router.post("/{project_id}/payment-link", response_model=AitoProjectResponse)
-backend/app/api/routes/aito_payments.py:@router.post("/{project_id}/payment-link/{link_id}/cancel", response_model=AitoProjectResponse)
-backend/app/api/routes/aito_payments.py:@router.get("/{project_id}/unlinked-retainers", response_model=list[AitoUnlinkedRetainer])
-backend/app/api/routes/aito_payments.py:@router.post("/{project_id}/unlinked-retainers/{retainer_id}/link", response_model=AitoProjectResponse)
-backend/app/api/routes/aito_payments.py:@router.post("/payments/webhook", status_code=204)
-backend/app/api/routes/zoho.py:@router.get("/status", response_model=ZohoStatus)
-backend/app/api/routes/zoho.py:@router.get("/contacts", response_model=list[ZohoContact])
-backend/app/api/routes/zoho.py:@router.get("/contacts/{contact_id}", response_model=ZohoContactDetail)
-backend/app/api/routes/zoho.py:@router.post("/contacts", response_model=ZohoContact, status_code=201)
-backend/app/api/routes/zoho.py:@router.patch("/contacts/{contact_id}", status_code=204)
-backend/app/api/routes/zoho.py:@router.get("/contacts/{contact_id}/persons", response_model=list[ZohoContactPerson])
-backend/app/api/routes/zoho.py:@router.post("/contacts/{contact_id}/persons", response_model=ZohoContactPerson, status_code=201)
-backend/app/api/routes/zoho.py:@router.get("/estimates", response_model=list[ZohoEstimateSummary])
-backend/app/api/routes/zoho.py:@router.get("/estimates/{estimate_id}/preview", response_model=ZohoQuotePreview)
-backend/app/api/routes/heimdall.py:@router.post("/test", response_model=HeimdallStatus)
-```

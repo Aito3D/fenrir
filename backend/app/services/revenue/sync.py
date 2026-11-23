@@ -257,12 +257,17 @@ async def _refresh_cash(db) -> None:
     await store.save_unpaid_invoices(db, list(unpaid.values()), not truncated, _utcnow())
 
     window_start = f"{cash.last_months(today)[0]}-01"
+    generation = store._current_decisions_generation()
     async with store.snapshot() as conn:
         items = await store.read_scope_items(conn)
         decisions = await store.read_decisions(conn)
         classes = cash.classify_customers(await store.customer_item_pairs(conn), items, decisions)
         payments = await store.read_payments(conn, window_start)
         invoices = await store.read_invoice_shares(conn)
+        items_synced = await store.items_synced_at(conn)
+    if items_synced is None:  # every share would be pinned against an empty item table
+        await store.save_cash_synced(db, _utcnow())
+        return
     payment_ids, invoice_ids = cash.detail_queue(payments, invoices, classes, window_start)
     # A document Zoho refuses is parked (like a refused contact) so it neither stalls the step nor eats the budget.
     payment_ids = [i for i in payment_ids if _step_ready(f"p:{i}")][: SYNC.cash_detail_budget]
@@ -295,7 +300,7 @@ async def _refresh_cash(db) -> None:
         except (ZohoRequestRejected, ZohoAmbiguous):
             _step_retry[f"i:{invoice_id}"] = time.monotonic() + STEP_RETRY_S
             continue
-        await store.save_invoice_detail(db, row, _utcnow())
+        await store.save_invoice_detail(db, row, _utcnow(), generation)
     await store.save_cash_synced(db, _utcnow())
 
 
@@ -432,7 +437,7 @@ async def _execute_batch(full: bool) -> dict:
                         try:
                             await _check_month(db, month)
                             checked = month
-                        except (ZohoRequestRejected, _DayTooLarge) as exc:
+                        except (ZohoRequestRejected, ZohoAmbiguous, _DayTooLarge) as exc:
                             _step_retry[f"m:{month}"] = time.monotonic() + STEP_RETRY_S
                             _record_error(exc)
                     if time.monotonic() - _cash_at >= SYNC.cash_ttl_s:

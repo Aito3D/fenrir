@@ -166,8 +166,11 @@ READS = [
     "/movers", "/movers?granularity=month&key=2026-02", "/movers?granularity=year&key=2025", "/movers?granularity=week&key=2026-W10",
     f"/movers?{RANGE}&cfrom=2025-01-01&cto=2025-03-11", "/movers?granularity=month&key=2019-01", f"/analysis?{RANGE}",
     "/analysis?from=2025-01-01&to=2026-03-11&brand=SUNLU", "/labor",
+    # RV2: routes added after RV1.
+    "/cohorts", "/funnel", f"/pvm?{RANGE}", f"/pvm?{RANGE}&brand=SUNLU&kind=goods", "/pvm?from=2026-03-11&to=2026-03-01",
+    "/result", "/fixed-costs",
 ]
-STRIPPED = ["", f"/items?{RANGE}", "/cash", f"/analysis?{RANGE}", f"/customers?{RANGE}", f"/movers?{RANGE}&cfrom=2025-01-01&cto=2025-03-11", "/labor", f"?{MONTH}&segment=pro"]
+STRIPPED = ["", f"/items?{RANGE}", "/cash", f"/analysis?{RANGE}", f"/customers?{RANGE}", f"/movers?{RANGE}&cfrom=2025-01-01&cto=2025-03-11", "/labor", f"?{MONTH}&segment=pro", "/cohorts", "/result", "/fixed-costs"]
 WRITES = [  # method, path, body, principal
     ("put", "/scope/glue", {"included": True}, "scope"),
     ("put", "/scope/mystery", {"included": False}, "scope"),
@@ -202,6 +205,12 @@ WRITES = [  # method, path, body, principal
     ("put", "/labor", {"providers": [{"name": "Bob", "hourlyRate": 1000, "hoursPerDay": 4, "daysPerWeek": 5, "since": "bad"}]}, "labor"),
     ("put", "/labor", {"providers": []}, "read_margin"),
     ("get", "/labor", None, "all"),
+    ("put", "/fixed-costs", {"costs": [{"label": " Rent ", "monthly": 900}, {"label": "Power", "monthly": 120.5}]}, "labor"),
+    ("put", "/fixed-costs", {"costs": [{"label": "   ", "monthly": 1}]}, "labor"),
+    ("put", "/fixed-costs", {"costs": [{"label": "x", "monthly": -1}]}, "labor"),
+    ("put", "/fixed-costs", {"costs": []}, "read_margin"),
+    ("get", "/fixed-costs", None, "all"),
+    ("get", "/result", None, "all"),
     ("get", f"?{MONTH}", None, "all"),
 ]
 

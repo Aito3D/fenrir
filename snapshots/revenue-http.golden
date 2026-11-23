@@ -19417,11 +19417,46 @@
   {
    "as": "all",
    "body": {
+    "aging": {
+     "buckets": {
+      "d30": 0,
+      "d60": 1500,
+      "d90": 0,
+      "notDue": 2000,
+      "over": 0
+     },
+     "byCustomer": [
+      {
+       "balance": 3500,
+       "customerName": "Lycée Gauguin",
+       "oldestDays": 60,
+       "overdue": 1500
+      }
+     ]
+    },
     "coverage": {
      "known": 8500,
      "unknown": 2000
     },
+    "dso": 1,
     "error": null,
+    "forecast": [
+     {
+      "invoices": 3500,
+      "orders": 600,
+      "window": "d30"
+     },
+     {
+      "invoices": 0,
+      "orders": 0,
+      "window": "d60"
+     },
+     {
+      "invoices": 0,
+      "orders": 0,
+      "window": "d90"
+     }
+    ],
     "months": [
      {
       "collected": 0,
@@ -19516,7 +19551,7 @@
      }
     ]
    },
-   "etag": "W/\"42416572bfdd346dd0acc669\"",
+   "etag": "W/\"2b5d15a8cdaf1b37bae2ab58\"",
    "request": null,
    "status": 200,
    "step": "GET /cash"
@@ -20364,6 +20399,551 @@
    "request": null,
    "status": 200,
    "step": "GET /labor"
+  },
+  {
+   "as": "all",
+   "body": {
+    "atRisk": [],
+    "cohorts": [
+     {
+      "month": "2025-04",
+      "retention": [
+       null,
+       null,
+       null,
+       null,
+       null,
+       null,
+       null,
+       null,
+       null,
+       null,
+       null,
+       null
+      ],
+      "revenuePerCustomer": 0,
+      "size": 0
+     },
+     {
+      "month": "2025-05",
+      "retention": [
+       null,
+       null,
+       null,
+       null,
+       null,
+       null,
+       null,
+       null,
+       null,
+       null,
+       null,
+       null
+      ],
+      "revenuePerCustomer": 0,
+      "size": 0
+     },
+     {
+      "month": "2025-06",
+      "retention": [
+       null,
+       null,
+       null,
+       null,
+       null,
+       null,
+       null,
+       null,
+       null,
+       null,
+       null,
+       null
+      ],
+      "revenuePerCustomer": 0,
+      "size": 0
+     },
+     {
+      "month": "2025-07",
+      "retention": [
+       null,
+       null,
+       null,
+       null,
+       null,
+       null,
+       null,
+       null,
+       null,
+       null,
+       null,
+       null
+      ],
+      "revenuePerCustomer": 0,
+      "size": 0
+     },
+     {
+      "month": "2025-08",
+      "retention": [
+       null,
+       null,
+       null,
+       null,
+       null,
+       null,
+       null,
+       null,
+       null,
+       null,
+       null,
+       null
+      ],
+      "revenuePerCustomer": 0,
+      "size": 0
+     },
+     {
+      "month": "2025-09",
+      "retention": [
+       null,
+       null,
+       null,
+       null,
+       null,
+       null,
+       null,
+       null,
+       null,
+       null,
+       null,
+       null
+      ],
+      "revenuePerCustomer": 0,
+      "size": 0
+     },
+     {
+      "month": "2025-10",
+      "retention": [
+       null,
+       null,
+       null,
+       null,
+       null,
+       null,
+       null,
+       null,
+       null,
+       null,
+       null,
+       null
+      ],
+      "revenuePerCustomer": 0,
+      "size": 0
+     },
+     {
+      "month": "2025-11",
+      "retention": [
+       null,
+       null,
+       null,
+       null,
+       null,
+       null,
+       null,
+       null,
+       null,
+       null,
+       null,
+       null
+      ],
+      "revenuePerCustomer": 0,
+      "size": 0
+     },
+     {
+      "month": "2025-12",
+      "retention": [
+       null,
+       null,
+       null,
+       null,
+       null,
+       null,
+       null,
+       null,
+       null,
+       null,
+       null,
+       null
+      ],
+      "revenuePerCustomer": 0,
+      "size": 0
+     },
+     {
+      "month": "2026-01",
+      "retention": [
+       null,
+       null,
+       null,
+       null,
+       null,
+       null,
+       null,
+       null,
+       null,
+       null,
+       null,
+       null
+      ],
+      "revenuePerCustomer": 0,
+      "size": 0
+     },
+     {
+      "month": "2026-02",
+      "retention": [
+       null,
+       null,
+       null,
+       null,
+       null,
+       null,
+       null,
+       null,
+       null,
+       null,
+       null,
+       null
+      ],
+      "revenuePerCustomer": 0,
+      "size": 0
+     },
+     {
+      "month": "2026-03",
+      "retention": [
+       null,
+       null,
+       null,
+       null,
+       null,
+       null,
+       null,
+       null,
+       null,
+       null,
+       null,
+       null
+      ],
+      "revenuePerCustomer": 0,
+      "size": 0
+     }
+    ],
+    "ltv": [
+     {
+      "customers": 1,
+      "ltv12": 250800,
+      "segment": "pro"
+     }
+    ]
+   },
+   "etag": "W/\"e6685b6328c5f21b4ec41829\"",
+   "request": null,
+   "status": 200,
+   "step": "GET /cohorts"
+  },
+  {
+   "as": "all",
+   "body": {
+    "accepted": {
+     "count": 0,
+     "total": 0
+    },
+    "awaiting": {
+     "count": 1,
+     "total": 200
+    },
+    "bands": [
+     {
+      "accepted": 0,
+      "band": "small",
+      "conversion": null,
+      "decided": 0
+     },
+     {
+      "accepted": 0,
+      "band": "medium",
+      "conversion": null,
+      "decided": 0
+     },
+     {
+      "accepted": 0,
+      "band": "large",
+      "conversion": null,
+      "decided": 0
+     }
+    ],
+    "conversion": {
+     "count": null,
+     "decided": 0,
+     "value": null
+    },
+    "declined": {
+     "count": 0,
+     "total": 0
+    },
+    "expired": {
+     "count": 0,
+     "total": 0
+    },
+    "medianDaysToAccept": null,
+    "missingTotal": 0,
+    "sent": {
+     "count": 1,
+     "total": 200
+    }
+   },
+   "etag": "W/\"998dbaa787c0b09f7625fd81\"",
+   "request": null,
+   "status": 200,
+   "step": "GET /funnel"
+  },
+  {
+   "as": "all",
+   "body": {
+    "comparable": true,
+    "current": 76000,
+    "from": "2026-01-01",
+    "items": [
+     {
+      "effect": -180000,
+      "kind": "lost",
+      "name": "Bambu X1C",
+      "price": 0,
+      "volume": 0
+     },
+     {
+      "effect": 60000,
+      "kind": "new",
+      "name": "Kayak",
+      "price": 0,
+      "volume": 0
+     },
+     {
+      "effect": 10500,
+      "kind": "new",
+      "name": "Impression 3D",
+      "price": 0,
+      "volume": 0
+     },
+     {
+      "effect": 4800,
+      "kind": "new",
+      "name": "SUNLU PLA",
+      "price": 0,
+      "volume": 0
+     },
+     {
+      "effect": 700,
+      "kind": "new",
+      "name": "Magigoo stick",
+      "price": 0,
+      "volume": 0
+     }
+    ],
+    "lost": -180000,
+    "mix": 0,
+    "new": 76000,
+    "previous": 180000,
+    "previousFrom": "2025-10-23",
+    "previousTo": "2025-12-31",
+    "price": 0,
+    "to": "2026-03-11",
+    "volume": 0
+   },
+   "etag": "W/\"2290753de4fefe293fee9938\"",
+   "request": null,
+   "status": 200,
+   "step": "GET /pvm?from=2026-01-01&to=2026-03-11"
+  },
+  {
+   "as": "all",
+   "body": {
+    "comparable": true,
+    "current": 4800,
+    "from": "2026-01-01",
+    "items": [
+     {
+      "effect": 4800,
+      "kind": "new",
+      "name": "SUNLU PLA",
+      "price": 0,
+      "volume": 0
+     }
+    ],
+    "lost": 0,
+    "mix": 0,
+    "new": 4800,
+    "previous": 0,
+    "previousFrom": "2025-10-23",
+    "previousTo": "2025-12-31",
+    "price": 0,
+    "to": "2026-03-11",
+    "volume": 0
+   },
+   "etag": "W/\"b34685963a13b3aa497f5447\"",
+   "request": null,
+   "status": 200,
+   "step": "GET /pvm?from=2026-01-01&to=2026-03-11&brand=SUNLU&kind=goods"
+  },
+  {
+   "as": "all",
+   "body": {
+    "detail": "from/to must be yyyy-MM-dd with from ≤ to"
+   },
+   "etag": null,
+   "request": null,
+   "status": 422,
+   "step": "GET /pvm?from=2026-03-11&to=2026-03-01"
+  },
+  {
+   "as": "all",
+   "body": {
+    "breakEven": null,
+    "costsSince": null,
+    "fixedMonthly": 0,
+    "months": [
+     {
+      "coverage": null,
+      "fixed": 0,
+      "ht": 0,
+      "labor": 0,
+      "month": "2025-04",
+      "partial": true,
+      "result": 0,
+      "variable": 0
+     },
+     {
+      "coverage": null,
+      "fixed": 0,
+      "ht": 0,
+      "labor": 0,
+      "month": "2025-05",
+      "partial": true,
+      "result": 0,
+      "variable": 0
+     },
+     {
+      "coverage": 1.0,
+      "fixed": 0,
+      "ht": 1400,
+      "labor": 0,
+      "month": "2025-06",
+      "partial": true,
+      "result": 1390,
+      "variable": 10
+     },
+     {
+      "coverage": null,
+      "fixed": 0,
+      "ht": 0,
+      "labor": 0,
+      "month": "2025-07",
+      "partial": true,
+      "result": 0,
+      "variable": 0
+     },
+     {
+      "coverage": null,
+      "fixed": 0,
+      "ht": 0,
+      "labor": 0,
+      "month": "2025-08",
+      "partial": true,
+      "result": 0,
+      "variable": 0
+     },
+     {
+      "coverage": null,
+      "fixed": 0,
+      "ht": 0,
+      "labor": 0,
+      "month": "2025-09",
+      "partial": true,
+      "result": 0,
+      "variable": 0
+     },
+     {
+      "coverage": null,
+      "fixed": 0,
+      "ht": 0,
+      "labor": 0,
+      "month": "2025-10",
+      "partial": true,
+      "result": 0,
+      "variable": 0
+     },
+     {
+      "coverage": null,
+      "fixed": 0,
+      "ht": 0,
+      "labor": 0,
+      "month": "2025-11",
+      "partial": true,
+      "result": 0,
+      "variable": 0
+     },
+     {
+      "coverage": 1.0,
+      "fixed": 0,
+      "ht": 180000,
+      "labor": 0,
+      "month": "2025-12",
+      "partial": true,
+      "result": 30000,
+      "variable": 150000
+     },
+     {
+      "coverage": 1.0,
+      "fixed": 0,
+      "ht": 62400,
+      "labor": 0,
+      "month": "2026-01",
+      "partial": true,
+      "result": 10200,
+      "variable": 52200
+     },
+     {
+      "coverage": 0.1,
+      "fixed": 0,
+      "ht": 6700,
+      "labor": 0,
+      "month": "2026-02",
+      "partial": true,
+      "result": 6695,
+      "variable": 5
+     },
+     {
+      "coverage": 0.35,
+      "fixed": 0,
+      "ht": 6900,
+      "labor": 0,
+      "month": "2026-03",
+      "partial": true,
+      "result": 4700,
+      "variable": 2200
+     }
+    ]
+   },
+   "etag": "W/\"bb016405bdbe4df4f60988b0\"",
+   "request": null,
+   "status": 200,
+   "step": "GET /result"
+  },
+  {
+   "as": "all",
+   "body": {
+    "costs": []
+   },
+   "etag": null,
+   "request": null,
+   "status": 200,
+   "step": "GET /fixed-costs"
   },
   {
    "as": "read",
@@ -21452,11 +22032,38 @@
   {
    "as": "read",
    "body": {
+    "aging": {
+     "buckets": {
+      "d30": 0,
+      "d60": 1500,
+      "d90": 0,
+      "notDue": 2000,
+      "over": 0
+     }
+    },
     "coverage": {
      "known": 8500,
      "unknown": 2000
     },
+    "dso": 1,
     "error": null,
+    "forecast": [
+     {
+      "invoices": 3500,
+      "orders": 600,
+      "window": "d30"
+     },
+     {
+      "invoices": 0,
+      "orders": 0,
+      "window": "d60"
+     },
+     {
+      "invoices": 0,
+      "orders": 0,
+      "window": "d90"
+     }
+    ],
     "months": [
      {
       "collected": 0,
@@ -21542,7 +22149,7 @@
     },
     "syncedAt": "2026-03-11T19:00:00+00:00"
    },
-   "etag": "W/\"45cf959fc6c01221fe11fd33\"",
+   "etag": "W/\"02a1c7e611a5c85795b28335\"",
    "request": null,
    "status": 200,
    "step": "GET /cash"
@@ -21766,6 +22373,36 @@
    "request": null,
    "status": 403,
    "step": "GET ?granularity=month&from=2025-01-01&to=2026-03-31&segment=pro"
+  },
+  {
+   "as": "read",
+   "body": {
+    "detail": "Missing required permissions: revenue:read, revenue:view_customers"
+   },
+   "etag": null,
+   "request": null,
+   "status": 403,
+   "step": "GET /cohorts"
+  },
+  {
+   "as": "read",
+   "body": {
+    "detail": "Missing required permissions: revenue:read, revenue:view_margin"
+   },
+   "etag": null,
+   "request": null,
+   "status": 403,
+   "step": "GET /result"
+  },
+  {
+   "as": "read",
+   "body": {
+    "detail": "Missing required permissions: revenue:read, revenue:view_margin"
+   },
+   "etag": null,
+   "request": null,
+   "status": 403,
+   "step": "GET /fixed-costs"
   },
   {
    "as": "read_customers",
@@ -22883,11 +23520,46 @@
   {
    "as": "read_customers",
    "body": {
+    "aging": {
+     "buckets": {
+      "d30": 0,
+      "d60": 1500,
+      "d90": 0,
+      "notDue": 2000,
+      "over": 0
+     },
+     "byCustomer": [
+      {
+       "balance": 3500,
+       "customerName": "Lycée Gauguin",
+       "oldestDays": 60,
+       "overdue": 1500
+      }
+     ]
+    },
     "coverage": {
      "known": 8500,
      "unknown": 2000
     },
+    "dso": 1,
     "error": null,
+    "forecast": [
+     {
+      "invoices": 3500,
+      "orders": 600,
+      "window": "d30"
+     },
+     {
+      "invoices": 0,
+      "orders": 0,
+      "window": "d60"
+     },
+     {
+      "invoices": 0,
+      "orders": 0,
+      "window": "d90"
+     }
+    ],
     "months": [
      {
       "collected": 0,
@@ -22982,7 +23654,7 @@
      }
     ]
    },
-   "etag": "W/\"6e36fb9e92072cf09b0051af\"",
+   "etag": "W/\"9ba6bc90ff8ca25f62a72f20\"",
    "request": null,
    "status": 200,
    "step": "GET /cash"
@@ -25189,6 +25861,255 @@
    "request": null,
    "status": 200,
    "step": "GET /labor"
+  },
+  {
+   "as": "labor",
+   "body": {
+    "costs": [
+     {
+      "label": "Rent",
+      "monthly": 900.0
+     },
+     {
+      "label": "Power",
+      "monthly": 120.5
+     }
+    ]
+   },
+   "etag": "<after labor write: not recorded>",
+   "request": {
+    "costs": [
+     {
+      "label": " Rent ",
+      "monthly": 900
+     },
+     {
+      "label": "Power",
+      "monthly": 120.5
+     }
+    ]
+   },
+   "status": 200,
+   "step": "PUT /fixed-costs"
+  },
+  {
+   "as": "labor",
+   "body": {
+    "detail": "label must not be blank"
+   },
+   "etag": "<after labor write: not recorded>",
+   "request": {
+    "costs": [
+     {
+      "label": "   ",
+      "monthly": 1
+     }
+    ]
+   },
+   "status": 422,
+   "step": "PUT /fixed-costs"
+  },
+  {
+   "as": "labor",
+   "body": {
+    "detail": [
+     {
+      "ctx": {
+       "ge": 0.0
+      },
+      "input": -1,
+      "loc": [
+       "body",
+       "costs",
+       0,
+       "monthly"
+      ],
+      "msg": "Input should be greater than or equal to 0",
+      "type": "greater_than_equal"
+     }
+    ]
+   },
+   "etag": "<after labor write: not recorded>",
+   "request": {
+    "costs": [
+     {
+      "label": "x",
+      "monthly": -1
+     }
+    ]
+   },
+   "status": 422,
+   "step": "PUT /fixed-costs"
+  },
+  {
+   "as": "read_margin",
+   "body": {
+    "detail": "Missing required permissions: revenue:view_margin, revenue:manage_targets"
+   },
+   "etag": "<after labor write: not recorded>",
+   "request": {
+    "costs": []
+   },
+   "status": 403,
+   "step": "PUT /fixed-costs"
+  },
+  {
+   "as": "all",
+   "body": {
+    "costs": [
+     {
+      "label": "Rent",
+      "monthly": 900.0
+     },
+     {
+      "label": "Power",
+      "monthly": 120.5
+     }
+    ]
+   },
+   "etag": "<after labor write: not recorded>",
+   "request": null,
+   "status": 200,
+   "step": "GET /fixed-costs"
+  },
+  {
+   "as": "all",
+   "body": {
+    "breakEven": {
+     "amount": 389073,
+     "day": null,
+     "projected": true,
+     "reached": 0.02
+    },
+    "costsSince": null,
+    "fixedMonthly": 1021,
+    "months": [
+     {
+      "coverage": null,
+      "fixed": 1021,
+      "ht": 0,
+      "labor": 0,
+      "month": "2025-04",
+      "partial": true,
+      "result": -1020,
+      "variable": 0
+     },
+     {
+      "coverage": null,
+      "fixed": 1021,
+      "ht": 0,
+      "labor": 0,
+      "month": "2025-05",
+      "partial": true,
+      "result": -1020,
+      "variable": 0
+     },
+     {
+      "coverage": 1.0,
+      "fixed": 1021,
+      "ht": 1400,
+      "labor": 0,
+      "month": "2025-06",
+      "partial": true,
+      "result": 370,
+      "variable": 10
+     },
+     {
+      "coverage": null,
+      "fixed": 1021,
+      "ht": 0,
+      "labor": 0,
+      "month": "2025-07",
+      "partial": true,
+      "result": -1020,
+      "variable": 0
+     },
+     {
+      "coverage": null,
+      "fixed": 1021,
+      "ht": 0,
+      "labor": 0,
+      "month": "2025-08",
+      "partial": true,
+      "result": -1020,
+      "variable": 0
+     },
+     {
+      "coverage": null,
+      "fixed": 1021,
+      "ht": 0,
+      "labor": 0,
+      "month": "2025-09",
+      "partial": true,
+      "result": -1020,
+      "variable": 0
+     },
+     {
+      "coverage": null,
+      "fixed": 1021,
+      "ht": 0,
+      "labor": 0,
+      "month": "2025-10",
+      "partial": true,
+      "result": -1020,
+      "variable": 0
+     },
+     {
+      "coverage": null,
+      "fixed": 1021,
+      "ht": 0,
+      "labor": 0,
+      "month": "2025-11",
+      "partial": true,
+      "result": -1020,
+      "variable": 0
+     },
+     {
+      "coverage": 1.0,
+      "fixed": 1021,
+      "ht": 180000,
+      "labor": 0,
+      "month": "2025-12",
+      "partial": true,
+      "result": 28980,
+      "variable": 150000
+     },
+     {
+      "coverage": 1.0,
+      "fixed": 1021,
+      "ht": 62400,
+      "labor": 0,
+      "month": "2026-01",
+      "partial": true,
+      "result": 9180,
+      "variable": 52200
+     },
+     {
+      "coverage": null,
+      "fixed": 1021,
+      "ht": 0,
+      "labor": 0,
+      "month": "2026-02",
+      "partial": true,
+      "result": -1020,
+      "variable": 0
+     },
+     {
+      "coverage": 0.35,
+      "fixed": 329,
+      "ht": 6900,
+      "labor": 0,
+      "month": "2026-03",
+      "partial": true,
+      "result": 4371,
+      "variable": 2200
+     }
+    ]
+   },
+   "etag": "<after labor write: not recorded>",
+   "request": null,
+   "status": 200,
+   "step": "GET /result"
   },
   {
    "as": "all",
