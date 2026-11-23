@@ -1,6 +1,7 @@
 /** The Devis side of the Order Board: chips, search, loading line and rows. */
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { screen, within } from '@testing-library/react';
+import { screen, waitFor, within } from '@testing-library/react';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import userEvent from '@testing-library/user-event';
 import { http, HttpResponse } from 'msw';
 import { server } from '../../mocks/server';
@@ -66,6 +67,17 @@ describe('QuotesView', () => {
     expect(await screen.findByText('Loading quotes… 7 remaining')).toBeInTheDocument();
   });
 
+  it('the loading line folds away, then goes, once the quotes are all read', async () => {
+    serve({ loading: 7 });
+    const client = new QueryClient();
+    render(<QueryClientProvider client={client}><QuotesView coreOnly={false} openId={null} onToggle={vi.fn()} /></QueryClientProvider>);
+    const line = await screen.findByText('Loading quotes… 7 remaining');
+    serve();
+    void client.invalidateQueries();
+    await waitFor(() => expect(line.parentElement).toHaveAttribute('data-leaving'));
+    await waitFor(() => expect(line).not.toBeInTheDocument());
+  });
+
   it('renders a row whose lines are not read yet without a summary', async () => {
     serve({ rows: [quote({ lines: null })] });
     show();
@@ -74,11 +86,11 @@ describe('QuotesView', () => {
     expect(row).not.toHaveTextContent('PLA Basic Noir');
   });
 
-  it('summarises the first two lines and counts the rest', async () => {
+  it('summarises the first line and counts the rest', async () => {
     serve({ rows: [quote({ lines: [qline(), qline({ id: 'b', name: 'Buse 0,6', quantity: 2 }), qline({ id: 'c', name: 'Plateau PEI' })] })] });
     show();
     const row = (await screen.findByText('Nautic Service')).closest('button')!;
-    expect(within(row).getByText('4× PLA Basic Noir · 2× Buse 0,6 · +1')).toBeInTheDocument();
+    expect(within(row).getByText('4× PLA Basic Noir · +2')).toBeInTheDocument();
   });
 
   it('shows the per-chip empty state', async () => {

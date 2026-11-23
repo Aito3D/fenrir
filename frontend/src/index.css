@@ -2300,6 +2300,9 @@ html[data-vt='aito-card-exit']::view-transition-group(aito-card) {
   animation: row-flash 1.2s ease-out;
 }
 /* A scan hit on a parcel line: short enough that scans in quick succession each read as one beat. */
+.animate-row-flash.flash-violet::before {
+  background: var(--color-violet-500);
+}
 .animate-row-flash.flash-quick::before {
   animation-duration: 0.5s;
 }

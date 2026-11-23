@@ -1,6 +1,6 @@
 /** One quote: the collapsed row and the opened panel (lines with stock, customer, document, activity). */
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { act, screen, within } from '@testing-library/react';
+import { act, fireEvent, screen, within } from '@testing-library/react';
 import { api } from '../../../api/client';
 import type { QuoteLine, QuoteRow, QuoteState } from '../../../api/client';
 import i18n from '../../../i18n';
@@ -28,6 +28,15 @@ const stub = () => {
 };
 
 describe('QuoteCard', () => {
+  it('a saved quote flashes once, then says it is done', () => {
+    const onFlashed = vi.fn();
+    render(<QuoteCard row={quote()} open={false} onToggle={vi.fn()} fresh onFlashed={onFlashed} />);
+    const flash = document.querySelector('[data-fresh]')!;
+    expect(flash).toHaveClass('animate-row-flash');
+    fireEvent.animationEnd(flash);
+    expect(onFlashed).toHaveBeenCalledOnce();
+  });
+
   it('shows the state, the validity of a sent quote and no payment pill', () => {
     render(<QuoteCard row={quote()} open={false} onToggle={vi.fn()} />);
     const row = screen.getByRole('button', { expanded: false });
@@ -45,7 +54,7 @@ describe('QuoteCard', () => {
     expect(pla).toHaveTextContent('10%');
     expect(h2d).toHaveTextContent('to order');
     expect(await screen.findByText('yann@example.com')).toBeInTheDocument();
-    expect(screen.getByText('Document')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Download quote' })).toBeInTheDocument();
   });
 
   it('shows no stock dot when the stock is unknown, and a skeleton while the lines are unread', () => {
@@ -59,10 +68,10 @@ describe('QuoteCard', () => {
     expect(screen.getByTestId('quote-lines-loading')).toBeInTheDocument();
   });
 
-  it('renders the action footer only when given one', () => {
+  it('the toolbar always carries the PDF icons, and the state actions when given', () => {
     stub();
     const { unmount } = render(<QuoteCard row={quote()} open onToggle={vi.fn()} />);
-    expect(screen.queryByTestId('quote-actions')).not.toBeInTheDocument();
+    expect(within(screen.getByTestId('quote-actions')).getAllByRole('button')).toHaveLength(2); // print, download
     unmount();
     render(<QuoteCard row={quote()} open onToggle={vi.fn()}><button type="button">Accept</button></QuoteCard>);
     expect(within(screen.getByTestId('quote-actions')).getByText('Accept')).toBeInTheDocument();
@@ -90,7 +99,38 @@ describe('QuoteCard', () => {
     expect(screen.getByRole('link', { name: 'Edit in Zoho' })).toHaveAttribute('href', 'https://books.example/q/e1');
     u2();
     render(<QuoteCard row={quote({ editable: false, zoho_url: null })} open onToggle={vi.fn()} onEdit={onEdit} />);
-    expect(screen.queryByTestId('quote-actions')).not.toBeInTheDocument();
+    expect(within(screen.getByTestId('quote-actions')).queryByRole('link')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Edit' })).not.toBeInTheDocument();
+  });
+
+  it('explains the total: before tax, tax, total; nothing while the tax is unread', () => {
+    stub();
+    const { unmount } = render(<QuoteCard row={quote({ total: 215000, tax_total: 29655 })} open onToggle={vi.fn()} />);
+    const totals = screen.getByTestId('quote-totals');
+    // textContent, not toHaveTextContent: the amounts carry no-break spaces the matcher would normalise away.
+    for (const n of [185345, 29655, 215000]) expect(totals.textContent).toContain(formatMoney(n, 'XPF'));
+    unmount();
+    render(<QuoteCard row={quote()} open onToggle={vi.fn()} />);
+    expect(screen.queryByTestId('quote-totals')).not.toBeInTheDocument();
+  });
+
+  it('warns on the row when a sent quote expires within three days, and only then', () => {
+    stub();
+    const inDays = (n: number) => new Date(Date.now() + n * 86_400_000).toISOString().slice(0, 10);
+    const { unmount } = render(<QuoteCard row={quote({ expiry_date: inDays(2) })} open={false} onToggle={vi.fn()} />);
+    expect(screen.getByTestId('quote-expiring')).toBeInTheDocument();
+    unmount();
+    const { unmount: u2 } = render(<QuoteCard row={quote({ expiry_date: inDays(20) })} open={false} onToggle={vi.fn()} />);
+    expect(screen.queryByTestId('quote-expiring')).not.toBeInTheDocument();
+    u2();
+    render(<QuoteCard row={quote({ state: 'draft', expiry_date: inDays(2) })} open={false} onToggle={vi.fn()} />);
+    expect(screen.queryByTestId('quote-expiring')).not.toBeInTheDocument();
+  });
+
+  it('the collapsed row names the first line and counts the rest', () => {
+    stub();
+    render(<QuoteCard row={quote()} open={false} onToggle={vi.fn()} />);
+    expect(screen.getByText('4× PLA Basic Noir · +1')).toBeInTheDocument();
   });
 
   it('a fixed-amount discount reads as money, a percentage as written, on both layouts', () => {

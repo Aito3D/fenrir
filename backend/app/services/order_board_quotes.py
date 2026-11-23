@@ -79,6 +79,10 @@ def quote_row(
         total = None
     lines = None
     is_core = None
+    try:  # detail only: the list header has no tax figure
+        tax_total = None if src.get("tax_total") is None else float(src["tax_total"])
+    except (TypeError, ValueError):
+        tax_total = None
     if detail is not None:
         raw_lines = detail.get("line_items") or []
         lines = []
@@ -112,6 +116,7 @@ def quote_row(
         "expiry_date": src.get("expiry_date") or "",
         "state": state,
         "total": total,
+        "tax_total": tax_total,
         "currency": src.get("currency_code") or "",
         "reference": src.get("reference_number") or "",
         "age_days": age_days(src.get("date") or "", today),

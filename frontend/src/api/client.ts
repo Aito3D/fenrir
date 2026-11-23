@@ -5539,6 +5539,8 @@ export interface QuoteRow {
   is_core: boolean | null; editable: boolean; has_draft_order: boolean; modified: string; lines: QuoteLine[] | null;
   /** The estimate in the Books web app; null when Zoho is not configured. */
   zoho_url?: string | null;
+  /** The tax inside `total`; null until the quote's detail is read. */
+  tax_total?: number | null;
 }
 export interface QuoteOrderResult {
   quotes: QuotesResponse; board: OrderBoardResponse; row: OrderBoardRow | null; salesorder_id: string;

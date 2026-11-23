@@ -50,7 +50,8 @@ describe('Quote actions', () => {
     serve(state);
     show();
     const f = await footer();
-    expect(f.getAllByRole('button').map(b => b.textContent?.trim())).toEqual(names);
+    // The PDF icon buttons carry no text: only the worded ones are the state actions.
+    expect(f.getAllByRole('button').map(b => b.textContent?.trim()).filter(Boolean)).toEqual(names);
   });
 
   it('shows no action button without orders:update', async () => {
@@ -58,7 +59,7 @@ describe('Quote actions', () => {
     serve('sent');
     show();
     expect(await screen.findByText('Nautic Service')).toBeInTheDocument();
-    expect(screen.queryByTestId('quote-actions')).not.toBeInTheDocument();
+    expect((await footer()).getAllByRole('button').filter(b => b.textContent?.trim())).toEqual([]);
   });
 
   it('Declined then Reopen round-trip moves the quote between the chips, from the returned lists', async () => {
@@ -97,7 +98,7 @@ describe('Quote actions', () => {
     show();
     const f = await footer();
     await user.dblClick(f.getByRole('button', { name: 'Declined' }));
-    for (const b of f.getAllByRole('button')) expect(b).toBeDisabled();
+    for (const b of f.getAllByRole('button').filter(b => b.textContent?.trim())) expect(b).toBeDisabled();
     expect(await screen.findByRole('button', { name: /^Declined 1/ })).toBeInTheDocument();
     expect(posts).toBe(1);
   });

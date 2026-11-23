@@ -1350,7 +1350,7 @@ describe('OrderBoardPage Devis side', () => {
       expect(undone).toEqual([{ salesorder_id: 'so9' }]);
       expect(window.location.search).toContain('view=quotes');
       expect(window.location.search).not.toContain('order=');
-      expect(screen.queryByTestId('quote-accepted')).not.toBeInTheDocument();
+      await waitFor(() => expect(screen.queryByTestId('quote-accepted')).not.toBeInTheDocument());
       expect(await screen.findByRole('button', { name: /DEV-00412/, expanded: true })).toHaveTextContent('Sent');
     });
 
@@ -1446,7 +1446,8 @@ describe('OrderBoardPage Devis side', () => {
       accept();
       await user.click(within(await screen.findByTestId('quote-actions')).getByRole('button', { name: 'Accepted' }));
       await user.click(within(await notice()).getByRole('button', { name: 'Close' }));
-      expect(screen.queryByTestId('quote-accepted')).not.toBeInTheDocument();
+      expect(screen.getByTestId('quote-accepted')).toHaveClass('animate-fade-out-sm'); // fades, then unmounts
+      await waitFor(() => expect(screen.queryByTestId('quote-accepted')).not.toBeInTheDocument());
     });
   });
 });

@@ -33,8 +33,9 @@ const chipCls = (on: boolean) =>
  *  `openId` is the opened quote (the page keeps it in the URL); a quote opened from a link brings its chip up,
  *  and so does one whose chip changed (an expired quote re-dated by an edit). `onEdit` opens the quote dialog;
  *  `onOrdered` receives the order an Accept or Create order made. */
-export function QuotesView({ coreOnly, openId, onToggle, onEdit, onOrdered }: {
-  coreOnly: boolean; openId: string | null; onToggle: (id: string) => void; onEdit?: (row: QuoteRow) => void;
+export function QuotesView({ coreOnly, openId, freshId, onFlashed, onToggle, onEdit, onOrdered }: {
+  coreOnly: boolean; openId: string | null; freshId?: string | null; onFlashed?: () => void;
+  onToggle: (id: string) => void; onEdit?: (row: QuoteRow) => void;
   onOrdered?: (result: QuoteOrderResult, quote: ClickedQuote) => void;
 }) {
   const { t } = useTranslation();
@@ -45,7 +46,23 @@ export function QuotesView({ coreOnly, openId, onToggle, onEdit, onOrdered }: {
   const [chip, setChip] = useState<QuoteChip>('current');
   const [text, setText] = useState('');
   const rows = data?.ready ? data.rows : [];
+  // The rows rise in once, when the quotes first show; chips and the search later swap them in place.
+  const [entering, setEntering] = useState(true);
+  useEffect(() => {
+    if (!data?.ready || !entering) return;
+    const id = setTimeout(() => setEntering(false), 700);
+    return () => clearTimeout(id);
+  }, [data?.ready, entering]);
   const open = openId ? rows.find(r => r.id === openId) : undefined;
+  // The loading line folds away instead of making the rows jump: held at its last count, then unmounted.
+  const loading = data?.loading ?? 0;
+  const [loadingShown, setLoadingShown] = useState(0);
+  if (loading > 0 && loading !== loadingShown) setLoadingShown(loading);
+  useEffect(() => {
+    if (loading > 0 || !loadingShown) return;
+    const id = setTimeout(() => setLoadingShown(0), 170); // a beat past .row-collapse's 160ms
+    return () => clearTimeout(id);
+  }, [loading, loadingShown]);
   const followed = useRef<string | null>(null);
   useEffect(() => {
     if (!open || followed.current === `${open.id}:${chipOf(open)}`) return;
@@ -122,6 +139,8 @@ export function QuotesView({ coreOnly, openId, onToggle, onEdit, onOrdered }: {
           onToggle(r.id);
         }}
         onEdit={onEdit && (() => onEdit(r))}
+        fresh={r.id === freshId}
+        onFlashed={onFlashed}
       >
         {canUpdate && r.id === openId ? footer(r) : null}
       </QuoteCard>
@@ -150,13 +169,15 @@ export function QuotesView({ coreOnly, openId, onToggle, onEdit, onOrdered }: {
           ))}
         </div>
       </div>
-      {!!data?.loading && (
-        <div role="status" className="mb-3 flex items-center gap-2 text-sm text-bambu-gray">
-          <Loader2 aria-hidden="true" className="h-4 w-4 animate-spin" />
-          {t('orders.quotes.loading', { n: data.loading })}
+      {loadingShown > 0 && (
+        <div className="row-collapse mb-3" data-leaving={!loading || undefined}>
+          <div role="status" className="flex items-center gap-2 text-sm text-bambu-gray">
+            <Loader2 aria-hidden="true" className="h-4 w-4 animate-spin" />
+            {t('orders.quotes.loading', { n: loadingShown })}
+          </div>
         </div>
       )}
-      <div data-testid="quotes-list" className="space-y-2">{list}</div>
+      <div data-testid="quotes-list" className={`space-y-2 ${data?.ready && entering ? 'orders-rows-enter stagger-children' : ''}`}>{list}</div>
       {emailing && <OrderDocumentEmailModal quoteId={emailing} onClose={() => setEmailing(null)} />}
     </div>
   );

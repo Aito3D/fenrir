@@ -95,7 +95,9 @@ def test_quote_row_accepted_hidden_without_detail_or_when_converted():
 def test_quote_row_without_detail():
     row = quote_row(header(total=10), None, {}, {}, TODAY, set())
     assert row["lines"] is None and row["is_core"] is None and row["editable"] is False
-    assert row["id"] == "e1" and row["total"] == 10.0
+    assert row["id"] == "e1" and row["total"] == 10.0 and row["tax_total"] is None
+    assert quote_row(header(), detail(tax_total=29655), {}, {}, TODAY, set())["tax_total"] == 29655.0
+    assert quote_row(header(), detail(tax_total="?"), {}, {}, TODAY, set())["tax_total"] is None
 
 
 def test_quote_row_prefers_detail_and_flags():

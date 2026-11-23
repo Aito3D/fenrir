@@ -284,6 +284,7 @@ export function OrderBoardPage() {
   const rendered = kept.length ? [...listed, ...kept] : listed;
   // The open order, remembered with the entry after it: when the board drops it (handed over), its card holds in place and folds away.
   const [freshId, setFreshId] = useState<string | null>(null);
+  const [freshQuote, setFreshQuote] = useState<string | null>(null);
   const entryId = (e: (typeof rendered)[number]) => (e.open ? e.open.id : e.fin.id);
   const openRow = openId ? all.find(r => r.id === openId) : undefined;
   const [lastOpen, setLastOpen] = useState<{ row: OrderBoardRow; before: string | null } | null>(null);
@@ -323,6 +324,7 @@ export function OrderBoardPage() {
     setDrafting(null);
     if ('estimate_id' in result) {
       queryClient.setQueryData(quotesQuery.queryKey, result.quotes);
+      setFreshQuote(result.estimate_id);
       setSearchParams(prev => {
         const next = new URLSearchParams(prev);
         next.set('quote', result.estimate_id);
@@ -343,6 +345,14 @@ export function OrderBoardPage() {
   // a trip to the Devis side, its own undo, or dismissed.
   const [accepted, setAccepted] = useState<AcceptedQuote | null>(null);
   const notice = quotesView ? null : accepted;
+  // It leaves the way the batch bar does: faded, then unmounted. A switch to the quotes drops it at once.
+  const [noticeShown, setNoticeShown] = useState<AcceptedQuote | null>(null);
+  if (notice ? notice !== noticeShown : quotesView && noticeShown) setNoticeShown(notice);
+  useEffect(() => {
+    if (notice || !noticeShown) return;
+    const id = setTimeout(() => setNoticeShown(null), 170); // a beat past .animate-fade-out-sm's 150ms
+    return () => clearTimeout(id);
+  }, [notice, noticeShown]);
   const noticeSeen = useRef(false);
   useEffect(() => {
     if (notice) noticeSeen.current = true;
@@ -610,6 +620,8 @@ export function OrderBoardPage() {
         <QuotesView
           coreOnly={coreOnly}
           openId={quoteId}
+          freshId={freshQuote}
+          onFlashed={() => setFreshQuote(null)}
           onToggle={toggleQuote}
           onEdit={hasPermission('orders:update') ? quote => setDrafting({ mode: 'quote', quote }) : undefined}
           onOrdered={onOrdered}
@@ -727,7 +739,7 @@ export function OrderBoardPage() {
         </div>
       )}
 
-      {notice && <QuoteAcceptedNotice accepted={notice} onUndone={onUndone} onDismiss={() => setAccepted(null)} />}
+      {noticeShown && <QuoteAcceptedNotice accepted={noticeShown} leaving={!notice} onUndone={onUndone} onDismiss={() => setAccepted(null)} />}
       {!quotesView && <div data-testid="orders-list" className={`space-y-2 ${ready && entering ? 'orders-rows-enter stagger-children' : ''}`}>{list}</div>}
       {!quotesView && ready && listed.length > shown && (
         <button
