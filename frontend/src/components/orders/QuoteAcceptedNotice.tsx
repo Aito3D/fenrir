@@ -7,7 +7,7 @@ import { useToast } from '../../contexts/ToastContext';
 import { focusRingCls } from '../formStyles';
 import { quoteReason, useQuoteActions } from './useQuoteActions';
 
-/** `undoable` is false when Books reused a draft order that existed before the click. */
+/** `undoable` is the server's answer: true only for an order this board's accept/create-order click made in the running server. */
 export type AcceptedQuote = { quoteId: string; quote: string; salesorderId: string; order: string; undoable: boolean };
 
 /** A bar floating at the bottom of the screen, in the quotes' violet: which quote became which order, with Undo

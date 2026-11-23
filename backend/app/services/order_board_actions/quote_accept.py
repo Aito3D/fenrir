@@ -146,9 +146,8 @@ async def undo_accept(db: AsyncSession, estimate_id: str, salesorder_id: str, *,
         if order.get("estimate_id") != estimate_id:
             raise OrderActionRefused("not_this_quote")
         row = await sync.find_board_row(db, salesorder_id)
-        if row is None or _started(row):
-            raise OrderActionRefused("undo_too_late")
-        if await _payment_in_flight(db, salesorder_id):  # money may be on its way to this order
+        # _payment_in_flight: money may be on its way to this order
+        if row is None or _started(row) or await _payment_in_flight(db, salesorder_id):
             raise OrderActionRefused("undo_too_late")
         # Whatever happens from here (timeout, crash), the next pass re-reads the quote: a DELETE that went through
         # leaves it accepted with no order, and a stored copy still naming the order would hide it.
