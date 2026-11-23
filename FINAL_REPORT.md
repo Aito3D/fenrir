@@ -1,71 +1,81 @@
-# Refactor loop — final report, campaign O6 (order code, wide)
+# Refactor loop — campaign O7: the order page (/orders)
 
-Date: 2026-11-21 · Branch `auto-refactor-loop` · Based on main `ce593fab9` · BASE `f827bb26e` (tag `o6/refactor-base`)
+Run 2026-11-22 → 2026-11-23 on `/refactor-loop:refactor-loop focus on order page`. Auto mode, defaults (MAX_ITER 8,
+MAX_ROUNDS 3, BATCH 3, TRIAGE P2,P3, grouped commits, merge at exit).
 
-## Outcome
+- Worktree `../bambuddy-refactor-o7`, branch `auto-refactor-loop-o7`, cut from main `6672584de` (order quotes pushed).
+- Names deviate from the skill defaults (user-approved): a peer session ran campaign RV2 (Revenue page) at the same time
+  in `../bambuddy-refactor` with the default `refactor-base` / `loop-N` tags. O7 uses `o7/refactor-base` (setup
+  `e770d4d83`) and `o7/loop-1` … `o7/loop-8`.
+- **8 iterations, 3 survey rounds, 8 squashed commits + setup, 9 tags.**
+- **Why it ended:** the plan was exhausted after iteration 8, and the RESURVEY cap check stopped it (round 3 = MAX_ROUNDS).
+  The iteration budget (8/8) was spent at the same time. It did not converge: round 3 was still productive.
 
-- **Why it ended:** stopped by the user after iteration 6 ("stop now, merge all and clean"). Not converged, not at MAX_ITER (6 of 8 used).
-- **Iterations:** 6, each verified PASS by a blind verifier. Tags `o6/loop-1` … `o6/loop-6`.
-- **Survey rounds:** 2 of 3.
-- **Tasks:** 18 filed in the plan · 17 DONE · 1 OPEN (T-143) · 8 in TRIAGE.md.
-- **Diff vs BASE:** 25 files, +818 / −111 (mostly tests).
+## User-approved behavior changes (BASELINE-CHANGELOG.md, 2026-11-22)
+All are in the new quote **Undo** ("Annuler" after Accepté), which deletes the sales order in Books. That path had never
+been run live.
+- **T-149 + T-155:** Undo deletes only the order that this board's own accept / create-order click made. The board
+  remembers it in a bounded in-process map, so after a restart Undo is refused. The accept and order responses carry
+  `undoable`, and the notice's Annuler button follows it instead of the cached `has_draft_order`.
+- **T-156:** Undo is refused (`undo_too_late`) while a payment link is pending or a terminal charge is pending or
+  processing. The undo route holds the order's payment lock, and a held lock means `undo_too_late`.
+- **T-159:** Undo is also refused when the last terminal charge is `needs_attention` (outcome unknown), or is paid but
+  not booked in Books (`booking_status != "booked"`, which includes Heimdall's `not_booked`).
+- **T-158 + T-160:** the order payment-link route takes the same per-order payment lock (409 `terminal_in_progress`
+  when held), so creating a link and undoing can't overlap. Side effect: sending a link is refused while a terminal
+  start or a manual payment holds that order's lock.
+- **T-168:** a regression from T-158, found by the round-3 auditors. A pending link blocks Undo only once it was
+  minted (it has a heimdall_id). A failed-mint placeholder no longer blocks Undo forever (nothing clears it when
+  Heimdall isn't configured). A link being minted right now is still covered by the lock.
+- Declined: **T-165**, moving the lock to `_common.py` and making `_made_here` public. It was renaming churn that would
+  move SURFACE.
 
-## Scope
-
-The services and integrations under the order page: `zoho.py`, `heimdall.py`, `aito_{payment_links,terminal_payments,manual_payments,customer_credit,payment_documents,client_rating,events,tracking}.py`, routes `aito_payments.py`, `zoho.py`, `heimdall.py`; the order-board services, actions and sync; `OrderTrackPage`; plus O5's 8 leftovers on routes/order_board and components/orders. Out of scope: `aito.py`, `aito_quote_sync.py`. Seven files with uncommitted edits in the primary checkout were hands-off and never touched.
-
-## User-approved behaviour changes (BASELINE-CHANGELOG.md)
-
-| Task | Where | What the operator sees now |
-|---|---|---|
-| T-136 | `order_board_sync/_finished.py` | A finished order keeps its unused quote deposit after a re-read: "left to pay", payment caps and apply-credit are right again. |
-| T-135 | `order_board_actions/create.py` | A new walk-in order is on the board (and in the create response) at once. |
-| T-137 | `order_board_sync/_catalog.py` | The item-catalogue refresh re-checks the Zoho budget per page, resumes a cut-short sweep on the next pass, backs off 5 min after a real failure. |
-| T-128 | `routes/heimdall.py` | Heimdall Test uses a typed URL only together with a typed token; never signs the saved key for a typed URL. |
-| T-142 | `aito_payment_documents.py` | A settled link/terminal payment labels a board event of the same amount, else a summed one (board amount kept), else records its own event. Residual: a board amount below the settled one can still be told twice. |
-| T-144 | `order_board_actions/create.py` | A counter order whose confirm and clean-up void both failed goes into the pending-void retry (then `order.void_failed`). |
-| T-145 | `routes/order_board/payment.py` | A manual payment and a terminal charge on the same order are serialised; the second gets 409 "A payment is already in progress for this order". |
+No golden was re-recorded for any of them, and SURFACE.md never moved. The new `undoable` key is not in a response model.
 
 ## What each survey round found
+- **Round 1:** the Undo authorization gap (security and robustness found it independently), the payment-in-flight race,
+  5 test gaps in the quotes backend, and 3 cleanliness items.
+- **Round 2:** money taken by the terminal but not in Books still allowed Undo (high); a link-creation race (security and
+  robustness again); 3 test gaps; 1 dead field. Worker leads checked and rejected: "edit wipes kept-line discounts" and
+  "numeric discount → 500" are not bugs.
+- **Round 3:** T-168 (above); a lock-release test gap; 4 small cleanliness items; the customer-credit display untested.
+  Security found nothing.
 
-| Round | Security | Robustness | Cleanliness | Tests |
+## Findings by auditor (filed into PLAN.md this campaign → outcome)
+| Auditor | Filed | DONE | BLOCKED | WONTFIX |
 |---|---|---|---|---|
-| 1 | 1 (T-128) | 3 (T-135..T-137) | clean (partial: machine load ~200) | 2 + 4 triaged |
-| 2 | clean | 4 (T-142..T-145) | 3 triaged | 1 triaged |
+| audit-security | 2 | 2 | 0 | 0 |
+| audit-robustness | 5 | 5 | 0 | 0 |
+| audit-cleanliness | 7 | 5 | 1 (T-146) | 1 (T-165) |
+| audit-tests | 10 | 10 | 0 | 0 |
 
-## Findings by auditor (plan.py stats)
-
-| Source | DONE | OPEN | Triaged |
-|---|---|---|---|
-| audit-security | 1 | 0 | 0 |
-| audit-robustness | 6 | 1 (T-143) | 0 |
-| audit-cleanliness | 0 | 0 | 3 (T-139..T-141) |
-| audit-tests | 2 | 0 | 5 (T-131..T-134, T-138) |
-| carried from O5 (survey) | 8 | 0 | — |
-
-## Done, by iteration
-
-| Tag | Tasks |
-|---|---|
-| loop-1 | T-129, T-130 payment-link failure tests · T-136 |
-| loop-2 | T-135 · T-137 · T-120 board.py docstring |
-| loop-3 | T-121, T-122, T-123 order panel dedupes |
-| loop-4 | T-124, T-125, T-126 filter and cart tests |
-| loop-5 | T-127 deterministic waits in order tests · T-128 |
-| loop-6 | T-142 · T-144 · T-145 |
-
-Orchestrator review sent three fixes back before verification: T-137 (restart-from-page-1 would never refresh a large catalogue), T-127 (microtask flush made msw-backed negatives vacuous), T-142 (exact-match rule double-listed summed passes; user chose the hybrid).
+**Triaged this campaign:** 17 in total: cleanliness 7, tests 10, security 0, robustness 0. You promoted 16 of them into
+the plan by hand. One is still in TRIAGE.md: **T-148**, cross-module imports of underscore-private helpers between the
+quote modules. Fixing it means renaming to public names, which moves SURFACE. Promote it later with
+`plan.py promote T-148 --iteration N` (the flag is required).
 
 ## Gates
-
-- Coverage (scoped statements): backend 98.37% → 98.50% · frontend 97.35% → 97.67%.
-- Snapshot probes: 31/31 matching (7 re-recorded at setup for post-O5 drift; `orders-http` re-recorded for T-136).
-- SURFACE.md: unchanged.
-- known_broken: the printer-hours time-of-day test, unchanged (passes outside 14:00-24:00).
-- Load flakes seen and cleared by isolated reruns: PrintModal, FileManagerPage, StreamOverlayPage, ArchivesPage, OrderPackFlow, NotificationBell, timelapse_clock_match, oidc/mfa; `test_order_board_actions.py` fails when a run spans midnight (T-138).
+- **Coverage, scoped statements:**
+  - backend 97.09% → **99.42%** (4000/4120 at base)
+  - frontend 97.56% → **97.72%**
+- **Final full suites on `o7/loop-8`:**
+  - backend 29,508 passed, 0 failed
+  - frontend 12,475 passed, 0 failed
+- **Known-broken tests:** 1 → 1. `test_migration_backfills_calibrated_at_from_offset` is time-of-day dependent and out of scope; it passed in every run of this campaign.
+- **Snapshot probes:** 31/31 matching at every iteration. At setup, 7 goldens were re-recorded for post-O6 drift and the 4 `revenue-*` probes were dropped (they shared /tmp with RV2).
+- **SURFACE.md:** unchanged throughout (`tools/gen_surface_orders.sh`).
+- **Diff vs base:** 20 files, +725 / −35. Production code: 9 files, +86 / −32. Tests: 10 files, +634 / −3.
 
 ## Left for humans
+- **T-146** (BLOCKED, no change made): one shared `BOARD_KEY` for `['order-board']` needs a new export, which moves SURFACE.
+- **T-148** (TRIAGE): see above.
+- **T-165** (WONTFIX, declined).
+- The quote Undo is still unproven live: watch it on one real quote. The in-process `_made` map and the payment lock only protect a single-worker deployment.
+- **Worker oddity, iteration 3:** a worker reported killing "stuck" `snapshot.py` processes, some of which it hadn't started. Later dispatches forbid that. Nothing visibly broke; the dev server on :8000 survived.
 
-- **OPEN:** T-143 — order payments don't expire the cached client rating (approved, not worked).
-- **TRIAGE.md:** T-131..T-134 (test gaps), T-138 (midnight test flake), T-139..T-141 (small dedupes). `plan.py promote <id> --iteration N` in a future campaign.
-- Hands-off files' sleeps (`OrderBoardPage.test.tsx`, `OrderPackFlow.test.tsx`) were not reviewed.
+## Merge notes
+- Merging `auto-refactor-loop-o7` into main conflicts with RV2 on PROBES.json, snapshots/ and SURFACE.md (the loop's own
+  machinery). Whichever campaign merges second takes its own copy of those files.
+- The frontend changed (`OrderBoardPage.tsx`, `useQuoteActions.ts`, `QuoteAcceptedNotice.tsx`, `api/client.ts`), so
+  rebuild static/ and restart :8000 after the merge.
+- Loop state is preserved in `plans/refactor-campaign-orders-o7/` in the main checkout.
