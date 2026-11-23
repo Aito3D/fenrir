@@ -5521,7 +5521,7 @@ export interface QuoteRow {
   zoho_url?: string | null;
 }
 export interface QuoteOrderResult {
-  quotes: QuotesResponse; board: OrderBoardResponse; row: OrderBoardRow | null; salesorder_id: string;
+  quotes: QuotesResponse; board: OrderBoardResponse; row: OrderBoardRow | null; salesorder_id: string; undoable: boolean;
 }
 export interface QuotesResponse { rows: QuoteRow[]; loading: number; ready: boolean }
 export interface QuoteLineInput { line_id?: string; item_id: string; quantity: number; discount?: string }

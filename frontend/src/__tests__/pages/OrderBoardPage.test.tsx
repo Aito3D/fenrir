@@ -1307,7 +1307,7 @@ describe('OrderBoardPage Devis side', () => {
     // As the server does: a converted quote leaves the list it returns.
     const accepted = { rows: QUOTES.slice(1), loading: 0, ready: true };
     const NEW = row({ id: 'so9', number: 'SO-00232', customer: 'Nautic Service', status: 'to_order' });
-    const accept = ({ draft = false, withRow = true } = {}) => {
+    const accept = ({ draft = false, withRow = true, undoable = !draft } = {}) => {
       Element.prototype.scrollIntoView = vi.fn();
       serve(board());
       serveQuotes([quote({ has_draft_order: draft, state: draft ? 'accepted' : 'sent' }), ...QUOTES.slice(1)]);
@@ -1316,8 +1316,8 @@ describe('OrderBoardPage Devis side', () => {
         http.get('/api/v1/order-board/orders/:id/events', () => HttpResponse.json({ events: [], has_more: false })),
         http.post(`/api/v1/order-board/quotes/e1/${draft ? 'order' : 'accept'}`, () =>
           HttpResponse.json(withRow
-            ? { quotes: accepted, board: board({ rows: [NEW, ...ROWS] }), row: NEW, salesorder_id: 'so9' }
-            : { quotes: accepted, board: board(), row: null, salesorder_id: 'so9' })),
+            ? { quotes: accepted, board: board({ rows: [NEW, ...ROWS] }), row: NEW, salesorder_id: 'so9', undoable }
+            : { quotes: accepted, board: board(), row: null, salesorder_id: 'so9', undoable })),
       );
       window.history.replaceState({}, '', '/orders?view=quotes&quote=e1');
       render(<OrderBoardPage />);
@@ -1405,6 +1405,14 @@ describe('OrderBoardPage Devis side', () => {
       accept({ draft: true });
       await user.click(within(await screen.findByTestId('quote-actions')).getByRole('button', { name: 'Create order' }));
       expect(await notice()).toHaveTextContent('Quote DEV-00412 accepted — order SO-00232 created');
+      expect(within(await notice()).queryByRole('button', { name: 'Undo' })).not.toBeInTheDocument();
+    });
+
+    it('Accepted offers no Undo when the server says this click did not make the order, whatever the cached quote said', async () => {
+      const user = userEvent.setup();
+      accept({ undoable: false }); // the cached quote has no draft order: only the answer knows Books reused one
+      await user.click(within(await screen.findByTestId('quote-actions')).getByRole('button', { name: 'Accepted' }));
+      expect(await notice()).toHaveTextContent('order SO-00232 created');
       expect(within(await notice()).queryByRole('button', { name: 'Undo' })).not.toBeInTheDocument();
     });
 

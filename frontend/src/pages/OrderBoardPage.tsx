@@ -371,8 +371,8 @@ export function OrderBoardPage() {
       quote: quote.number,
       salesorderId: r.salesorder_id,
       order: (r.row ?? r.board.rows.find(o => o.id === r.salesorder_id))?.number || r.salesorder_id,
-      // A draft order Books reused existed before the click: undoing would delete more than this click made.
-      undoable: !quote.has_draft_order,
+      // The server says whether this click made the order: a reused draft or an earlier order must not be deleted.
+      undoable: r.undoable,
     });
     setSearchParams(prev => {
       const next = new URLSearchParams(prev);

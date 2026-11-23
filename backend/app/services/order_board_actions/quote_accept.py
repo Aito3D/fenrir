@@ -17,7 +17,7 @@ from backend.app.services.order_board_actions._common import (
     _reread,
     writing,
 )
-from backend.app.services.order_board_actions.create import store_new_order
+from backend.app.services.order_board_actions.create import _KEEP_REFS, store_new_order
 from backend.app.services.order_board_actions.quotes import QuoteNotStored, _fresh, _owned_quote, _settle
 from backend.app.services.order_board_quotes import draft_order_id
 from backend.app.services.order_board_sync._recompute import recompute
@@ -27,6 +27,13 @@ logger = logging.getLogger(__name__)
 
 _LINE_KEYS = ("item_id", "name", "description", "rate", "quantity", "discount", "tax_id", "unit", "item_order")
 _FLAGS = ("is_inclusive_tax", "discount_type", "is_discount_before_tax")
+# shortcut: in-memory, lost on restart (undo is then refused); upgrade to a stored marker if restarts mid-notice matter
+_made: dict[str, str] = {}  # estimate_id -> salesorder_id, only orders an accept click created itself
+
+
+def _made_here(estimate_id: str, salesorder_id: str) -> bool:
+    """True while ``salesorder_id`` is the order this board's accept created for the quote (the only one undo may delete)."""
+    return _made.get(estimate_id) == salesorder_id
 
 
 async def accept_quote(db: AsyncSession, estimate_id: str, *, by: str | None) -> str:
@@ -56,7 +63,7 @@ async def create_order_from_quote(db: AsyncSession, estimate_id: str, *, by: str
 async def _order_step(db: AsyncSession, estimate_id: str, detail: dict, by: str | None) -> str:
     """Create (or reuse the linked draft), confirm and store the quote's order; returns its ``salesorder_id``."""
     salesorder_id = draft_order_id(detail)
-    made_here = salesorder_id is None  # only a draft this call created may be deleted
+    created_here = salesorder_id is None  # only a draft this call created may be deleted
     created = {"salesorder_id": salesorder_id}
     if salesorder_id is None:
         with sync._busy_on_rate_limit(estimate_id):
@@ -95,7 +102,7 @@ async def _order_step(db: AsyncSession, estimate_id: str, detail: dict, by: str 
         raise sync.ZohoBusy(estimate_id) from e
     except Exception as e:
         logger.warning("Order board: confirming the new order %s failed (%s)", salesorder_id, type(e).__name__)
-        if made_here:
+        if created_here:
             try:  # deleting (not voiding) releases the quote; if it fails, the retry reuses the draft
                 await zoho_service.delete_salesorder(db, salesorder_id)
             except Exception as delete_error:
@@ -108,6 +115,10 @@ async def _order_step(db: AsyncSession, estimate_id: str, detail: dict, by: str 
     finally:
         sync.note_write(salesorder_id)
     logger.info("Order board write: order=%s step=open", salesorder_id)
+    if created_here:
+        _made[estimate_id] = salesorder_id
+        while len(_made) > _KEEP_REFS:
+            del _made[next(iter(_made))]
     await store_new_order(db, created)  # its re-read rebuilds the board
     await _log(db, salesorder_id, "order.created", by)
     await _settle(db, estimate_id, None, by)  # converted now: the quote leaves the rows
@@ -120,6 +131,8 @@ async def undo_accept(db: AsyncSession, estimate_id: str, salesorder_id: str, *,
         await _owned_quote(db, estimate_id)
         if await sync.find_stored(db, salesorder_id) is None:
             raise OrderNotOnBoard(salesorder_id)
+        if not _made_here(estimate_id, salesorder_id):  # before any Books call
+            raise OrderActionRefused("undo_too_late")
         if sync.zoho_busy():
             raise sync.ZohoBusy(salesorder_id)
         order = await _reread(db, salesorder_id)  # Books as it is now decides, not the stored copy
@@ -140,6 +153,7 @@ async def undo_accept(db: AsyncSession, estimate_id: str, salesorder_id: str, *,
             with sync._busy_on_rate_limit(salesorder_id):
                 await zoho_service.delete_salesorder(db, salesorder_id)
             deleted = True
+            _made.pop(estimate_id, None)
             logger.info("Order board write: quote=%s order=%s step=delete", estimate_id, salesorder_id)
             if (doc := await sync.find_stored(db, salesorder_id)) is not None:
                 await db.delete(doc)
