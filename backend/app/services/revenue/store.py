@@ -384,9 +384,10 @@ async def read_scope_items(conn: AsyncConnection) -> dict[str, ScopeItem]:
 async def replace_items(db: AsyncSession, items: list[dict], now: datetime) -> None:
     """Swaps the whole item table for a fresh Zoho listing and stamps the refresh; items are dicts of RevenueItem columns."""
     stamp = now.isoformat()
-    # Only item_id, nature and brand reach classify_revenue_item; any change there invalidates pinned shares.
-    old = set((await db.execute(select(RevenueItem.item_id, RevenueItem.nature, RevenueItem.brand))).all())
-    if old != {(i["item_id"], i.get("nature"), i.get("brand")) for i in items}:
+    # Only these columns reach classify_revenue_item (name and item_type via service_nature); a change invalidates shares.
+    cols = (RevenueItem.item_id, RevenueItem.nature, RevenueItem.brand, RevenueItem.name, RevenueItem.item_type)
+    old = set((await db.execute(select(*cols))).all())
+    if old != {(i["item_id"], i.get("nature"), i.get("brand"), i.get("name", ""), i.get("item_type")) for i in items}:
         await _forget_invoice_shares(db)
     await db.execute(delete(RevenueItem))
     if items:
@@ -552,7 +553,6 @@ async def save_invoice_detail(db: AsyncSession, row: dict, now: datetime, genera
 
     A `generation` that is no longer current means the scope changed while the share was computed: it stays queued.
     """
-    stale = generation is not None and generation != _decisions_generation
     inv = await db.get(RevenueInvoiceShare, row["invoice_id"])
     if inv is None:
         inv = RevenueInvoiceShare(invoice_id=row["invoice_id"])
@@ -560,9 +560,11 @@ async def save_invoice_detail(db: AsyncSession, row: dict, now: datetime, genera
     for k, v in row.items():
         setattr(inv, k, v)
     inv.share_total = row["total"]
-    if stale:
-        inv.share = inv.share_total = None
     inv.fetched_at = now.isoformat()
+    # Once flushed this session holds the write lock, so a later scope change forgets after our commit; check here.
+    await db.flush()
+    if generation is not None and generation != _decisions_generation:
+        inv.share = inv.share_total = None
     await db.commit()
 
 

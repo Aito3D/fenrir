@@ -487,6 +487,32 @@ async def test_a_share_computed_before_a_scope_change_is_left_queued(engine, db)
     assert inv["share"] == 0.5
 
 
+async def test_a_scope_change_landing_during_the_invoice_round_trip_leaves_the_share_queued(engine, db):
+    row = {
+        "invoice_id": "inv1",
+        "number": "INV-1",
+        "customer_id": "c1",
+        "customer_name": "C",
+        "date": "2026-10-01",
+        "due_date": "2026-10-10",
+        "total": 100.0,
+        "balance": 100.0,
+        "share": 0.5,
+    }
+    real_get = db.get
+
+    async def get_then_scope_change(*a, **k):
+        found = await real_get(*a, **k)
+        store._bump_decisions_generation()  # a PUT /scope lands while the row is being read
+        return found
+
+    db.get = get_then_scope_change
+    await store.save_invoice_detail(db, row, NOW, store._current_decisions_generation())
+    async with store.snapshot(engine) as conn:
+        [inv] = await store.read_invoice_shares(conn)
+    assert inv["share"] is None
+
+
 async def test_the_shops_own_production_line_is_a_transfer_not_a_sale(engine, db):
     from backend.app.models.revenue import RevenueCustomer
 
@@ -540,6 +566,22 @@ async def test_an_identical_relisting_keeps_the_shares(engine, db):
     items = [{"item_id": "a", "nature": "Filaments", "brand": "X"}]
     assert await _shared_invoice(engine, db, items) == 0.5
     generation = store._current_decisions_generation()
-    await store.replace_items(db, [{**items[0], "name": "renamed"}], LATER)
+    await store.replace_items(db, [dict(items[0])], LATER)
     assert await _share(engine) == 0.5
     assert store._current_decisions_generation() == generation
+
+
+async def test_renaming_a_service_item_into_the_3d_prefix_forgets_the_shares(engine, db):
+    items = [{"item_id": "a", "name": "Boats - Prestation 'x'", "item_type": "sales"}]
+    assert await _shared_invoice(engine, db, items) == 0.5
+    generation = store._current_decisions_generation()
+    await store.replace_items(db, [{**items[0], "name": 'Filaments - Prestation "AITO 3D"'}], LATER)
+    assert await _share(engine) is None
+    assert store._current_decisions_generation() != generation
+
+
+async def test_changing_an_items_type_forgets_the_shares(engine, db):
+    items = [{"item_id": "a", "name": 'Filaments - Prestation "AITO 3D"', "item_type": "sales"}]
+    assert await _shared_invoice(engine, db, items) == 0.5
+    await store.replace_items(db, [{**items[0], "item_type": "goods"}], LATER)
+    assert await _share(engine) is None

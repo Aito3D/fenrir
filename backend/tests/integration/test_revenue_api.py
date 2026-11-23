@@ -827,6 +827,15 @@ async def test_cohorts_need_view_customers(async_client, revenue_db, tokens):
 
 
 @pytest.mark.asyncio
+async def test_pvm_rejects_a_range_starting_before_the_history_start(async_client, revenue_db, tokens):
+    early = await async_client.get(f"{URL}/pvm?from=0001-01-01&to=0001-01-10", headers=tokens["read"])
+    assert early.status_code == 422
+    at_start = await async_client.get(
+        f"{URL}/pvm?from={revenue_routes.REVENUE_HISTORY_START}&to={DAY}", headers=tokens["read"]
+    )
+    assert at_start.status_code == 200
+
+
 async def test_pvm_says_when_the_period_before_falls_outside_the_history(async_client, revenue_db, tokens):
     body = (await async_client.get(f"{URL}/pvm?from=2024-01-01&to={DAY}", headers=tokens["read"])).json()
     assert body["comparable"] is False

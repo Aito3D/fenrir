@@ -1345,3 +1345,13 @@ so it is not stranded.
 - Changed: _refresh_cash now records the decisions generation counter (store.py) before it reads decisions, and save_invoice_detail stores share=None and share_total=None when a scope decision was set, cleared or forgotten after that read, so the invoice stays queued for a fresh Zoho detail read. Before, a share computed from the old decisions stayed pinned until the invoice total changed. User-visible: in that race the /cash 3D figures for the affected invoice are recomputed on the next refresh, at the cost of an extra Zoho detail read, instead of keeping the stale share.
 - Probes changed: none. SURFACE sections changed: none.
 - Pinned by test_store.py `test_a_share_computed_before_a_scope_change_is_left_queued` (the only new test; the follow-up commit 4d06ff98a only renamed the accessor to `_current_decisions_generation` in existing tests).
+
+## T-022 (user-approved 2026-11-22)
+- Changed: GET /revenue/pvm now answers 422 ("from must be yyyy-MM-dd from 2024-01-01") when `from` is before REVENUE_HISTORY_START, instead of a 500 (OverflowError in add_days for dates near 0001-01-01) or a 200 with comparable=false for dates between. The page sends the server-clamped range, so the UI is unaffected.
+- Probes changed: none. SURFACE sections changed: none.
+- Pinned by test_revenue_api.py `test_pvm_rejects_a_range_starting_before_the_history_start`.
+
+## T-021 (user-approved 2026-11-22, approved after the fact; widens T-011)
+- Changed: replace_items in backend/app/services/revenue/store.py now forgets the pinned invoice shares when a Zoho re-listing changes an item's name or item_type, not only when the (item_id, nature, brand) set changes (T-011). Name and item_type feed classify_revenue_item through service_nature, so a renamed item or one whose type changed can change the 3D classification. User-visible: after such a re-listing the /cash 3D figures are recomputed on the next refresh, at the cost of a few extra Zoho detail reads, instead of keeping shares pinned under the old classification. An identical re-listing still keeps the shares.
+- Probes changed: none. SURFACE sections changed: none.
+- Pinned by test_store.py `test_renaming_a_service_item_into_the_3d_prefix_forgets_the_shares` and `test_changing_an_items_type_forgets_the_shares`.

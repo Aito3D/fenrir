@@ -548,6 +548,8 @@ async def get_pvm(
 ):
     """Price / volume / mix bridge between the period and the one of the same length just before it."""
     _ordered_range(from_, to)
+    if from_ < REVENUE_HISTORY_START:  # also keeps add_days below inside the calendar
+        raise _unprocessable(f"from must be yyyy-MM-dd from {REVENUE_HISTORY_START}")
     flags = memo.caller_flags(user)
     filters = _filters(flags, items, brand, kind, segment)
     prev_to = add_days(from_, -1)
