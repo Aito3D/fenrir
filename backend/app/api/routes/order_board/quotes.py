@@ -20,6 +20,7 @@ from backend.app.api.routes.order_board._common import (
 from backend.app.api.routes.order_board.board import OrderEventPage, events_page
 from backend.app.api.routes.order_board.documents import DocumentEmailBody
 from backend.app.api.routes.order_board.fulfilment import CounterLine, CounterOrderBody
+from backend.app.api.routes.order_board.payment import _order_payment_lock
 from backend.app.core.auth import RequirePermissionIfAuthEnabled
 from backend.app.core.database import get_db
 from backend.app.core.permissions import Permission
@@ -159,7 +160,14 @@ async def undo_accept_quote(
     user: User | None = RequirePermissionIfAuthEnabled(Permission.ORDERS_UPDATE),
 ) -> dict:
     """Delete the quote's new order in Books and mark the quote sent again."""
-    await _run(order_board_actions.undo_accept(db, estimate_id, body.salesorder_id, by=_by(user)))
+    try:
+        # The order's payment lock, as the terminal start and manual payment take it: a payment being set up refuses.
+        async with _order_payment_lock(body.salesorder_id, wait=False):
+            await _run(order_board_actions.undo_accept(db, estimate_id, body.salesorder_id, by=_by(user)))
+    except HTTPException as e:
+        if e.status_code == 409 and isinstance(e.detail, dict) and e.detail.get("code") == "terminal_in_progress":
+            raise HTTPException(status_code=400, detail="undo_too_late") from None
+        raise
     _logged(user, estimate_id, "undo_accept_quote")
     return {"quotes": await order_board_sync.read_quotes(db), "board": await order_board_sync.read_board(db)}
 

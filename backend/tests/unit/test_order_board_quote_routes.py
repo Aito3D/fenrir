@@ -217,3 +217,99 @@ async def test_a_quote_on_an_aito_card_is_refused_at_once(async_client, tokens, 
         r = await async_client.request(method, url, json=body, headers=h)
         assert (r.status_code, r.json()["detail"]) == (404, "Quote not found."), url
     assert books == []  # nothing reached Books
+
+
+@pytest.mark.asyncio
+async def test_undo_accept_refused_while_the_orders_payment_lock_is_held(async_client, tokens, stored, books):  # noqa: F811
+    from backend.app.api.routes.order_board.payment import _order_payment_lock
+
+    async with _order_payment_lock("so1", wait=True):
+        r = await async_client.post(f"{BASE}/undo-accept", json={"salesorder_id": "so1"}, headers=tokens["both"])
+    assert (r.status_code, r.json()["detail"]) == (400, "undo_too_late")
+    assert books == []
+
+
+@pytest.mark.asyncio
+async def test_undo_accept_answers_the_refreshed_board(async_client, tokens, stored, monkeypatch):  # noqa: F811
+    from backend.app.services import order_board_actions
+
+    calls = []
+
+    async def fake_undo(db, estimate_id, salesorder_id, *, by):
+        calls.append((estimate_id, salesorder_id))
+
+    monkeypatch.setattr(order_board_actions, "undo_accept", fake_undo)
+    r = await async_client.post(f"{BASE}/undo-accept", json={"salesorder_id": "so1"}, headers=tokens["both"])
+    assert (r.status_code, sorted(r.json()), calls) == (200, ["board", "quotes"], [("e1", "so1")])
+
+
+# ---- success paths: the body maps to the action arguments, the answer carries the refreshed lists ----
+
+
+@pytest.fixture
+def actions(monkeypatch):
+    """Every quote action replaced by a recorder; the routes run for real around them."""
+    from backend.app.services import order_board_actions
+
+    calls: list[tuple] = []
+
+    def make(name, result):
+        async def fake(*args, **kwargs):
+            calls.append((name, *args[1:], kwargs))  # args[0] is the session
+            return result
+
+        monkeypatch.setattr(order_board_actions, name, fake)
+
+    make("create_quote", "e9")
+    make("edit_quote", None)
+    make("decline_quote", None)
+    make("reopen_quote", None)
+    make("create_order_from_quote", "so7")
+    return calls
+
+
+_NOT_READY = {"rows": [], "loading": 0, "ready": False}
+
+
+@pytest.mark.asyncio
+async def test_create_quote_is_201_and_passes_lines_without_nones(async_client, tokens, actions):  # noqa: F811
+    ref = uuid4()
+    body = {"customer_id": "c1", "client_ref": str(ref), "lines": [_LINE, {**_LINE, "discount": "10%"}]}
+    r = await async_client.post("/api/v1/order-board/quotes", json=body, headers=tokens["both"])
+    assert (r.status_code, r.json()) == (201, {"quotes": _NOT_READY, "estimate_id": "e9"})
+    lines = [{"item_id": "A", "quantity": 1.0}, {"item_id": "A", "quantity": 1.0, "discount": "10%"}]
+    assert actions == [("create_quote", "c1", lines, str(ref), {"by": "orders-both"})]
+
+
+@pytest.mark.asyncio
+async def test_edit_quote_keeps_the_line_id_and_drops_nones(async_client, tokens, actions):  # noqa: F811
+    body = {"customer_id": "c2", "lines": [{**_LINE, "line_id": "L1"}, _LINE]}
+    r = await async_client.put(BASE, json=body, headers=tokens["both"])
+    assert (r.status_code, r.json()) == (200, {"quotes": _NOT_READY, "estimate_id": "e1"})
+    lines = [{"item_id": "A", "quantity": 1.0, "line_id": "L1"}, {"item_id": "A", "quantity": 1.0}]
+    assert actions == [("edit_quote", "e1", "c2", lines, {"by": "orders-both"})]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("verb", ["decline", "reopen"])
+async def test_decline_and_reopen_answer_the_quotes(async_client, tokens, actions, verb):  # noqa: F811
+    r = await async_client.post(f"{BASE}/{verb}", headers=tokens["both"])
+    assert (r.status_code, r.json()) == (200, {"quotes": _NOT_READY, "estimate_id": "e1"})
+    assert actions == [(f"{verb}_quote", "e1", {"by": "orders-both"})]
+
+
+@pytest.mark.asyncio
+async def test_create_order_from_quote_answers_quotes_board_row(async_client, tokens, actions):  # noqa: F811
+    r = await async_client.post(f"{BASE}/order", headers=tokens["both"])
+    body = r.json()
+    assert r.status_code == 200
+    assert sorted(body) == ["board", "quotes", "row", "salesorder_id", "undoable"]
+    assert (body["salesorder_id"], body["row"], body["undoable"]) == ("so7", None, False)
+    assert actions == [("create_order_from_quote", "e1", {"by": "orders-both"})]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("body", [{"salesorder_id": ""}, {}])
+async def test_undo_accept_with_a_wrong_shape_is_422(async_client, tokens, body):  # noqa: F811
+    r = await async_client.post(f"{BASE}/undo-accept", json=body, headers=tokens["both"])
+    assert r.status_code == 422

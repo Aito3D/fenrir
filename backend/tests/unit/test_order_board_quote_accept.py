@@ -546,3 +546,60 @@ async def test_accept_of_an_already_accepted_quote_writes_no_status(db_session, 
     assert so_books.sent == []  # no advance_estimate_status call
     assert [e.kind for e in await events_of(db_session, "e1")] == []  # no quote.accepted event either
     assert quote_accept._made == {"e1": "so9"}
+
+
+async def _payment_rows(db, *, link=None, charge=None) -> None:
+    from backend.app.models.aito_payment_link import AitoPaymentLink
+    from backend.app.models.aito_terminal_payment import AitoTerminalPayment
+
+    if link is not None:
+        db.add(
+            AitoPaymentLink(
+                project_id=0,
+                salesorder_id="so9",
+                idempotency_key="k-link",
+                heimdall_id="h-link",
+                reference="r",
+                amount=100,
+                expires_on="2026-12-31",
+                status=link,
+            )
+        )
+    if charge is not None:
+        db.add(
+            AitoTerminalPayment(
+                project_id=0,
+                salesorder_id="so9",
+                document_kind="salesorder",
+                document_id="so9",
+                document_number="SO-00009",
+                idempotency_key="k-tpe",
+                heimdall_id="h-tpe",
+                amount=100,
+                status=charge,
+            )
+        )
+    await db.commit()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(("link", "charge"), [("pending", None), (None, "processing"), (None, "pending")])
+async def test_undo_refused_while_a_payment_is_in_flight(db_session, so_books, link, charge):
+    await _accepted_on_board(db_session, so_books)
+    await _payment_rows(db_session, link=link, charge=charge)
+    with pytest.raises(actions.OrderActionRefused, match="undo_too_late"):
+        await actions.undo_accept(db_session, "e1", "so9", by=None)
+    assert so_books.deleted == []
+    assert await sync.find_stored(db_session, "so9") is not None
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("link", "charge"),
+    [("expired", None), ("cancelled", None), (None, "paid"), (None, "failed"), (None, "cancelled")],
+)
+async def test_undo_still_deletes_when_the_payment_is_final(db_session, so_books, link, charge):
+    await _accepted_on_board(db_session, so_books)
+    await _payment_rows(db_session, link=link, charge=charge)
+    await actions.undo_accept(db_session, "e1", "so9", by=None)
+    assert so_books.deleted == ["so9"]

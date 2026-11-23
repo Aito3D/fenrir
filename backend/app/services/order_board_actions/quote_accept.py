@@ -10,6 +10,8 @@ from datetime import date
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.services import order_board_sync as sync
+from backend.app.services.aito_payment_links import current_link
+from backend.app.services.aito_terminal_payments import BLOCKING_STATUSES, current_terminal_payment
 from backend.app.services.order_board_actions._common import (
     OrderActionRefused,
     OrderNotOnBoard,
@@ -141,6 +143,8 @@ async def undo_accept(db: AsyncSession, estimate_id: str, salesorder_id: str, *,
         row = await sync.find_board_row(db, salesorder_id)
         if row is None or _started(row):
             raise OrderActionRefused("undo_too_late")
+        if await _payment_in_flight(db, salesorder_id):  # money may be on its way to this order
+            raise OrderActionRefused("undo_too_late")
         # Whatever happens from here (timeout, crash), the next pass re-reads the quote: a DELETE that went through
         # leaves it accepted with no order, and a stored copy still naming the order would hide it.
         if (quote := await sync.find_quote(db, estimate_id)) is None:  # a pass dropped it: refuse before sending
@@ -170,6 +174,15 @@ async def undo_accept(db: AsyncSession, estimate_id: str, salesorder_id: str, *,
                     if (quote := await sync.find_quote(db, estimate_id)) is not None:
                         quote.pending = True
                         await db.commit()
+
+
+async def _payment_in_flight(db: AsyncSession, salesorder_id: str) -> bool:
+    """An open payment link or an unfinished terminal charge, read as the order page reads them."""
+    link = await current_link(db, ("order", salesorder_id), kind=None)
+    if link is not None and link.heimdall_id is not None and link.status == "pending":
+        return True
+    charge = await current_terminal_payment(db, ("order", salesorder_id))
+    return charge is not None and charge.status in BLOCKING_STATUSES
 
 
 def _started(row: dict) -> bool:
