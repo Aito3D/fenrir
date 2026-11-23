@@ -218,20 +218,21 @@ async def create_order_payment_link(
     """An online payment link on the order's document. One link slot per order: a stranded reservation is
     replayed as it was (its document and amount, not this request's), so the answer says what it holds."""
     _check_counter_payment_rate_limit(request, user)
-    document = await _payment_document(db, salesorder_id, body.amount)
-    existing = await current_link(db, ("order", salesorder_id), kind=None)
-    if _open_link(existing):
-        raise _refuse(409, "link_exists", "A payment link is already open for this order")
-    try:
-        link = await create_order_invoice_link(
-            db, salesorder_id, document=document, amount=body.amount, actor_name=_by(user), now=utc_now_naive()
-        )
-    except InvoiceLinkExists as e:
-        raise _refuse(409, "link_exists", str(e)) from e
-    except HeimdallNotConfigured as e:
-        raise _refuse(502, "not_configured", str(e)) from e
-    except HeimdallUpstreamError as e:
-        raise _heimdall_refusal(e, invalid_code="invalid") from e
+    async with _order_payment_lock(salesorder_id, wait=False):  # held through the reservation and the mint
+        document = await _payment_document(db, salesorder_id, body.amount)
+        existing = await current_link(db, ("order", salesorder_id), kind=None)
+        if _open_link(existing):
+            raise _refuse(409, "link_exists", "A payment link is already open for this order")
+        try:
+            link = await create_order_invoice_link(
+                db, salesorder_id, document=document, amount=body.amount, actor_name=_by(user), now=utc_now_naive()
+            )
+        except InvoiceLinkExists as e:
+            raise _refuse(409, "link_exists", str(e)) from e
+        except HeimdallNotConfigured as e:
+            raise _refuse(502, "not_configured", str(e)) from e
+        except HeimdallUpstreamError as e:
+            raise _heimdall_refusal(e, invalid_code="invalid") from e
     _logged(user, salesorder_id, "payment_link")
     view = _link_out(link)
     assert view is not None  # a row always has a view

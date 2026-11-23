@@ -444,6 +444,28 @@ async def test_link_replay_answers_the_old_document_and_amount(
     assert again.status_code == 409 and again.json()["detail"]["code"] == "link_exists"
 
 
+@pytest.mark.asyncio
+async def test_link_request_refused_while_the_orders_payment_lock_is_held(
+    async_client,
+    tokens,  # noqa: F811
+    order,
+    live_invoice,
+    monkeypatch,
+):
+    """An undo (or any payment setup) holding the order's lock refuses the link request before Heimdall is asked."""
+    await order({"invoices": [INVOICE_NEW]})
+    calls = []
+
+    async def create(*_a, **_k):
+        calls.append(1)
+
+    monkeypatch.setattr(routes, "create_order_invoice_link", create)
+    async with routes._order_payment_lock("so1", wait=True):
+        r = await async_client.post(f"{BASE}/payment-link", json={"amount": 100}, headers=tokens["both"])
+    assert r.status_code == 409 and r.json()["detail"]["code"] == "terminal_in_progress"
+    assert calls == []
+
+
 # --- the order's left to pay caps every charge --------------------------------------------------------------
 
 

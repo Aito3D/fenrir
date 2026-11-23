@@ -179,10 +179,17 @@ async def undo_accept(db: AsyncSession, estimate_id: str, salesorder_id: str, *,
 async def _payment_in_flight(db: AsyncSession, salesorder_id: str) -> bool:
     """An open payment link or an unfinished terminal charge, read as the order page reads them."""
     link = await current_link(db, ("order", salesorder_id), kind=None)
-    if link is not None and link.heimdall_id is not None and link.status == "pending":
+    if link is not None and link.status == "pending":  # also a reservation still being minted
         return True
     charge = await current_terminal_payment(db, ("order", salesorder_id))
-    return charge is not None and charge.status in BLOCKING_STATUSES
+    if charge is None:
+        return False
+    # an unknown outcome, or a card taken that Books has not recorded yet: undo would delete the order it books on
+    return (
+        charge.status in BLOCKING_STATUSES
+        or charge.status == "needs_attention"
+        or (charge.status == "paid" and charge.booking_status != "booked")
+    )
 
 
 def _started(row: dict) -> bool:

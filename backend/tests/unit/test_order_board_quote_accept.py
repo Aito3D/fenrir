@@ -548,7 +548,7 @@ async def test_accept_of_an_already_accepted_quote_writes_no_status(db_session, 
     assert quote_accept._made == {"e1": "so9"}
 
 
-async def _payment_rows(db, *, link=None, charge=None) -> None:
+async def _payment_rows(db, *, link=None, charge=None, booking=None, minted=True) -> None:
     from backend.app.models.aito_payment_link import AitoPaymentLink
     from backend.app.models.aito_terminal_payment import AitoTerminalPayment
 
@@ -558,7 +558,7 @@ async def _payment_rows(db, *, link=None, charge=None) -> None:
                 project_id=0,
                 salesorder_id="so9",
                 idempotency_key="k-link",
-                heimdall_id="h-link",
+                heimdall_id="h-link" if minted else None,
                 reference="r",
                 amount=100,
                 expires_on="2026-12-31",
@@ -577,6 +577,7 @@ async def _payment_rows(db, *, link=None, charge=None) -> None:
                 heimdall_id="h-tpe",
                 amount=100,
                 status=charge,
+                booking_status=booking,
             )
         )
     await db.commit()
@@ -594,13 +595,36 @@ async def test_undo_refused_while_a_payment_is_in_flight(db_session, so_books, l
 
 
 @pytest.mark.asyncio
+async def test_undo_refused_while_a_payment_link_is_still_being_made(db_session, so_books):
+    await _accepted_on_board(db_session, so_books)
+    await _payment_rows(db_session, link="pending", minted=False)
+    with pytest.raises(actions.OrderActionRefused, match="undo_too_late"):
+        await actions.undo_accept(db_session, "e1", "so9", by=None)
+    assert so_books.deleted == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("charge", "booking"),
+    [("needs_attention", None), ("paid", "pending"), ("paid", "failed"), ("paid", None)],
+)
+async def test_undo_refused_while_a_card_payment_is_not_in_books(db_session, so_books, charge, booking):
+    await _accepted_on_board(db_session, so_books)
+    await _payment_rows(db_session, charge=charge, booking=booking)
+    with pytest.raises(actions.OrderActionRefused, match="undo_too_late"):
+        await actions.undo_accept(db_session, "e1", "so9", by=None)
+    assert so_books.deleted == []
+    assert await sync.find_stored(db_session, "so9") is not None
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize(
     ("link", "charge"),
     [("expired", None), ("cancelled", None), (None, "paid"), (None, "failed"), (None, "cancelled")],
 )
 async def test_undo_still_deletes_when_the_payment_is_final(db_session, so_books, link, charge):
     await _accepted_on_board(db_session, so_books)
-    await _payment_rows(db_session, link=link, charge=charge)
+    await _payment_rows(db_session, link=link, charge=charge, booking="booked")
     await actions.undo_accept(db_session, "e1", "so9", by=None)
     assert so_books.deleted == ["so9"]
 
