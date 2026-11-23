@@ -8,6 +8,7 @@ from sqlalchemy import select
 
 from backend.app.models.order_board_doc import OrderBoardDoc
 from backend.app.services import order_board_actions as actions, order_board_sync as sync
+from backend.app.services.order_board_actions import quote_accept
 from backend.app.services.order_board_sync import _common as sync_common
 from backend.app.services.zoho import ZohoRateLimited, ZohoUpstreamError, zoho_service
 from backend.tests.unit.test_order_board_actions import events_of
@@ -86,6 +87,13 @@ def so_books(books, monkeypatch):  # noqa: F811
     for fn in (salesorder_prefill_from_estimate, create_salesorder, mark_salesorder_open, delete_salesorder):
         monkeypatch.setattr(zoho_service, fn.__name__, fn)
     return books
+
+
+@pytest.fixture(autouse=True)
+def _no_made_orders_left_over():
+    quote_accept._made.clear()
+    yield
+    quote_accept._made.clear()
 
 
 def _statuses(books) -> list:
@@ -266,6 +274,7 @@ async def test_undo_refused_once_packed_or_paid(db_session, so_books, started):
 async def test_undo_refused_for_an_order_of_another_quote(db_session, so_books):
     await _accepted_on_board(db_session, so_books)
     await _stored(db_session, so_books, quote(2, status="sent"))
+    quote_accept._made["e2"] = "so9"  # past the made-here gate, so Books' own link is what refuses
     with pytest.raises(actions.OrderActionRefused, match="not_this_quote"):
         await actions.undo_accept(db_session, "e2", "so9", by=None)
     assert so_books.deleted == []
@@ -414,3 +423,236 @@ async def test_a_quote_books_now_reports_invoiced_leaves_the_rows(db_session, so
     with pytest.raises(actions.OrderActionRefused, match="quote_converted"):
         await actions.decline_quote(db_session, "e1", by=None)
     assert _quote_rows(await sync.read_quotes(db_session)) == []
+
+
+@pytest.mark.asyncio
+async def test_undo_refused_for_a_reused_draft_without_a_books_call(db_session, so_books, pings):
+    draft = {"salesorder_id": "so9", "salesorder_order_status": "draft"}
+    so_books.add({**order(9, estimate_id="e1"), "salesorder_id": "so9", "status": "draft"})
+    await _stored(db_session, so_books, {**quote(1, status="accepted"), "salesorders": [draft]})
+    await sync.run_pass(db_session)
+    assert await actions.create_order_from_quote(db_session, "e1", by=None) == "so9"
+    assert so_books.so_payloads == []  # reused, not created here
+    sent = list(so_books.sent)
+    with pytest.raises(actions.OrderActionRefused, match="undo_too_late"):
+        await actions.undo_accept(db_session, "e1", "so9", by=None)
+    assert (so_books.deleted, so_books.sent) == ([], sent)
+
+
+@pytest.mark.asyncio
+async def test_undo_refused_for_an_order_never_accepted_here(db_session, so_books):
+    await _accepted_on_board(db_session, so_books)
+    quote_accept._made.clear()  # as after a restart
+    sent = list(so_books.sent)
+    with pytest.raises(actions.OrderActionRefused, match="undo_too_late"):
+        await actions.undo_accept(db_session, "e1", "so9", by=None)
+    assert (so_books.deleted, so_books.sent) == ([], sent)
+
+
+@pytest.mark.asyncio
+async def test_a_second_undo_after_success_is_refused(db_session, so_books):
+    await _accepted_on_board(db_session, so_books)
+    await actions.undo_accept(db_session, "e1", "so9", by=None)
+    assert so_books.deleted == ["so9"]
+    assert "e1" not in quote_accept._made  # forgotten with the delete
+    with pytest.raises(actions.OrderNotOnBoard):  # the stored order is gone too
+        await actions.undo_accept(db_session, "e1", "so9", by=None)
+    assert so_books.deleted == ["so9"]
+
+
+@pytest.mark.asyncio
+async def test_made_here_map_is_bounded(db_session, so_books):
+    quote_accept._made.update({f"x{i}": "s" for i in range(300)})
+    await _accepted_on_board(db_session, so_books)
+    assert len(quote_accept._made) == 200 and quote_accept._made["e1"] == "so9"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("draft,undoable", [(False, True), (True, False)])
+async def test_order_responses_say_whether_this_click_made_the_order(
+    async_client,
+    db_session,
+    so_books,
+    tokens,
+    draft,
+    undoable,  # noqa: F811
+):
+    if draft:
+        so_books.add({**order(9, estimate_id="e1"), "salesorder_id": "so9", "status": "draft"})
+        row = {
+            **quote(1, status="accepted"),
+            "salesorders": [{"salesorder_id": "so9", "salesorder_order_status": "draft"}],
+        }
+    else:
+        row = quote(1, status="sent")
+    await _stored(db_session, so_books, row)
+    await sync.run_pass(db_session)
+    await sync.run_pass(db_session)
+    r = await async_client.post(
+        f"/api/v1/order-board/quotes/e1/{'order' if draft else 'accept'}", headers=tokens["both"]
+    )
+    assert r.status_code == 200
+    assert r.json()["undoable"] is undoable
+
+
+@pytest.mark.asyncio
+async def test_failed_cleanup_delete_leaves_the_draft_and_the_retry_reuses_it(db_session, so_books):
+    await _stored(db_session, so_books, quote(1, status="sent"))
+    so_books.open_error = ZohoUpstreamError("refused")
+    so_books.delete_error = (ZohoUpstreamError("also refused"), False)
+    with pytest.raises(actions.OrderActionRefused, match="create_failed"):
+        await actions.accept_quote(db_session, "e1", by=None)
+    assert (so_books.deleted, list(so_books.orders)) == ([], ["so9"])  # the draft is left in Books
+    assert quote_accept._made == {}
+    so_books.delete_error = None
+    assert await actions.create_order_from_quote(db_session, "e1", by=None) == "so9"
+    assert len(so_books.so_payloads) == 1  # no second order
+    assert (so_books.opened, so_books.deleted) == (["so9"], [])
+    assert quote_accept._made == {}  # reused, so undo stays refused
+
+
+@pytest.mark.asyncio
+async def test_undo_while_books_is_backed_off_is_busy_and_sends_nothing(db_session, so_books, monkeypatch):
+    await _accepted_on_board(db_session, so_books)
+    monkeypatch.setattr(sync, "zoho_busy", lambda: True)
+    sent = list(so_books.sent)
+    with pytest.raises(sync.ZohoBusy):
+        await actions.undo_accept(db_session, "e1", "so9", by=None)
+    assert (so_books.deleted, so_books.sent) == ([], sent)
+    assert quote_accept._made == {"e1": "so9"}  # still undoable once the window passes
+
+
+@pytest.mark.asyncio
+async def test_undo_succeeds_when_the_stored_order_vanished_during_the_delete(db_session, so_books, monkeypatch):
+    await _accepted_on_board(db_session, so_books)
+    delete = zoho_service.delete_salesorder
+
+    async def delete_and_drop_doc(db, salesorder_id):
+        await delete(db, salesorder_id)
+        await db.delete(await sync.find_stored(db, salesorder_id))  # a sync pass dropped it meanwhile
+        await db.commit()
+
+    monkeypatch.setattr(zoho_service, "delete_salesorder", delete_and_drop_doc)
+    await actions.undo_accept(db_session, "e1", "so9", by=None)
+    assert so_books.deleted == ["so9"]
+    assert _statuses(so_books)[-1] == ("status", "e1", "sent")
+    assert [e.kind for e in await events_of(db_session, "e1")] == ["quote.accepted", "quote.accept_undone"]
+
+
+@pytest.mark.asyncio
+async def test_accept_of_an_already_accepted_quote_writes_no_status(db_session, so_books):
+    await _stored(db_session, so_books, quote(1, status="accepted"))
+    assert await actions.accept_quote(db_session, "e1", by="ana") == "so9"
+    assert so_books.sent == []  # no advance_estimate_status call
+    assert [e.kind for e in await events_of(db_session, "e1")] == []  # no quote.accepted event either
+    assert quote_accept._made == {"e1": "so9"}
+
+
+async def _payment_rows(db, *, link=None, charge=None, booking=None, minted=True) -> None:
+    from backend.app.models.aito_payment_link import AitoPaymentLink
+    from backend.app.models.aito_terminal_payment import AitoTerminalPayment
+
+    if link is not None:
+        db.add(
+            AitoPaymentLink(
+                project_id=0,
+                salesorder_id="so9",
+                idempotency_key="k-link",
+                heimdall_id="h-link" if minted else None,
+                reference="r",
+                amount=100,
+                expires_on="2026-12-31",
+                status=link,
+            )
+        )
+    if charge is not None:
+        db.add(
+            AitoTerminalPayment(
+                project_id=0,
+                salesorder_id="so9",
+                document_kind="salesorder",
+                document_id="so9",
+                document_number="SO-00009",
+                idempotency_key="k-tpe",
+                heimdall_id="h-tpe",
+                amount=100,
+                status=charge,
+                booking_status=booking,
+            )
+        )
+    await db.commit()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(("link", "charge"), [("pending", None), (None, "processing"), (None, "pending")])
+async def test_undo_refused_while_a_payment_is_in_flight(db_session, so_books, link, charge):
+    await _accepted_on_board(db_session, so_books)
+    await _payment_rows(db_session, link=link, charge=charge)
+    with pytest.raises(actions.OrderActionRefused, match="undo_too_late"):
+        await actions.undo_accept(db_session, "e1", "so9", by=None)
+    assert so_books.deleted == []
+    assert await sync.find_stored(db_session, "so9") is not None
+
+
+@pytest.mark.asyncio
+async def test_undo_deletes_when_a_payment_link_reservation_was_never_minted(db_session, so_books):
+    """An unminted pending reservation seen outside the order's lock is no live link: undo goes ahead."""
+    await _accepted_on_board(db_session, so_books)
+    await _payment_rows(db_session, link="pending", minted=False)
+    await actions.undo_accept(db_session, "e1", "so9", by=None)
+    assert so_books.deleted == ["so9"]
+
+
+@pytest.mark.asyncio
+async def test_undo_deletes_after_a_failed_payment_link_mint(db_session, so_books):
+    """A failed mint stores sync_error and leaves the reservation pending with no Heimdall id: undo goes ahead."""
+    from sqlalchemy import update
+
+    from backend.app.models.aito_payment_link import AitoPaymentLink
+
+    await _accepted_on_board(db_session, so_books)
+    await _payment_rows(db_session, link="pending", minted=False)
+    await db_session.execute(update(AitoPaymentLink).values(sync_error="HeimdallNotConfigured"))
+    await db_session.commit()
+    await actions.undo_accept(db_session, "e1", "so9", by=None)
+    assert so_books.deleted == ["so9"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("charge", "booking"),
+    [("needs_attention", None), ("paid", "pending"), ("paid", "failed"), ("paid", None)],
+)
+async def test_undo_refused_while_a_card_payment_is_not_in_books(db_session, so_books, charge, booking):
+    await _accepted_on_board(db_session, so_books)
+    await _payment_rows(db_session, charge=charge, booking=booking)
+    with pytest.raises(actions.OrderActionRefused, match="undo_too_late"):
+        await actions.undo_accept(db_session, "e1", "so9", by=None)
+    assert so_books.deleted == []
+    assert await sync.find_stored(db_session, "so9") is not None
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("link", "charge"),
+    [("expired", None), ("cancelled", None), (None, "paid"), (None, "failed"), (None, "cancelled")],
+)
+async def test_undo_still_deletes_when_the_payment_is_final(db_session, so_books, link, charge):
+    await _accepted_on_board(db_session, so_books)
+    await _payment_rows(db_session, link=link, charge=charge, booking="booked")
+    await actions.undo_accept(db_session, "e1", "so9", by=None)
+    assert so_books.deleted == ["so9"]
+
+
+@pytest.mark.asyncio
+async def test_accept_sends_numeric_line_discounts_as_numbers(db_session, so_books):
+    """Books' prefill states the line discount as a number: 12.5 and a real 0 reach the order as they are."""
+    so_books.prefill_lines = [
+        {**PREFILL_LINE, "item_id": "A", "discount": 12.5},
+        {**PREFILL_LINE, "item_id": "B", "discount": 0},
+    ]
+    await _stored(db_session, so_books, quote(1, status="sent"))
+    await actions.accept_quote(db_session, "e1", by=None)
+    sent = [(line["item_id"], line["discount"]) for line in so_books.so_payloads[0]["line_items"]]
+    assert sent == [("A", 12.5), ("B", 0)]
+    assert [type(d) for _, d in sent] == [float, int]

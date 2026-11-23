@@ -1,75 +1,243 @@
 [
- {
-  "id": "app-openapi-index",
-  "cmd": "PYTHONHASHSEED=0 PYTHONPATH=. ./venv/bin/python3 tools/probe_openapi.py 2>/dev/null",
-  "timeout": 300,
-  "scrub": [
-   "\\d{4}-\\d{2}-\\d{2}[T ][0-9:.]+"
-  ],
-  "files": []
- },
- {
-  "id": "app-ddl",
-  "cmd": "PYTHONHASHSEED=0 ./venv/bin/python3 -c \"import backend.app.main; from sqlalchemy.schema import CreateTable; from sqlalchemy.dialects import sqlite; from backend.app.core.database import Base; [print(str(CreateTable(t).compile(dialect=sqlite.dialect())).strip() + ';') for n, t in sorted(Base.metadata.tables.items())]\" 2>/dev/null",
-  "timeout": 300,
-  "scrub": [
-   "\\d{4}-\\d{2}-\\d{2}[T ][0-9:.]+"
-  ],
-  "files": []
- },
- {
-  "id": "app-permissions",
-  "cmd": "PYTHONHASHSEED=0 ./venv/bin/python3 -c \"import json; from backend.app.core import permissions as p; print(json.dumps({'all': sorted(p.ALL_PERMISSIONS), 'categories': {k: sorted(v) if isinstance(v, (list, set)) else v for k, v in sorted(p.PERMISSION_CATEGORIES.items())}, 'default_groups': {k: sorted(v) if isinstance(v, (list, set)) else v for k, v in sorted(p.DEFAULT_GROUPS.items())}}, sort_keys=True, indent=1, default=str))\" 2>/dev/null",
-  "timeout": 180,
-  "scrub": [
-   "\\d{4}-\\d{2}-\\d{2}[T ][0-9:.]+"
-  ],
-  "files": []
- },
- {
-  "id": "app-settings",
-  "cmd": "PYTHONHASHSEED=0 ./venv/bin/python3 -c \"import json; from backend.app.core.config import settings; M = type(settings).model_fields; print(json.dumps({n: {'type': str(f.annotation), 'default': repr(f.default), 'required': f.is_required()} for n, f in sorted(M.items())}, sort_keys=True, indent=1))\" 2>/dev/null",
-  "timeout": 180,
-  "scrub": [
-   "\\d{4}-\\d{2}-\\d{2}[T ][0-9:.]+"
-  ],
-  "files": []
- },
- {
-  "id": "app-route-perms",
-  "cmd": "grep -rhoE 'RequirePermissionIfAuthEnabled\\(Permission\\.[A-Z_]+\\)' backend/app/api/routes/ | sort | uniq -c | sed 's/^ *//' ",
-  "timeout": 60,
-  "scrub": [
-   "\\d{4}-\\d{2}-\\d{2}[T ][0-9:.]+"
-  ],
-  "files": []
- },
- {
-  "id": "revenue-pure",
-  "cmd": "PYTHONHASHSEED=0 PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=. ./venv/bin/python3 tools/probe_revenue_pure.py 2>/dev/null",
-  "timeout": 300,
-  "scrub": [],
-  "files": []
- },
- {
-  "id": "revenue-http",
-  "cmd": "mkdir -p /tmp/fenrir-revenue-probe/http-data && OUT=$(mktemp /tmp/fenrir-revenue-probe/http.XXXXXX) && PROBE_OUT=$OUT DATA_DIR=/tmp/fenrir-revenue-probe/http-data LOG_DIR=/tmp/fenrir-revenue-probe/http-data/logs PYTHONHASHSEED=0 PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=. ./venv/bin/python3 -m pytest -p backend.tests.conftest -p no:randomly -p no:cacheprovider -q tools/probe_revenue_http_test.py > $OUT.log 2>&1; rc=$?; cat $OUT; [ $rc = 0 ] || tail -40 $OUT.log; rm -f $OUT $OUT.log; exit $rc",
-  "timeout": 600,
-  "scrub": [],
-  "files": []
- },
- {
-  "id": "revenue-frontend-pure",
-  "cmd": "mkdir -p /tmp/fenrir-revenue-probe && frontend/node_modules/.bin/rolldown tools/probe_revenue_frontend_entry.ts --format cjs --file /tmp/fenrir-revenue-probe/revenueFrontend.cjs >/dev/null 2>&1 && TZ=Pacific/Tahiti node tools/probe_revenue_frontend.cjs",
-  "timeout": 300,
-  "scrub": [],
-  "files": []
- },
- {
-  "id": "revenue-i18n",
-  "cmd": "LC_ALL=C node tools/probe_revenue_i18n.cjs",
-  "timeout": 300,
-  "scrub": [],
-  "files": []
- }
+  {
+    "id": "app-openapi-index",
+    "cmd": "PYTHONHASHSEED=0 PYTHONPATH=. ./venv/bin/python3 tools/probe_openapi.py 2>/dev/null",
+    "timeout": 300,
+    "scrub": [
+      "\\d{4}-\\d{2}-\\d{2}[T ][0-9:.]+"
+    ],
+    "files": []
+  },
+  {
+    "id": "app-ddl",
+    "cmd": "PYTHONHASHSEED=0 ./venv/bin/python3 -c \"import backend.app.main; from sqlalchemy.schema import CreateTable; from sqlalchemy.dialects import sqlite; from backend.app.core.database import Base; [print(str(CreateTable(t).compile(dialect=sqlite.dialect())).strip() + ';') for n, t in sorted(Base.metadata.tables.items())]\" 2>/dev/null",
+    "timeout": 300,
+    "scrub": [
+      "\\d{4}-\\d{2}-\\d{2}[T ][0-9:.]+"
+    ],
+    "files": []
+  },
+  {
+    "id": "app-permissions",
+    "cmd": "PYTHONHASHSEED=0 ./venv/bin/python3 -c \"import json; from backend.app.core import permissions as p; print(json.dumps({'all': sorted(p.ALL_PERMISSIONS), 'categories': {k: sorted(v) if isinstance(v, (list, set)) else v for k, v in sorted(p.PERMISSION_CATEGORIES.items())}, 'default_groups': {k: sorted(v) if isinstance(v, (list, set)) else v for k, v in sorted(p.DEFAULT_GROUPS.items())}}, sort_keys=True, indent=1, default=str))\" 2>/dev/null",
+    "timeout": 180,
+    "scrub": [
+      "\\d{4}-\\d{2}-\\d{2}[T ][0-9:.]+"
+    ],
+    "files": []
+  },
+  {
+    "id": "app-settings",
+    "cmd": "PYTHONHASHSEED=0 ./venv/bin/python3 -c \"import json; from backend.app.core.config import settings; M = type(settings).model_fields; print(json.dumps({n: {'type': str(f.annotation), 'default': repr(f.default), 'required': f.is_required()} for n, f in sorted(M.items())}, sort_keys=True, indent=1))\" 2>/dev/null",
+    "timeout": 180,
+    "scrub": [
+      "\\d{4}-\\d{2}-\\d{2}[T ][0-9:.]+"
+    ],
+    "files": []
+  },
+  {
+    "id": "app-middleware-stack",
+    "cmd": "PYTHONHASHSEED=0 ./venv/bin/python3 -c \"from backend.app.main import app; [print(i, m.cls.__name__) for i, m in enumerate(app.user_middleware)]\" 2>/dev/null",
+    "timeout": 180,
+    "scrub": [
+      "\\d{4}-\\d{2}-\\d{2}[T ][0-9:.]+"
+    ],
+    "files": []
+  },
+  {
+    "id": "app-migrations-index",
+    "cmd": "grep -oE '^\\s*#\\s*Migration:.*' backend/app/core/database.py | sed 's/^[[:space:]]*//' | nl -ba",
+    "timeout": 60,
+    "scrub": [
+      "\\d{4}-\\d{2}-\\d{2}[T ][0-9:.]+"
+    ],
+    "files": []
+  },
+  {
+    "id": "app-route-perms",
+    "cmd": "grep -rhoE 'RequirePermissionIfAuthEnabled\\(Permission\\.[A-Z_]+\\)' backend/app/api/routes/ | sort | uniq -c | sed 's/^ *//' ",
+    "timeout": 60,
+    "scrub": [
+      "\\d{4}-\\d{2}-\\d{2}[T ][0-9:.]+"
+    ],
+    "files": []
+  },
+  {
+    "id": "tracking-backend",
+    "cmd": "PYTHONHASHSEED=0 PYTHONPATH=. ./venv/bin/python3 tools/probe_tracking_backend.py 2>/dev/null",
+    "timeout": 300,
+    "scrub": [],
+    "files": []
+  },
+  {
+    "id": "tracking-contract",
+    "cmd": "PYTHONHASHSEED=0 PYTHONPATH=. ./venv/bin/python3 tools/probe_tracking_contract.py 2>/dev/null",
+    "timeout": 300,
+    "scrub": [],
+    "files": []
+  },
+  {
+    "id": "tracking-http",
+    "cmd": "PYTHONHASHSEED=0 PYTHONPATH=. ./venv/bin/python3 tools/probe_tracking_http.py 2>/dev/null",
+    "timeout": 300,
+    "scrub": [],
+    "files": []
+  },
+  {
+    "id": "aito-openapi",
+    "cmd": "PYTHONHASHSEED=0 ./venv/bin/python3 -c \"import json; from backend.app.main import app; spec = app.openapi(); paths = {k: v for k, v in spec['paths'].items() if any(s in k for s in ('/aito', '/heimdall', '/zoho'))}; print(json.dumps(paths, sort_keys=True, indent=1))\" 2>/dev/null",
+    "timeout": 300,
+    "scrub": [
+      "\\d{4}-\\d{2}-\\d{2}[T ][0-9:.]+"
+    ],
+    "files": []
+  },
+  {
+    "id": "aito-pydantic-schemas",
+    "cmd": "PYTHONHASHSEED=0 ./venv/bin/python3 -c \"import json, inspect; from pydantic import BaseModel; import backend.app.schemas.aito as a; import backend.app.schemas.heimdall as h; out = {}; [out.update({n: c.model_json_schema() for n, c in sorted(vars(m).items()) if inspect.isclass(c) and issubclass(c, BaseModel) and c.__module__ == m.__name__}) for m in (a, h)]; print(json.dumps(out, sort_keys=True, indent=1))\" 2>/dev/null",
+    "timeout": 300,
+    "scrub": [
+      "\\d{4}-\\d{2}-\\d{2}[T ][0-9:.]+"
+    ],
+    "files": []
+  },
+  {
+    "id": "aito-board-rules-py",
+    "cmd": "PYTHONHASHSEED=0 ./venv/bin/python3 -c \"import json; from backend.app.services.aito_board_rules import evaluate; cases = json.load(open('frontend/src/__tests__/fixtures/aitoBoardRules.cases.json'))['evaluate']; print(json.dumps([list(evaluate(c.get('quote_status'), c['stored_column'], c.get('pending', []))) for c in cases]))\" 2>/dev/null",
+    "timeout": 180,
+    "scrub": [],
+    "files": []
+  },
+  {
+    "id": "aito-route-perms",
+    "cmd": "grep -hoE 'RequirePermissionIfAuthEnabled\\([^)]*\\)' backend/app/api/routes/aito.py backend/app/api/routes/aito_payments.py backend/app/api/routes/heimdall.py backend/app/api/routes/zoho.py | sort | uniq -c | sed 's/^ *//'",
+    "timeout": 60,
+    "scrub": [],
+    "files": []
+  },
+  {
+    "id": "aito-event-depths",
+    "cmd": "PYTHONHASHSEED=0 ./venv/bin/python3 -c \"from backend.app.services.aito_events import kinds_for_depth, COALESCE_WINDOW; print({d: kinds_for_depth(d) for d in ['story', 'detail', 'everything']}); print(COALESCE_WINDOW)\" 2>/dev/null",
+    "timeout": 180,
+    "scrub": [],
+    "files": []
+  },
+  {
+    "id": "aito-quote-money",
+    "cmd": "PYTHONHASHSEED=0 PYTHONPATH=. ./venv/bin/python3 tools/probe_quote_money.py 2>/dev/null",
+    "timeout": 300,
+    "scrub": [
+      "\\d{4}-\\d{2}-\\d{2}[T ][0-9:.]+"
+    ],
+    "files": []
+  },
+  {
+    "id": "aito-ai-prompts",
+    "cmd": "PYTHONHASHSEED=0 PYTHONPATH=. ./venv/bin/python3 tools/probe_aito_ai.py 2>/dev/null",
+    "timeout": 300,
+    "scrub": [],
+    "files": []
+  },
+  {
+    "id": "aito-status-comments",
+    "cmd": "PYTHONHASHSEED=0 PYTHONPATH=. ./venv/bin/python3 tools/probe_aito_status.py 2>/dev/null",
+    "timeout": 300,
+    "scrub": [],
+    "files": []
+  },
+  {
+    "id": "heimdall-signing",
+    "cmd": "PYTHONHASHSEED=0 PYTHONPATH=. ./venv/bin/python3 tools/probe_heimdall_signing.py 2>/dev/null",
+    "timeout": 300,
+    "scrub": [],
+    "files": []
+  },
+  {
+    "id": "heimdall-wire",
+    "cmd": "PYTHONHASHSEED=0 PYTHONPATH=. ./venv/bin/python3 tools/probe_heimdall_wire.py 2>/dev/null",
+    "timeout": 300,
+    "scrub": [],
+    "files": []
+  },
+  {
+    "id": "payment-link-math",
+    "cmd": "PYTHONHASHSEED=0 PYTHONPATH=. ./venv/bin/python3 tools/probe_payment_link_math.py 2>/dev/null",
+    "timeout": 300,
+    "scrub": [],
+    "files": []
+  },
+  {
+    "id": "payment-link-api",
+    "cmd": "PYTHONHASHSEED=0 PYTHONPATH=. ./venv/bin/python3 tools/probe_payment_link_api.py 2>/dev/null",
+    "timeout": 300,
+    "scrub": [],
+    "files": []
+  },
+  {
+    "id": "payment-link-reconcile",
+    "cmd": "PYTHONHASHSEED=0 PYTHONPATH=. ./venv/bin/python3 tools/probe_payment_link_reconcile.py 2>/dev/null",
+    "timeout": 300,
+    "scrub": [],
+    "files": []
+  },
+  {
+    "id": "stats-backend-aggregate",
+    "cmd": "PYTHONHASHSEED=0 PYTHONPATH=. ./venv/bin/python3 tools/probe_stats_backend.py 2>/dev/null",
+    "timeout": 300,
+    "scrub": [],
+    "files": []
+  },
+  {
+    "id": "stats-contract",
+    "cmd": "PYTHONHASHSEED=0 PYTHONPATH=. ./venv/bin/python3 tools/probe_stats_contract.py 2>/dev/null",
+    "timeout": 300,
+    "scrub": [],
+    "files": []
+  },
+  {
+    "id": "aito-sync-rework-pure",
+    "cmd": "PYTHONHASHSEED=0 PYTHONPATH=. ./venv/bin/python3 tools/probe_aito_push_schedule.py 2>/dev/null",
+    "timeout": 300,
+    "scrub": [],
+    "files": []
+  },
+  {
+    "id": "orders-openapi",
+    "cmd": "PYTHONHASHSEED=0 PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=. ./venv/bin/python3 tools/probe_orders_openapi.py 2>/dev/null",
+    "timeout": 300,
+    "scrub": [],
+    "files": []
+  },
+  {
+    "id": "orders-rules",
+    "cmd": "PYTHONHASHSEED=0 PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=. ./venv/bin/python3 tools/probe_orders_rules.py 2>/dev/null",
+    "timeout": 300,
+    "scrub": [],
+    "files": []
+  },
+  {
+    "id": "orders-http",
+    "cmd": "mkdir -p /tmp/fenrir-orders-probe && OUT=$(mktemp /tmp/fenrir-orders-probe/http.XXXXXX) && mkdir -p /tmp/fenrir-orders-probe/http-data && PROBE_OUT=$OUT DATA_DIR=/tmp/fenrir-orders-probe/http-data LOG_DIR=/tmp/fenrir-orders-probe/http-data/logs PYTHONHASHSEED=0 PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=. ./venv/bin/python3 -m pytest -p backend.tests.conftest -p no:randomly -p no:cacheprovider -q tools/probe_orders_http_test.py > $OUT.log 2>&1; rc=$?; cat $OUT; [ $rc = 0 ] || tail -40 $OUT.log; rm -f $OUT $OUT.log; exit $rc",
+    "timeout": 600,
+    "scrub": [
+      "\\d{4}-\\d{2}-\\d{2}(?:[T ]\\d{2}:\\d{2}(?::\\d{2}(?:\\.\\d+)?)?(?:[+-]\\d{2}:?\\d{2}|Z)?)?",
+      "\\d{1,2} (?:janv\\.|f\u00e9vr\\.|mars|avr\\.|mai|juin|juil\\.|ao\u00fbt|sept\\.|oct\\.|nov\\.|d\u00e9c\\.) \\d{4}",
+      "\u00e0 \\d{2}:\\d{2}"
+    ],
+    "files": []
+  },
+  {
+    "id": "orders-prep-sheet",
+    "cmd": "PYTHONHASHSEED=0 PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=. ./venv/bin/python3 tools/probe_orders_prep_sheet.py 2>/dev/null",
+    "timeout": 300,
+    "scrub": [],
+    "files": []
+  },
+  {
+    "id": "orders-surface-py",
+    "cmd": "for w in routes callables schemas ddl permissions settings; do echo \"=== $w\"; PYTHONHASHSEED=0 PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=. ./venv/bin/python3 tools/probe_orders_surface.py $w 2>/dev/null; done",
+    "timeout": 600,
+    "scrub": [],
+    "files": []
+  }
 ]

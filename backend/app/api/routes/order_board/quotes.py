@@ -20,11 +20,13 @@ from backend.app.api.routes.order_board._common import (
 from backend.app.api.routes.order_board.board import OrderEventPage, events_page
 from backend.app.api.routes.order_board.documents import DocumentEmailBody
 from backend.app.api.routes.order_board.fulfilment import CounterLine, CounterOrderBody
+from backend.app.api.routes.order_board.payment import _order_payment_lock
 from backend.app.core.auth import RequirePermissionIfAuthEnabled
 from backend.app.core.database import get_db
 from backend.app.core.permissions import Permission
 from backend.app.models.user import User
 from backend.app.services import order_board_actions, order_board_sync
+from backend.app.services.order_board_actions.quote_accept import _made_here
 from backend.app.services.zoho import ZohoAmbiguous, ZohoUnreachable
 
 
@@ -112,12 +114,13 @@ async def reopen_quote(
     return await _quotes_after(db, estimate_id)
 
 
-async def _quote_order_after(db: AsyncSession, salesorder_id: str) -> dict:
+async def _quote_order_after(db: AsyncSession, estimate_id: str, salesorder_id: str) -> dict:
     return {
         "quotes": await order_board_sync.read_quotes(db),
         "board": await order_board_sync.read_board(db),
         "row": await order_board_sync.find_board_row(db, salesorder_id),
         "salesorder_id": salesorder_id,
+        "undoable": _made_here(estimate_id, salesorder_id),
     }
 
 
@@ -130,7 +133,7 @@ async def accept_quote(
     """Mark the quote accepted and create its sales order in Books."""
     salesorder_id = await _run(order_board_actions.accept_quote(db, estimate_id, by=_by(user)))
     _logged(user, estimate_id, "accept_quote")
-    return await _quote_order_after(db, salesorder_id)
+    return await _quote_order_after(db, estimate_id, salesorder_id)
 
 
 @router.post("/quotes/{estimate_id}/order")
@@ -142,7 +145,7 @@ async def create_order_from_quote(
     """Create the sales order of a quote already accepted."""
     salesorder_id = await _run(order_board_actions.create_order_from_quote(db, estimate_id, by=_by(user)))
     _logged(user, estimate_id, "create_order_from_quote")
-    return await _quote_order_after(db, salesorder_id)
+    return await _quote_order_after(db, estimate_id, salesorder_id)
 
 
 class UndoAcceptBody(BaseModel):
@@ -157,7 +160,14 @@ async def undo_accept_quote(
     user: User | None = RequirePermissionIfAuthEnabled(Permission.ORDERS_UPDATE),
 ) -> dict:
     """Delete the quote's new order in Books and mark the quote sent again."""
-    await _run(order_board_actions.undo_accept(db, estimate_id, body.salesorder_id, by=_by(user)))
+    try:
+        # The order's payment lock, as the terminal start and manual payment take it: a payment being set up refuses.
+        async with _order_payment_lock(body.salesorder_id, wait=False):
+            await _run(order_board_actions.undo_accept(db, estimate_id, body.salesorder_id, by=_by(user)))
+    except HTTPException as e:
+        if e.status_code == 409 and isinstance(e.detail, dict) and e.detail.get("code") == "terminal_in_progress":
+            raise HTTPException(status_code=400, detail="undo_too_late") from None
+        raise
     _logged(user, estimate_id, "undo_accept_quote")
     return {"quotes": await order_board_sync.read_quotes(db), "board": await order_board_sync.read_board(db)}
 

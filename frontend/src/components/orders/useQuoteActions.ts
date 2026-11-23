@@ -23,7 +23,7 @@ export function useQuoteBusy(id: string | null): boolean {
 }
 
 /** The quote as the list showed it at the click: a converted quote leaves the list the server answers with. */
-export type ClickedQuote = Pick<QuoteRow, 'id' | 'number' | 'has_draft_order'>;
+export type ClickedQuote = Pick<QuoteRow, 'id' | 'number'>;
 
 /** A quote refusal in words: 409 another action holds the quote, 404 the quote is gone. */
 export const quoteReason = (t: TFunction, e: unknown): string =>
@@ -60,7 +60,7 @@ export function useQuoteActions(onOrdered?: (result: QuoteOrderResult, quote: Cl
     mutationKey: ACTION_KEY,
     mutationFn: ({ id, action }: { id: string; action: QuoteAction }): Promise<{ quotes: QuotesResponse } | QuoteOrderResult> => CALL[action](id),
     onMutate: ({ id }): ClickedQuote =>
-      queryClient.getQueryData<QuotesResponse>(quotesQuery.queryKey)?.rows.find(q => q.id === id) ?? { id, number: '', has_draft_order: false },
+      queryClient.getQueryData<QuotesResponse>(quotesQuery.queryKey)?.rows.find(q => q.id === id) ?? { id, number: '' },
     onSuccess: async (r, _v, clicked) => {
       await take(r);
       if ('salesorder_id' in r) onOrdered?.(r, clicked);

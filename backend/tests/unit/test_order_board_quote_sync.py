@@ -306,3 +306,23 @@ async def test_a_converted_accepted_quote_has_its_items_left_out_of_the_stock_re
     add_quotes(zoho, done, quote(2, item="A"))
     await sync.run_pass(db_session)
     assert [i for batch in zoho.item_batches for i in batch] == ["A"]
+
+
+@pytest.mark.asyncio
+async def test_stored_quote_that_stops_being_a_candidate_is_deleted_on_a_change_listing(db_session, zoho):
+    add_quotes(zoho, quote(1), quote(2))
+    await sync.run_pass(db_session)
+    zoho.estimates["e1"]["status"] = "invoiced"
+    zoho.touched = {"e1"}
+    await sync.run_pass(db_session)
+    assert zoho.calls["list_estimates"] == 1  # a change listing, not a full one
+    assert set(await stored_quotes(db_session)) == {"e2"}
+
+
+@pytest.mark.asyncio
+async def test_unparseable_swept_at_runs_a_full_listing(db_session, zoho):
+    add_quotes(zoho, quote(1))
+    await sync.run_pass(db_session)
+    await set_state(db_session, quotes_swept_at="not-a-date")
+    await sync.run_pass(db_session)
+    assert zoho.calls["list_estimates"] == 2

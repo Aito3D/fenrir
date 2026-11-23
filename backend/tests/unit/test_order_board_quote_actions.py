@@ -371,3 +371,75 @@ async def test_reopen_only_from_declined(db_session, books):
     assert books.sent == [("status", "e1", "sent")]
     assert (await sync.find_quote(db_session, "e1")).detail["status"] == "sent"
     assert [e.kind for e in await events_of(db_session, "e1")] == ["quote.reopened"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("write", ["edit", "decline", "reopen"])
+async def test_write_while_books_is_throttling_is_busy_and_sends_nothing(db_session, books, write):
+    import time
+
+    from backend.app.services.order_board_sync import _common as sync_common
+
+    await _stored(db_session, books, _with_line(1, status="declined"))
+    sync_common._rate_limited_until = time.monotonic() + 60
+    with pytest.raises(sync.ZohoBusy):
+        await _write(db_session, write, "e1")
+    assert (books.sent, books.calls["estimate"]) == ([], 0)
+
+
+@pytest.mark.asyncio
+async def test_converted_quote_whose_store_fails_is_still_refused(db_session, books, pings, monkeypatch):
+    stored = _with_line(1, status="declined")
+    converted = {**stored, "salesorders": [{"salesorder_id": "so1", "salesorder_order_status": "open"}]}
+    await _stored(db_session, books, stored, fresh=converted)
+
+    async def boom(db, detail):
+        raise RuntimeError("db down")
+
+    monkeypatch.setattr(sync, "store_quote", boom)
+    pings.clear()
+    with pytest.raises(actions.OrderActionRefused, match="quote_converted"):
+        await actions.decline_quote(db_session, "e1", by=None)
+    assert books.sent == []
+    assert pings == []  # nothing stored, nothing announced
+    assert await sync.find_quote(db_session, "e1") is not None  # the session is still usable
+
+
+@pytest.mark.asyncio
+async def test_write_stands_when_the_re_read_fails_and_the_quote_is_left_pending(db_session, books, pings, monkeypatch):
+    await _stored(db_session, books, {**_with_line(1), "status": "declined"}, fresh={**_with_line(1), "status": "sent"})
+    books.estimates["e1"]["status"] = "declined"
+    real = zoho_service.get_estimate
+    calls = []
+
+    async def second_read_fails(db, estimate_id):
+        calls.append(estimate_id)
+        if len(calls) > 1:
+            raise RuntimeError("books down")
+        return await real(db, estimate_id)
+
+    monkeypatch.setattr(zoho_service, "get_estimate", second_read_fails)
+    await actions.reopen_quote(db_session, "e1", by="ana")
+    assert books.sent == [("status", "e1", "sent")]
+    assert (await sync.find_quote(db_session, "e1")).pending is True
+    assert [e.kind for e in await events_of(db_session, "e1")] == ["quote.reopened"]
+    assert pings[-1]["quotes"] is True
+
+
+@pytest.mark.parametrize("detail", [{}, {"date": "2026-10-01"}, {"date": "x", "expiry_date": "y"}, {"date": None}])
+def test_redated_expiry_defaults_to_16_days_when_the_dates_are_unusable(detail):
+    from backend.app.services.order_board_actions.quotes import _redated_expiry
+
+    assert _redated_expiry(detail) == TODAY + timedelta(days=16)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(("stored", "asked", "sent"), [(12.5, {}, 0), (0, {}, 0), (12.5, {"discount": "5%"}, "5%")])
+async def test_edit_kept_line_with_a_numeric_stored_discount(db_session, books, stored, asked, sent):
+    """Books stores the line discount as a number; the edit replaces it with what was asked, 0 when nothing."""
+    await _stored(db_session, books, _with_line(1, discount=stored))
+    await actions.edit_quote(
+        db_session, "e1", "c1", [{"line_id": "ql1", "item_id": "A", "quantity": 1, **asked}], by=None
+    )
+    assert books.sent[0][2][0]["discount"] == sent
+    assert type(books.sent[0][2][0]["discount"]) is type(sent)
