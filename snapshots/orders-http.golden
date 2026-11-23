@@ -263,6 +263,11 @@
       "kwargs": {}
      },
      {
+      "args": [],
+      "call": "zoho.list_estimates",
+      "kwargs": {}
+     },
+     {
       "args": [
        "so1"
       ],
@@ -588,6 +593,13 @@
        "<SCRUBBED>"
       ],
       "call": "zoho.list_customer_payments_modified_since",
+      "kwargs": {}
+     },
+     {
+      "args": [
+       "<SCRUBBED>"
+      ],
+      "call": "zoho.list_estimate_rows_modified_since",
       "kwargs": {}
      },
      {
@@ -1721,6 +1733,11 @@
       "kwargs": {}
      },
      {
+      "args": [],
+      "call": "zoho.list_estimates",
+      "kwargs": {}
+     },
+     {
       "args": [
        "so1"
       ],
@@ -1785,6 +1802,13 @@
        "<SCRUBBED>"
       ],
       "call": "zoho.list_customer_payments_modified_since",
+      "kwargs": {}
+     },
+     {
+      "args": [
+       "<SCRUBBED>"
+      ],
+      "call": "zoho.list_estimate_rows_modified_since",
       "kwargs": {}
      },
      {
@@ -2190,6 +2214,13 @@
      },
      {
       "args": [
+       "<SCRUBBED>"
+      ],
+      "call": "zoho.list_estimate_rows_modified_since",
+      "kwargs": {}
+     },
+     {
+      "args": [
        "so1"
       ],
       "call": "zoho.get_salesorder",
@@ -2253,6 +2284,13 @@
        "<SCRUBBED>"
       ],
       "call": "zoho.list_customer_payments_modified_since",
+      "kwargs": {}
+     },
+     {
+      "args": [
+       "<SCRUBBED>"
+      ],
+      "call": "zoho.list_estimate_rows_modified_since",
       "kwargs": {}
      },
      {
@@ -2814,6 +2852,11 @@
       "kwargs": {}
      },
      {
+      "args": [],
+      "call": "zoho.list_estimates",
+      "kwargs": {}
+     },
+     {
       "args": [
        "so1"
       ],
@@ -2878,6 +2921,13 @@
        "<SCRUBBED>"
       ],
       "call": "zoho.list_customer_payments_modified_since",
+      "kwargs": {}
+     },
+     {
+      "args": [
+       "<SCRUBBED>"
+      ],
+      "call": "zoho.list_estimate_rows_modified_since",
       "kwargs": {}
      },
      {
@@ -3582,6 +3632,11 @@
       "kwargs": {}
      },
      {
+      "args": [],
+      "call": "zoho.list_estimates",
+      "kwargs": {}
+     },
+     {
       "args": [
        "so1"
       ],
@@ -3645,6 +3700,13 @@
        "<SCRUBBED>"
       ],
       "call": "zoho.list_customer_payments_modified_since",
+      "kwargs": {}
+     },
+     {
+      "args": [
+       "<SCRUBBED>"
+      ],
+      "call": "zoho.list_estimate_rows_modified_since",
       "kwargs": {}
      },
      {
@@ -4332,6 +4394,11 @@
       "kwargs": {}
      },
      {
+      "args": [],
+      "call": "zoho.list_estimates",
+      "kwargs": {}
+     },
+     {
       "args": [
        "so1"
       ],
@@ -4395,6 +4462,13 @@
        "<SCRUBBED>"
       ],
       "call": "zoho.list_customer_payments_modified_since",
+      "kwargs": {}
+     },
+     {
+      "args": [
+       "<SCRUBBED>"
+      ],
+      "call": "zoho.list_estimate_rows_modified_since",
       "kwargs": {}
      },
      {
@@ -5393,6 +5467,11 @@
       "kwargs": {}
      },
      {
+      "args": [],
+      "call": "zoho.list_estimates",
+      "kwargs": {}
+     },
+     {
       "args": [
        "so1"
       ],
@@ -5470,6 +5549,13 @@
        "<SCRUBBED>"
       ],
       "call": "zoho.list_customer_payments_modified_since",
+      "kwargs": {}
+     },
+     {
+      "args": [
+       "<SCRUBBED>"
+      ],
+      "call": "zoho.list_estimate_rows_modified_since",
       "kwargs": {}
      },
      {
@@ -6580,6 +6666,11 @@
       "kwargs": {}
      },
      {
+      "args": [],
+      "call": "zoho.list_estimates",
+      "kwargs": {}
+     },
+     {
       "args": [
        "so1"
       ],
@@ -6657,6 +6748,13 @@
        "<SCRUBBED>"
       ],
       "call": "zoho.list_customer_payments_modified_since",
+      "kwargs": {}
+     },
+     {
+      "args": [
+       "<SCRUBBED>"
+      ],
+      "call": "zoho.list_estimate_rows_modified_since",
       "kwargs": {}
      },
      {
@@ -7222,6 +7320,11 @@
       "kwargs": {}
      },
      {
+      "args": [],
+      "call": "zoho.list_estimates",
+      "kwargs": {}
+     },
+     {
       "args": [
        "so1"
       ],
@@ -7299,6 +7402,13 @@
        "<SCRUBBED>"
       ],
       "call": "zoho.list_customer_payments_modified_since",
+      "kwargs": {}
+     },
+     {
+      "args": [
+       "<SCRUBBED>"
+      ],
+      "call": "zoho.list_estimate_rows_modified_since",
       "kwargs": {}
      },
      {

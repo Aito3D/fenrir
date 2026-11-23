@@ -49,6 +49,18 @@ GET /api/v1/order-board/orders/{salesorder_id}/customer-credit  -> get_customer_
 GET /api/v1/order-board/orders/{salesorder_id}/client-rating  -> get_order_client_rating  [get_db; require_permission_if_auth_enabled.<locals>.permission_checker{'perm_strings': "['orders:read']"} <- (HTTPBearer)]
 PUT /api/v1/order-board/orders/{salesorder_id}/contact  -> edit_order_contact  [get_db; require_permission_if_auth_enabled.<locals>.permission_checker{'perm_strings': "['orders:update']"} <- (HTTPBearer)]
 POST /api/v1/order-board/orders/{salesorder_id}/invoices/{invoice_id}/apply-credit  -> apply_order_credit  [get_db; require_permission_if_auth_enabled.<locals>.permission_checker{'perm_strings': "['orders:update']"} <- (HTTPBearer)]
+GET /api/v1/order-board/quotes  -> get_quotes  [get_db; require_permission_if_auth_enabled.<locals>.permission_checker{'perm_strings': "['orders:read']"} <- (HTTPBearer)]
+POST /api/v1/order-board/quotes  -> create_quote  [get_db; require_permission_if_auth_enabled.<locals>.permission_checker{'perm_strings': "['orders:update']"} <- (HTTPBearer)]
+PUT /api/v1/order-board/quotes/{estimate_id}  -> edit_quote  [get_db; require_permission_if_auth_enabled.<locals>.permission_checker{'perm_strings': "['orders:update']"} <- (HTTPBearer)]
+POST /api/v1/order-board/quotes/{estimate_id}/decline  -> decline_quote  [get_db; require_permission_if_auth_enabled.<locals>.permission_checker{'perm_strings': "['orders:update']"} <- (HTTPBearer)]
+POST /api/v1/order-board/quotes/{estimate_id}/reopen  -> reopen_quote  [get_db; require_permission_if_auth_enabled.<locals>.permission_checker{'perm_strings': "['orders:update']"} <- (HTTPBearer)]
+POST /api/v1/order-board/quotes/{estimate_id}/accept  -> accept_quote  [get_db; require_permission_if_auth_enabled.<locals>.permission_checker{'perm_strings': "['orders:update']"} <- (HTTPBearer)]
+POST /api/v1/order-board/quotes/{estimate_id}/order  -> create_order_from_quote  [get_db; require_permission_if_auth_enabled.<locals>.permission_checker{'perm_strings': "['orders:update']"} <- (HTTPBearer)]
+POST /api/v1/order-board/quotes/{estimate_id}/undo-accept  -> undo_accept_quote  [get_db; require_permission_if_auth_enabled.<locals>.permission_checker{'perm_strings': "['orders:update']"} <- (HTTPBearer)]
+GET /api/v1/order-board/quotes/{estimate_id}/pdf  -> get_quote_pdf  [get_db; require_permission_if_auth_enabled.<locals>.permission_checker{'perm_strings': "['orders:read']"} <- (HTTPBearer)]
+GET /api/v1/order-board/quotes/{estimate_id}/email  -> get_quote_email  [get_db; require_permission_if_auth_enabled.<locals>.permission_checker{'perm_strings': "['orders:read']"} <- (HTTPBearer)]
+POST /api/v1/order-board/quotes/{estimate_id}/email  -> send_quote_email  [get_db; require_permission_if_auth_enabled.<locals>.permission_checker{'perm_strings': "['orders:update']"} <- (HTTPBearer)]
+GET /api/v1/order-board/quotes/{estimate_id}/events  -> list_quote_events  [get_db; require_permission_if_auth_enabled.<locals>.permission_checker{'perm_strings': "['orders:read']"} <- (HTTPBearer)]
 === callables
 ## backend.app.api.routes.order_board
 
@@ -60,6 +72,7 @@ class OrderEventPage(BaseModel)
 class OrderEventResponse(BaseModel)
 class PrepSheetBatchBody(BaseModel)
 async def add_order_note(salesorder_id: str, payload: backend.app.schemas.aito.AitoNoteCreate, db: sqlalchemy.ext.asyncio.session.AsyncSession = Depends(dependency=<function get_db>, use_cache=True, scope='function'), current_user: backend.app.models.user.User | None = Depends(dependency=<function require_permission_if_auth_enabled.<locals>.permission_checker>, use_cache=True, scope=None)) -> backend.app.api.routes.order_board.board.OrderEventResponse
+async def events_page(db: sqlalchemy.ext.asyncio.session.AsyncSession, salesorder_id: str, depth: Literal['story', 'detail', 'everything'], before: int | None, before_at: datetime.datetime | None, limit: int) -> backend.app.api.routes.order_board.board.OrderEventPage
 async def get_finished_order(salesorder_id: str, db: sqlalchemy.ext.asyncio.session.AsyncSession = Depends(dependency=<function get_db>, use_cache=True, scope='function'), _: backend.app.models.user.User | None = Depends(dependency=<function require_permission_if_auth_enabled.<locals>.permission_checker>, use_cache=True, scope=None)) -> dict
 async def get_finished_orders(db: sqlalchemy.ext.asyncio.session.AsyncSession = Depends(dependency=<function get_db>, use_cache=True, scope='function'), _: backend.app.models.user.User | None = Depends(dependency=<function require_permission_if_auth_enabled.<locals>.permission_checker>, use_cache=True, scope=None)) -> dict
 async def get_order_board(db: sqlalchemy.ext.asyncio.session.AsyncSession = Depends(dependency=<function get_db>, use_cache=True, scope='function'), _: backend.app.models.user.User | None = Depends(dependency=<function require_permission_if_auth_enabled.<locals>.permission_checker>, use_cache=True, scope=None)) -> dict
@@ -188,33 +201,46 @@ InvoiceScope: _LiteralGenericAlias
 class OrderActionRefused(Exception)
 class OrderBusy(Exception)
 class OrderNotOnBoard(Exception)
+class QuoteNotStored(Exception)
 async def _row(db: sqlalchemy.ext.asyncio.session.AsyncSession, salesorder_id: str) -> dict
+async def accept_quote(db: sqlalchemy.ext.asyncio.session.AsyncSession, estimate_id: str, *, by: str | None) -> str
 async def apply_credit(db: sqlalchemy.ext.asyncio.session.AsyncSession, salesorder_id: str, invoice_id: str, *, by: str | None = None) -> float
 async def cancel_order(db: sqlalchemy.ext.asyncio.session.AsyncSession, salesorder_id: str, *, by: str | None = None) -> None
 async def confirm_stored_copy(db: sqlalchemy.ext.asyncio.session.AsyncSession, salesorder_id: str) -> backend.app.models.order_board_doc.OrderBoardDoc
 async def create_counter_order(db: sqlalchemy.ext.asyncio.session.AsyncSession, customer_id: str, lines: list[dict], client_ref: str, *, by: str | None) -> str
+async def create_order_from_quote(db: sqlalchemy.ext.asyncio.session.AsyncSession, estimate_id: str, *, by: str | None) -> str
 async def create_parcel(db: sqlalchemy.ext.asyncio.session.AsyncSession, salesorder_id: str, picklist_id: str, quantities: dict[str, float], *, by: str | None = None) -> str
 async def create_picklist(db: sqlalchemy.ext.asyncio.session.AsyncSession, salesorder_id: str, quantities: dict[str, float], *, by: str | None = None) -> dict
+async def create_quote(db: sqlalchemy.ext.asyncio.session.AsyncSession, customer_id: str, lines: list[dict], client_ref: str, *, by: str | None) -> str
+async def decline_quote(db: sqlalchemy.ext.asyncio.session.AsyncSession, estimate_id: str, *, by: str | None) -> None
 async def document_email_content(db: sqlalchemy.ext.asyncio.session.AsyncSession, kind: Literal['quote', 'retainer'], document_id: str) -> dict
 async def document_pdf(db: sqlalchemy.ext.asyncio.session.AsyncSession, salesorder_id: str, kind: Literal['quote', 'retainer'], document_id: str) -> bytes
 async def edit_contact(db: sqlalchemy.ext.asyncio.session.AsyncSession, salesorder_id: str, *, email: str, phone: str, phone_field: Literal['phone', 'mobile'], by: str | None = None) -> None
 async def edit_lines(db: sqlalchemy.ext.asyncio.session.AsyncSession, salesorder_id: str, version: str, lines: list[dict], *, by: str | None = None) -> dict
 async def edit_parcel(db: sqlalchemy.ext.asyncio.session.AsyncSession, salesorder_id: str, package_id: str, version: str, was: dict[str, float], lines: dict[str, float], *, by: str | None = None) -> dict
+async def edit_quote(db: sqlalchemy.ext.asyncio.session.AsyncSession, estimate_id: str, customer_id: str, lines: list[dict], *, by: str | None) -> None
 async def email_document(db: sqlalchemy.ext.asyncio.session.AsyncSession, salesorder_id: str, kind: Literal['quote', 'retainer'], document: dict, to: str, *, by: str | None = None) -> None
 async def email_invoice(db: sqlalchemy.ext.asyncio.session.AsyncSession, salesorder_id: str, number: str, invoice_id: str, to: str, *, by: str | None = None, invoice_number: str = '') -> None
+async def email_quote(db: sqlalchemy.ext.asyncio.session.AsyncSession, estimate_id: str, to: str, *, by: str | None) -> None
 async def hand_over(db: sqlalchemy.ext.asyncio.session.AsyncSession, salesorder_id: str, package_id: str, *, mode: Literal['pickup', 'delivery'], apply_credit: bool, by: str | None = None) -> dict
 async def handover_preview(db: sqlalchemy.ext.asyncio.session.AsyncSession, salesorder_id: str, package_id: str) -> dict
 def invoice_payload(prefill: dict, keep: collections.abc.Mapping[str, float], today: str) -> tuple[dict | None, str | None]
 async def invoice_preview(db: sqlalchemy.ext.asyncio.session.AsyncSession, salesorder_id: str) -> dict
 async def invoice_shipped(db: sqlalchemy.ext.asyncio.session.AsyncSession, salesorder_id: str, *, apply_credit: bool, scope: Literal['shipped', 'packed', 'whole'] = 'shipped', by: str | None = None) -> dict
 async def listed_document(db: sqlalchemy.ext.asyncio.session.AsyncSession, salesorder_id: str, kind: Literal['quote', 'retainer'], document_id: str) -> dict
+async def once_per_ref(client_ref: str, fingerprint: str, make: collections.abc.Callable[[], collections.abc.Awaitable[str]]) -> str
 async def order_row_any(db: sqlalchemy.ext.asyncio.session.AsyncSession, salesorder_id: str) -> dict
 async def package_content(db: sqlalchemy.ext.asyncio.session.AsyncSession, salesorder_id: str, package_id: str) -> dict
 async def picklist_content(db: sqlalchemy.ext.asyncio.session.AsyncSession, salesorder_id: str, picklist_id: str, whole: bool = False) -> dict
 async def picklist_preview(db: sqlalchemy.ext.asyncio.session.AsyncSession, salesorder_id: str) -> dict
+async def priced_lines(db: sqlalchemy.ext.asyncio.session.AsyncSession, key: str, lines: list[dict]) -> list[dict]
+async def quote_email_content(db: sqlalchemy.ext.asyncio.session.AsyncSession, estimate_id: str) -> dict
+async def quote_pdf(db: sqlalchemy.ext.asyncio.session.AsyncSession, estimate_id: str) -> tuple[bytes, str]
+async def reopen_quote(db: sqlalchemy.ext.asyncio.session.AsyncSession, estimate_id: str, *, by: str | None) -> None
 async def search_items(db: sqlalchemy.ext.asyncio.session.AsyncSession, query: str) -> list[dict]
 async def stamp_contact(db: sqlalchemy.ext.asyncio.session.AsyncSession, salesorder_id: str, by: str) -> dict
 async def stamp_print(db: sqlalchemy.ext.asyncio.session.AsyncSession, salesorder_id: str, by: str, picklist: str | None = None) -> dict
+async def undo_accept(db: sqlalchemy.ext.asyncio.session.AsyncSession, estimate_id: str, salesorder_id: str, *, by: str | None) -> None
 def writing(salesorder_id: str)
 
 ## backend.app.services.order_board_sync
@@ -238,8 +264,9 @@ def _naive_utc(text: str) -> datetime.datetime | None
 def _now() -> str
 _unconfirmed: set
 _written_at: dict
-async def announce_board_change(*, finished: bool = False) -> None
+async def announce_board_change(*, finished: bool = False, quotes: bool = False) -> None
 async def find_board_row(db: sqlalchemy.ext.asyncio.session.AsyncSession, salesorder_id: str) -> dict | None
+async def find_quote(db: sqlalchemy.ext.asyncio.session.AsyncSession, estimate_id: str) -> backend.app.models.order_board_doc.OrderBoardDoc | None
 async def find_stored(db: sqlalchemy.ext.asyncio.session.AsyncSession, salesorder_id: str) -> backend.app.models.order_board_doc.OrderBoardDoc | None
 async def load_settings(db: sqlalchemy.ext.asyncio.session.AsyncSession) -> backend.app.services.order_board_sync._common.OrderBoardSettings
 def needs_refresh(salesorder_id: str) -> bool
@@ -248,12 +275,14 @@ def open_rate_limit_window(e: backend.app.services.zoho.ZohoRateLimited) -> None
 async def read_board(db: sqlalchemy.ext.asyncio.session.AsyncSession) -> dict
 async def read_finished(db: sqlalchemy.ext.asyncio.session.AsyncSession) -> dict
 async def read_finished_order(db: sqlalchemy.ext.asyncio.session.AsyncSession, salesorder_id: str) -> dict
+async def read_quotes(db: sqlalchemy.ext.asyncio.session.AsyncSession) -> dict
 async def refresh_order(db: sqlalchemy.ext.asyncio.session.AsyncSession, salesorder_id: str) -> None
 async def run_loop() -> None
 async def run_pass(db: sqlalchemy.ext.asyncio.session.AsyncSession) -> bool
 async def save_settings(db: sqlalchemy.ext.asyncio.session.AsyncSession, settings: backend.app.services.order_board_sync._common.OrderBoardSettings) -> None
 async def search_catalog(db: sqlalchemy.ext.asyncio.session.AsyncSession, query: str, limit: int) -> list[dict] | None
 def start_order_board_sync() -> None
+async def store_quote(db: sqlalchemy.ext.asyncio.session.AsyncSession, estimate: dict) -> backend.app.models.order_board_doc.OrderBoardDoc
 ws_manager: ConnectionManager
 def zoho_busy(ceiling: int = 80) -> bool
 

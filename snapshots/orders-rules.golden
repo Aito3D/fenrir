@@ -26,6 +26,13 @@
   "payment_link.sent": "detail",
   "picklist.created": "detail",
   "prep.printed": "trace",
+  "quote.accept_undone": "detail",
+  "quote.accepted": "story",
+  "quote.created": "story",
+  "quote.declined": "story",
+  "quote.edited": "detail",
+  "quote.emailed": "detail",
+  "quote.reopened": "detail",
   "sms.sent": "detail",
   "terminal.started": "detail",
   "tracking.viewed": "trace",
@@ -1600,6 +1607,9 @@
    "order.void_failed",
    "order.finished",
    "note.added",
+   "quote.created",
+   "quote.accepted",
+   "quote.declined",
    "picklist.created",
    "order.edited",
    "package.edited",
@@ -1610,7 +1620,11 @@
    "terminal.started",
    "document.emailed",
    "credit.applied",
-   "contact.edited"
+   "contact.edited",
+   "quote.edited",
+   "quote.reopened",
+   "quote.emailed",
+   "quote.accept_undone"
   ],
   "detail": [
    "order.received",
@@ -1627,6 +1641,9 @@
    "order.void_failed",
    "order.finished",
    "note.added",
+   "quote.created",
+   "quote.accepted",
+   "quote.declined",
    "picklist.created",
    "order.edited",
    "package.edited",
@@ -1637,7 +1654,11 @@
    "terminal.started",
    "document.emailed",
    "credit.applied",
-   "contact.edited"
+   "contact.edited",
+   "quote.edited",
+   "quote.reopened",
+   "quote.emailed",
+   "quote.accept_undone"
   ],
   "everything": [
    "order.received",
@@ -1654,6 +1675,9 @@
    "order.void_failed",
    "order.finished",
    "note.added",
+   "quote.created",
+   "quote.accepted",
+   "quote.declined",
    "picklist.created",
    "order.edited",
    "package.edited",
@@ -1665,6 +1689,10 @@
    "document.emailed",
    "credit.applied",
    "contact.edited",
+   "quote.edited",
+   "quote.reopened",
+   "quote.emailed",
+   "quote.accept_undone",
    "prep.printed",
    "tracking.viewed",
    "zoho.edited"
@@ -1683,7 +1711,10 @@
    "order.cancel_failed",
    "order.void_failed",
    "order.finished",
-   "note.added"
+   "note.added",
+   "quote.created",
+   "quote.accepted",
+   "quote.declined"
   ]
  },
  "order_contact": [

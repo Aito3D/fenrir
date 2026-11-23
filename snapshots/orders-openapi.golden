@@ -1512,6 +1512,304 @@
     "order-board"
    ]
   },
+  "GET /api/v1/order-board/quotes": {
+   "description": "The quote rows from the local copy (no Zoho call).",
+   "operationId": "get_quotes_api_v1_order_board_quotes_get",
+   "parameters": [
+    {
+     "in": "header",
+     "name": "X-API-Key",
+     "required": false,
+     "schema": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "X-Api-Key"
+     }
+    }
+   ],
+   "responses": {
+    "200": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "additionalProperties": true,
+        "title": "Response Get Quotes Api V1 Order Board Quotes Get",
+        "type": "object"
+       }
+      }
+     },
+     "description": "Successful Response"
+    },
+    "422": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/HTTPValidationError"
+       }
+      }
+     },
+     "description": "Validation Error"
+    }
+   },
+   "security": [
+    {
+     "HTTPBearer": []
+    }
+   ],
+   "summary": "Get Quotes",
+   "tags": [
+    "order-board"
+   ]
+  },
+  "GET /api/v1/order-board/quotes/{estimate_id}/email": {
+   "description": "What Books would email for the quote; its first offered address is preselected.",
+   "operationId": "get_quote_email_api_v1_order_board_quotes__estimate_id__email_get",
+   "parameters": [
+    {
+     "in": "path",
+     "name": "estimate_id",
+     "required": true,
+     "schema": {
+      "title": "Estimate Id",
+      "type": "string"
+     }
+    },
+    {
+     "in": "header",
+     "name": "X-API-Key",
+     "required": false,
+     "schema": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "X-Api-Key"
+     }
+    }
+   ],
+   "responses": {
+    "200": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "additionalProperties": true,
+        "title": "Response Get Quote Email Api V1 Order Board Quotes  Estimate Id  Email Get",
+        "type": "object"
+       }
+      }
+     },
+     "description": "Successful Response"
+    },
+    "422": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/HTTPValidationError"
+       }
+      }
+     },
+     "description": "Validation Error"
+    }
+   },
+   "security": [
+    {
+     "HTTPBearer": []
+    }
+   ],
+   "summary": "Get Quote Email",
+   "tags": [
+    "order-board"
+   ]
+  },
+  "GET /api/v1/order-board/quotes/{estimate_id}/events": {
+   "description": "The quote's timeline, newest first; paged as the order's.",
+   "operationId": "list_quote_events_api_v1_order_board_quotes__estimate_id__events_get",
+   "parameters": [
+    {
+     "in": "path",
+     "name": "estimate_id",
+     "required": true,
+     "schema": {
+      "title": "Estimate Id",
+      "type": "string"
+     }
+    },
+    {
+     "in": "query",
+     "name": "depth",
+     "required": false,
+     "schema": {
+      "default": "detail",
+      "enum": [
+       "story",
+       "detail",
+       "everything"
+      ],
+      "title": "Depth",
+      "type": "string"
+     }
+    },
+    {
+     "in": "query",
+     "name": "before",
+     "required": false,
+     "schema": {
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Before"
+     }
+    },
+    {
+     "in": "query",
+     "name": "before_at",
+     "required": false,
+     "schema": {
+      "anyOf": [
+       {
+        "format": "date-time",
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Before At"
+     }
+    },
+    {
+     "in": "query",
+     "name": "limit",
+     "required": false,
+     "schema": {
+      "default": 50,
+      "title": "Limit",
+      "type": "integer"
+     }
+    },
+    {
+     "in": "header",
+     "name": "X-API-Key",
+     "required": false,
+     "schema": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "X-Api-Key"
+     }
+    }
+   ],
+   "responses": {
+    "200": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/OrderEventPage"
+       }
+      }
+     },
+     "description": "Successful Response"
+    },
+    "422": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/HTTPValidationError"
+       }
+      }
+     },
+     "description": "Validation Error"
+    }
+   },
+   "security": [
+    {
+     "HTTPBearer": []
+    }
+   ],
+   "summary": "List Quote Events",
+   "tags": [
+    "order-board"
+   ]
+  },
+  "GET /api/v1/order-board/quotes/{estimate_id}/pdf": {
+   "operationId": "get_quote_pdf_api_v1_order_board_quotes__estimate_id__pdf_get",
+   "parameters": [
+    {
+     "in": "path",
+     "name": "estimate_id",
+     "required": true,
+     "schema": {
+      "title": "Estimate Id",
+      "type": "string"
+     }
+    },
+    {
+     "in": "header",
+     "name": "X-API-Key",
+     "required": false,
+     "schema": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "X-Api-Key"
+     }
+    }
+   ],
+   "responses": {
+    "200": {
+     "content": {
+      "application/json": {
+       "schema": {}
+      }
+     },
+     "description": "Successful Response"
+    },
+    "422": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/HTTPValidationError"
+       }
+      }
+     },
+     "description": "Validation Error"
+    }
+   },
+   "security": [
+    {
+     "HTTPBearer": []
+    }
+   ],
+   "summary": "Get Quote Pdf",
+   "tags": [
+    "order-board"
+   ]
+  },
   "GET /api/v1/order-board/settings": {
    "operationId": "get_order_board_settings_api_v1_order_board_settings_get",
    "parameters": [
@@ -2923,6 +3221,473 @@
     "order-board"
    ]
   },
+  "POST /api/v1/order-board/quotes": {
+   "description": "A new quote: created as a draft estimate in Books, then stored.",
+   "operationId": "create_quote_api_v1_order_board_quotes_post",
+   "parameters": [
+    {
+     "in": "header",
+     "name": "X-API-Key",
+     "required": false,
+     "schema": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "X-Api-Key"
+     }
+    }
+   ],
+   "requestBody": {
+    "content": {
+     "application/json": {
+      "schema": {
+       "$ref": "#/components/schemas/CounterOrderBody"
+      }
+     }
+    },
+    "required": true
+   },
+   "responses": {
+    "201": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "additionalProperties": true,
+        "title": "Response Create Quote Api V1 Order Board Quotes Post",
+        "type": "object"
+       }
+      }
+     },
+     "description": "Successful Response"
+    },
+    "422": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/HTTPValidationError"
+       }
+      }
+     },
+     "description": "Validation Error"
+    }
+   },
+   "security": [
+    {
+     "HTTPBearer": []
+    }
+   ],
+   "summary": "Create Quote",
+   "tags": [
+    "order-board"
+   ]
+  },
+  "POST /api/v1/order-board/quotes/{estimate_id}/accept": {
+   "description": "Mark the quote accepted and create its sales order in Books.",
+   "operationId": "accept_quote_api_v1_order_board_quotes__estimate_id__accept_post",
+   "parameters": [
+    {
+     "in": "path",
+     "name": "estimate_id",
+     "required": true,
+     "schema": {
+      "title": "Estimate Id",
+      "type": "string"
+     }
+    },
+    {
+     "in": "header",
+     "name": "X-API-Key",
+     "required": false,
+     "schema": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "X-Api-Key"
+     }
+    }
+   ],
+   "responses": {
+    "200": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "additionalProperties": true,
+        "title": "Response Accept Quote Api V1 Order Board Quotes  Estimate Id  Accept Post",
+        "type": "object"
+       }
+      }
+     },
+     "description": "Successful Response"
+    },
+    "422": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/HTTPValidationError"
+       }
+      }
+     },
+     "description": "Validation Error"
+    }
+   },
+   "security": [
+    {
+     "HTTPBearer": []
+    }
+   ],
+   "summary": "Accept Quote",
+   "tags": [
+    "order-board"
+   ]
+  },
+  "POST /api/v1/order-board/quotes/{estimate_id}/decline": {
+   "operationId": "decline_quote_api_v1_order_board_quotes__estimate_id__decline_post",
+   "parameters": [
+    {
+     "in": "path",
+     "name": "estimate_id",
+     "required": true,
+     "schema": {
+      "title": "Estimate Id",
+      "type": "string"
+     }
+    },
+    {
+     "in": "header",
+     "name": "X-API-Key",
+     "required": false,
+     "schema": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "X-Api-Key"
+     }
+    }
+   ],
+   "responses": {
+    "200": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "additionalProperties": true,
+        "title": "Response Decline Quote Api V1 Order Board Quotes  Estimate Id  Decline Post",
+        "type": "object"
+       }
+      }
+     },
+     "description": "Successful Response"
+    },
+    "422": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/HTTPValidationError"
+       }
+      }
+     },
+     "description": "Validation Error"
+    }
+   },
+   "security": [
+    {
+     "HTTPBearer": []
+    }
+   ],
+   "summary": "Decline Quote",
+   "tags": [
+    "order-board"
+   ]
+  },
+  "POST /api/v1/order-board/quotes/{estimate_id}/email": {
+   "description": "Email the quote through Books, only to an address Books offers for it; Books marks it sent.",
+   "operationId": "send_quote_email_api_v1_order_board_quotes__estimate_id__email_post",
+   "parameters": [
+    {
+     "in": "path",
+     "name": "estimate_id",
+     "required": true,
+     "schema": {
+      "title": "Estimate Id",
+      "type": "string"
+     }
+    },
+    {
+     "in": "header",
+     "name": "X-API-Key",
+     "required": false,
+     "schema": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "X-Api-Key"
+     }
+    }
+   ],
+   "requestBody": {
+    "content": {
+     "application/json": {
+      "schema": {
+       "$ref": "#/components/schemas/DocumentEmailBody"
+      }
+     }
+    },
+    "required": true
+   },
+   "responses": {
+    "200": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "additionalProperties": true,
+        "title": "Response Send Quote Email Api V1 Order Board Quotes  Estimate Id  Email Post",
+        "type": "object"
+       }
+      }
+     },
+     "description": "Successful Response"
+    },
+    "422": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/HTTPValidationError"
+       }
+      }
+     },
+     "description": "Validation Error"
+    }
+   },
+   "security": [
+    {
+     "HTTPBearer": []
+    }
+   ],
+   "summary": "Send Quote Email",
+   "tags": [
+    "order-board"
+   ]
+  },
+  "POST /api/v1/order-board/quotes/{estimate_id}/order": {
+   "description": "Create the sales order of a quote already accepted.",
+   "operationId": "create_order_from_quote_api_v1_order_board_quotes__estimate_id__order_post",
+   "parameters": [
+    {
+     "in": "path",
+     "name": "estimate_id",
+     "required": true,
+     "schema": {
+      "title": "Estimate Id",
+      "type": "string"
+     }
+    },
+    {
+     "in": "header",
+     "name": "X-API-Key",
+     "required": false,
+     "schema": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "X-Api-Key"
+     }
+    }
+   ],
+   "responses": {
+    "200": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "additionalProperties": true,
+        "title": "Response Create Order From Quote Api V1 Order Board Quotes  Estimate Id  Order Post",
+        "type": "object"
+       }
+      }
+     },
+     "description": "Successful Response"
+    },
+    "422": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/HTTPValidationError"
+       }
+      }
+     },
+     "description": "Validation Error"
+    }
+   },
+   "security": [
+    {
+     "HTTPBearer": []
+    }
+   ],
+   "summary": "Create Order From Quote",
+   "tags": [
+    "order-board"
+   ]
+  },
+  "POST /api/v1/order-board/quotes/{estimate_id}/reopen": {
+   "operationId": "reopen_quote_api_v1_order_board_quotes__estimate_id__reopen_post",
+   "parameters": [
+    {
+     "in": "path",
+     "name": "estimate_id",
+     "required": true,
+     "schema": {
+      "title": "Estimate Id",
+      "type": "string"
+     }
+    },
+    {
+     "in": "header",
+     "name": "X-API-Key",
+     "required": false,
+     "schema": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "X-Api-Key"
+     }
+    }
+   ],
+   "responses": {
+    "200": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "additionalProperties": true,
+        "title": "Response Reopen Quote Api V1 Order Board Quotes  Estimate Id  Reopen Post",
+        "type": "object"
+       }
+      }
+     },
+     "description": "Successful Response"
+    },
+    "422": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/HTTPValidationError"
+       }
+      }
+     },
+     "description": "Validation Error"
+    }
+   },
+   "security": [
+    {
+     "HTTPBearer": []
+    }
+   ],
+   "summary": "Reopen Quote",
+   "tags": [
+    "order-board"
+   ]
+  },
+  "POST /api/v1/order-board/quotes/{estimate_id}/undo-accept": {
+   "description": "Delete the quote's new order in Books and mark the quote sent again.",
+   "operationId": "undo_accept_quote_api_v1_order_board_quotes__estimate_id__undo_accept_post",
+   "parameters": [
+    {
+     "in": "path",
+     "name": "estimate_id",
+     "required": true,
+     "schema": {
+      "title": "Estimate Id",
+      "type": "string"
+     }
+    },
+    {
+     "in": "header",
+     "name": "X-API-Key",
+     "required": false,
+     "schema": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "X-Api-Key"
+     }
+    }
+   ],
+   "requestBody": {
+    "content": {
+     "application/json": {
+      "schema": {
+       "$ref": "#/components/schemas/UndoAcceptBody"
+      }
+     }
+    },
+    "required": true
+   },
+   "responses": {
+    "200": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "additionalProperties": true,
+        "title": "Response Undo Accept Quote Api V1 Order Board Quotes  Estimate Id  Undo Accept Post",
+        "type": "object"
+       }
+      }
+     },
+     "description": "Successful Response"
+    },
+    "422": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/HTTPValidationError"
+       }
+      }
+     },
+     "description": "Validation Error"
+    }
+   },
+   "security": [
+    {
+     "HTTPBearer": []
+    }
+   ],
+   "summary": "Undo Accept Quote",
+   "tags": [
+    "order-board"
+   ]
+  },
   "POST /api/v1/order-board/refresh": {
    "description": "One bounded sync pass, then the board. A pass already running is left\nto finish; the caller gets the board as it stands.",
    "operationId": "refresh_order_board_api_v1_order_board_refresh_post",
@@ -3266,6 +4031,79 @@
     }
    ],
    "summary": "Watch Order",
+   "tags": [
+    "order-board"
+   ]
+  },
+  "PUT /api/v1/order-board/quotes/{estimate_id}": {
+   "operationId": "edit_quote_api_v1_order_board_quotes__estimate_id__put",
+   "parameters": [
+    {
+     "in": "path",
+     "name": "estimate_id",
+     "required": true,
+     "schema": {
+      "title": "Estimate Id",
+      "type": "string"
+     }
+    },
+    {
+     "in": "header",
+     "name": "X-API-Key",
+     "required": false,
+     "schema": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "X-Api-Key"
+     }
+    }
+   ],
+   "requestBody": {
+    "content": {
+     "application/json": {
+      "schema": {
+       "$ref": "#/components/schemas/QuoteEditBody"
+      }
+     }
+    },
+    "required": true
+   },
+   "responses": {
+    "200": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "additionalProperties": true,
+        "title": "Response Edit Quote Api V1 Order Board Quotes  Estimate Id  Put",
+        "type": "object"
+       }
+      }
+     },
+     "description": "Successful Response"
+    },
+    "422": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/HTTPValidationError"
+       }
+      }
+     },
+     "description": "Validation Error"
+    }
+   },
+   "security": [
+    {
+     "HTTPBearer": []
+    }
+   ],
+   "summary": "Edit Quote",
    "tags": [
     "order-board"
    ]
@@ -4556,6 +5394,77 @@
    "title": "PrepSheetBatchBody",
    "type": "object"
   },
+  "QuoteEditBody": {
+   "properties": {
+    "customer_id": {
+     "maxLength": 64,
+     "minLength": 1,
+     "title": "Customer Id",
+     "type": "string"
+    },
+    "lines": {
+     "items": {
+      "$ref": "#/components/schemas/QuoteLine"
+     },
+     "maxItems": 200,
+     "minItems": 1,
+     "title": "Lines",
+     "type": "array"
+    }
+   },
+   "required": [
+    "customer_id",
+    "lines"
+   ],
+   "title": "QuoteEditBody",
+   "type": "object"
+  },
+  "QuoteLine": {
+   "properties": {
+    "discount": {
+     "anyOf": [
+      {
+       "maxLength": 20,
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Discount"
+    },
+    "item_id": {
+     "maxLength": 64,
+     "minLength": 1,
+     "title": "Item Id",
+     "type": "string"
+    },
+    "line_id": {
+     "anyOf": [
+      {
+       "maxLength": 64,
+       "minLength": 1,
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Line Id"
+    },
+    "quantity": {
+     "exclusiveMinimum": 0.0,
+     "title": "Quantity",
+     "type": "number"
+    }
+   },
+   "required": [
+    "item_id",
+    "quantity"
+   ],
+   "title": "QuoteLine",
+   "type": "object"
+  },
   "SmsSentBody": {
    "properties": {
     "payment_link_id": {
@@ -4571,6 +5480,21 @@
     }
    },
    "title": "SmsSentBody",
+   "type": "object"
+  },
+  "UndoAcceptBody": {
+   "properties": {
+    "salesorder_id": {
+     "maxLength": 64,
+     "minLength": 1,
+     "title": "Salesorder Id",
+     "type": "string"
+    }
+   },
+   "required": [
+    "salesorder_id"
+   ],
+   "title": "UndoAcceptBody",
    "type": "object"
   },
   "ValidationError": {

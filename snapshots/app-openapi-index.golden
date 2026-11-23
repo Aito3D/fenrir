@@ -5299,6 +5299,61 @@
    },
    "security": true
   },
+  "GET /api/v1/order-board/quotes": {
+   "operationId": "get_quotes_api_v1_order_board_quotes_get",
+   "params": [
+    "header:X-API-Key"
+   ],
+   "requestBody": {},
+   "responses": {
+    "200": "object",
+    "422": "HTTPValidationError"
+   },
+   "security": true
+  },
+  "GET /api/v1/order-board/quotes/{estimate_id}/email": {
+   "operationId": "get_quote_email_api_v1_order_board_quotes__estimate_id__email_get",
+   "params": [
+    "header:X-API-Key",
+    "path:estimate_id!"
+   ],
+   "requestBody": {},
+   "responses": {
+    "200": "object",
+    "422": "HTTPValidationError"
+   },
+   "security": true
+  },
+  "GET /api/v1/order-board/quotes/{estimate_id}/events": {
+   "operationId": "list_quote_events_api_v1_order_board_quotes__estimate_id__events_get",
+   "params": [
+    "header:X-API-Key",
+    "path:estimate_id!",
+    "query:before",
+    "query:before_at",
+    "query:depth",
+    "query:limit"
+   ],
+   "requestBody": {},
+   "responses": {
+    "200": "OrderEventPage",
+    "422": "HTTPValidationError"
+   },
+   "security": true
+  },
+  "GET /api/v1/order-board/quotes/{estimate_id}/pdf": {
+   "operationId": "get_quote_pdf_api_v1_order_board_quotes__estimate_id__pdf_get",
+   "params": [
+    "header:X-API-Key",
+    "path:estimate_id!"
+   ],
+   "requestBody": {},
+   "responses": {
+    "200": null,
+    "422": "HTTPValidationError"
+   },
+   "security": true
+  },
   "GET /api/v1/order-board/settings": {
    "operationId": "get_order_board_settings_api_v1_order_board_settings_get",
    "params": [
@@ -6422,6 +6477,18 @@
    },
    "security": true
   },
+  "GET /api/v1/revenue/cohorts": {
+   "operationId": "get_cohorts_api_v1_revenue_cohorts_get",
+   "params": [
+    "header:X-API-Key"
+   ],
+   "requestBody": {},
+   "responses": {
+    "200": null,
+    "422": "HTTPValidationError"
+   },
+   "security": true
+  },
   "GET /api/v1/revenue/customers": {
    "operationId": "get_customers_api_v1_revenue_customers_get",
    "params": [
@@ -6451,6 +6518,30 @@
     "query:kind",
     "query:segment",
     "query:to"
+   ],
+   "requestBody": {},
+   "responses": {
+    "200": null,
+    "422": "HTTPValidationError"
+   },
+   "security": true
+  },
+  "GET /api/v1/revenue/fixed-costs": {
+   "operationId": "get_fixed_costs_api_v1_revenue_fixed_costs_get",
+   "params": [
+    "header:X-API-Key"
+   ],
+   "requestBody": {},
+   "responses": {
+    "200": null,
+    "422": "HTTPValidationError"
+   },
+   "security": true
+  },
+  "GET /api/v1/revenue/funnel": {
+   "operationId": "get_funnel_api_v1_revenue_funnel_get",
+   "params": [
+    "header:X-API-Key"
    ],
    "requestBody": {},
    "responses": {
@@ -6525,6 +6616,36 @@
   },
   "GET /api/v1/revenue/products": {
    "operationId": "get_products_api_v1_revenue_products_get",
+   "params": [
+    "header:X-API-Key"
+   ],
+   "requestBody": {},
+   "responses": {
+    "200": null,
+    "422": "HTTPValidationError"
+   },
+   "security": true
+  },
+  "GET /api/v1/revenue/pvm": {
+   "operationId": "get_pvm_api_v1_revenue_pvm_get",
+   "params": [
+    "header:X-API-Key",
+    "query:brand",
+    "query:from",
+    "query:items",
+    "query:kind",
+    "query:segment",
+    "query:to"
+   ],
+   "requestBody": {},
+   "responses": {
+    "200": null,
+    "422": "HTTPValidationError"
+   },
+   "security": true
+  },
+  "GET /api/v1/revenue/result": {
+   "operationId": "get_result_api_v1_revenue_result_get",
    "params": [
     "header:X-API-Key"
    ],
@@ -12077,6 +12198,102 @@
    },
    "security": true
   },
+  "POST /api/v1/order-board/quotes": {
+   "operationId": "create_quote_api_v1_order_board_quotes_post",
+   "params": [
+    "header:X-API-Key"
+   ],
+   "requestBody": {
+    "application/json": "CounterOrderBody"
+   },
+   "responses": {
+    "201": "object",
+    "422": "HTTPValidationError"
+   },
+   "security": true
+  },
+  "POST /api/v1/order-board/quotes/{estimate_id}/accept": {
+   "operationId": "accept_quote_api_v1_order_board_quotes__estimate_id__accept_post",
+   "params": [
+    "header:X-API-Key",
+    "path:estimate_id!"
+   ],
+   "requestBody": {},
+   "responses": {
+    "200": "object",
+    "422": "HTTPValidationError"
+   },
+   "security": true
+  },
+  "POST /api/v1/order-board/quotes/{estimate_id}/decline": {
+   "operationId": "decline_quote_api_v1_order_board_quotes__estimate_id__decline_post",
+   "params": [
+    "header:X-API-Key",
+    "path:estimate_id!"
+   ],
+   "requestBody": {},
+   "responses": {
+    "200": "object",
+    "422": "HTTPValidationError"
+   },
+   "security": true
+  },
+  "POST /api/v1/order-board/quotes/{estimate_id}/email": {
+   "operationId": "send_quote_email_api_v1_order_board_quotes__estimate_id__email_post",
+   "params": [
+    "header:X-API-Key",
+    "path:estimate_id!"
+   ],
+   "requestBody": {
+    "application/json": "DocumentEmailBody"
+   },
+   "responses": {
+    "200": "object",
+    "422": "HTTPValidationError"
+   },
+   "security": true
+  },
+  "POST /api/v1/order-board/quotes/{estimate_id}/order": {
+   "operationId": "create_order_from_quote_api_v1_order_board_quotes__estimate_id__order_post",
+   "params": [
+    "header:X-API-Key",
+    "path:estimate_id!"
+   ],
+   "requestBody": {},
+   "responses": {
+    "200": "object",
+    "422": "HTTPValidationError"
+   },
+   "security": true
+  },
+  "POST /api/v1/order-board/quotes/{estimate_id}/reopen": {
+   "operationId": "reopen_quote_api_v1_order_board_quotes__estimate_id__reopen_post",
+   "params": [
+    "header:X-API-Key",
+    "path:estimate_id!"
+   ],
+   "requestBody": {},
+   "responses": {
+    "200": "object",
+    "422": "HTTPValidationError"
+   },
+   "security": true
+  },
+  "POST /api/v1/order-board/quotes/{estimate_id}/undo-accept": {
+   "operationId": "undo_accept_quote_api_v1_order_board_quotes__estimate_id__undo_accept_post",
+   "params": [
+    "header:X-API-Key",
+    "path:estimate_id!"
+   ],
+   "requestBody": {
+    "application/json": "UndoAcceptBody"
+   },
+   "responses": {
+    "200": "object",
+    "422": "HTTPValidationError"
+   },
+   "security": true
+  },
   "POST /api/v1/order-board/refresh": {
    "operationId": "refresh_order_board_api_v1_order_board_refresh_post",
    "params": [
@@ -14895,6 +15112,21 @@
    },
    "security": true
   },
+  "PUT /api/v1/order-board/quotes/{estimate_id}": {
+   "operationId": "edit_quote_api_v1_order_board_quotes__estimate_id__put",
+   "params": [
+    "header:X-API-Key",
+    "path:estimate_id!"
+   ],
+   "requestBody": {
+    "application/json": "QuoteEditBody"
+   },
+   "responses": {
+    "200": "object",
+    "422": "HTTPValidationError"
+   },
+   "security": true
+  },
   "PUT /api/v1/order-board/settings": {
    "operationId": "update_order_board_settings_api_v1_order_board_settings_put",
    "params": [
@@ -14969,6 +15201,20 @@
     "query:tray_info_idx"
    ],
    "requestBody": {},
+   "responses": {
+    "200": null,
+    "422": "HTTPValidationError"
+   },
+   "security": true
+  },
+  "PUT /api/v1/revenue/fixed-costs": {
+   "operationId": "put_fixed_costs_api_v1_revenue_fixed_costs_put",
+   "params": [
+    "header:X-API-Key"
+   ],
+   "requestBody": {
+    "application/json": "FixedCostsBody"
+   },
    "responses": {
     "200": null,
     "422": "HTTPValidationError"
@@ -20194,6 +20440,24 @@
     "status"
    ]
   },
+  "FixedCost": {
+   "properties": {
+    "label": "string",
+    "monthly": "number"
+   },
+   "required": [
+    "label",
+    "monthly"
+   ]
+  },
+  "FixedCostsBody": {
+   "properties": {
+    "costs": "[FixedCost]"
+   },
+   "required": [
+    "costs"
+   ]
+  },
   "FolderCreate": {
    "properties": {
     "archive_id": "anyOf(integer,null)",
@@ -25016,6 +25280,28 @@
     "target_model"
    ]
   },
+  "QuoteEditBody": {
+   "properties": {
+    "customer_id": "string",
+    "lines": "[QuoteLine]"
+   },
+   "required": [
+    "customer_id",
+    "lines"
+   ]
+  },
+  "QuoteLine": {
+   "properties": {
+    "discount": "anyOf(string,null)",
+    "item_id": "string",
+    "line_id": "anyOf(string,null)",
+    "quantity": "number"
+   },
+   "required": [
+    "item_id",
+    "quantity"
+   ]
+  },
   "RESTTestConnectionRequest": {
    "properties": {
     "headers": "anyOf(string,null)",
@@ -27046,6 +27332,14 @@
    "required": [
     "access_token",
     "user"
+   ]
+  },
+  "UndoAcceptBody": {
+   "properties": {
+    "salesorder_id": "string"
+   },
+   "required": [
+    "salesorder_id"
    ]
   },
   "UnifiedPreset": {
