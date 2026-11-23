@@ -553,3 +553,54 @@ async def test_an_order_a_pass_stored_as_draft_is_confirmed_too(db_session, book
     assert (await sync.find_stored(db_session, "9")).header["status"] == "open"
     assert (await sync.find_stored(db_session, "9")).header["x"] == 1
     assert await sync.find_board_row(db_session, "9") is not None
+
+
+@pytest.mark.asyncio
+async def test_an_order_dropped_after_the_reread_puts_nothing_on_the_board(db_session, books, monkeypatch, caplog):
+    await _loaded_board(db_session)
+    announced = []
+
+    async def announce(**kwargs):
+        announced.append(kwargs)
+
+    async def refresh_then_drop(db, salesorder_id, number):  # a pass drops the order right after the re-read
+        await db.delete(await sync.find_stored(db, salesorder_id))
+        await db.commit()
+        return True
+
+    monkeypatch.setattr(sync, "announce_board_change", announce)
+    monkeypatch.setattr(create_module, "_best_effort_refresh", refresh_then_drop)
+    with caplog.at_level("WARNING"):
+        assert (
+            await actions.create_counter_order(db_session, "c1", [{"item_id": "A", "quantity": 1}], "r", by=None) == "9"
+        )
+    assert announced == []
+    assert await sync.find_stored(db_session, "9") is None
+    assert "failed" not in caplog.text  # a dropped doc is a quiet return, not the failure branch
+
+
+@pytest.mark.asyncio
+async def test_a_failing_recompute_after_the_confirm_is_swallowed_and_the_order_stays_pending(
+    db_session, books, monkeypatch, caplog
+):
+    await _loaded_board(db_session)
+    announced = []
+
+    async def announce(**kwargs):
+        announced.append(kwargs)
+
+    async def broken_recompute(db, **kwargs):
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr(sync, "announce_board_change", announce)
+    monkeypatch.setattr(create_module, "recompute", broken_recompute)
+    with caplog.at_level("WARNING"):
+        assert (
+            await actions.create_counter_order(db_session, "c1", [{"item_id": "A", "quantity": 1}], "r", by=None) == "9"
+        )
+    assert announced == []
+    assert "putting the new order SO-00009 on the board failed (RuntimeError)" in caplog.text
+    doc = await sync.find_stored(db_session, "9")  # the session is usable and the order is stored
+    assert (doc.header["status"], doc.pending) == ("open", True)
+    assert await sync.find_board_row(db_session, "9") is None  # the next pass puts it on
+    assert "order.created" in [e.kind for e in (await db_session.execute(select(OrderBoardEvent))).scalars()]

@@ -208,3 +208,27 @@ def test_a_long_combined_list_spills_onto_a_second_page():
     rows = [_row(lines=[{**_line(f"SKU-{i:03d}"), "item_id": str(i)} for i in range(60)])]
     pdf = render_batch_prep_sheet(rows, {}, printed_at=NOW, order_urls={})
     assert pages(pdf) >= 4 and text(pdf).count("SKU-059") == 2
+
+
+def test_the_quote_number_is_printed_as_devis():
+    row = _row(facts={**_row()["facts"], "quote_number": "QT-00007"})
+    t = text(sheet(row))
+    assert "Devis" in t and "QT-00007" in t
+    assert "Devis" not in text(sheet())
+
+
+def test_the_footer_boxes_move_to_a_second_page_when_they_do_not_fit():
+    one, two = (pages(sheet(_row(lines=[_line(f"S{i}") for i in range(n)]))) for n in (11, 12))
+    assert (one, two) == (1, 2)  # the twelfth line fits, the four boxes below it do not
+    assert "Préparé par" in text(sheet(_row(lines=[_line(f"S{i}") for i in range(12)])))
+
+
+def test_a_currency_other_than_xpf_prints_two_decimals():
+    row = _row(currency="EUR", payment={"left": 1234.5})
+    assert "Reste à payer 1 234.50 EUR" in text(sheet(row))
+
+
+def test_a_name_wider_than_its_column_is_cut_with_an_ellipsis():
+    t = text(sheet(_row(lines=[_line("SKU-A", name="Support mural " * 20)])))
+    assert "Support mural" in t and "…" in t
+    assert "Support mural " * 20 not in t
