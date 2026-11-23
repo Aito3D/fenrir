@@ -72,7 +72,7 @@ class TestCreateBackupZipOffloadsBlockingWork:
         monkeypatch.setattr(shutil, "copytree", spy_copytree)
         monkeypatch.setattr(zipfile.ZipFile, "write", spy_zip_write)
 
-        zip_path, _filename = await create_backup_zip(output_path=tmp_path)
+        zip_path, *_ = await create_backup_zip(output_path=tmp_path)
         try:
             assert copytree_thread_ids, "expected shutil.copytree to be invoked for the archive dir"
             assert all(tid != caller_thread_id for tid in copytree_thread_ids), (
@@ -132,7 +132,7 @@ class TestCreateBackupZipOffloadsBlockingWork:
 
         ticker_task = asyncio.create_task(ticker())
         try:
-            zip_path, _filename = await create_backup_zip(output_path=tmp_path)
+            zip_path, *_ = await create_backup_zip(output_path=tmp_path)
             try:
                 # If the backup had run inline on the event loop, the ticker
                 # coroutine would not get a chance to run at all until the

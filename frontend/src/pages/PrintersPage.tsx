@@ -195,7 +195,7 @@ import { PrintModal } from '../components/PrintModal';
 import { PrinterInfoModal } from '../components/PrinterInfoModal';
 import { FeedDirectionModal } from '../components/FeedDirectionModal';
 import { plateCheckFailureText } from '../utils/plateCheck';
-import { ams3hDryerGridColumns, ams3hSlotGridPlacement, amsUnitSlotCount, isAms3hUnit, rackExternalLabel, amsHasLoadedTray, getAmsLabel, getEmptySlotKind, getGlobalTrayId, getFillBarColor, getSpoolmanFillLevel, getFallbackSpoolTag, installedNozzleDiameters, isAmsHtUnit, isBambuLabSpool, trayForSlot, resolveSlotNozzleDiameter, resolveSlotExtruder, formatSlotLabel, slotPresetDescribesTray, FTS_INLET_SIDE } from '../utils/amsHelpers';
+import { ams3hDryerGridColumns, ams3hHasLoadedSlot, ams3hSlotGridPlacement, amsUnitSlotCount, isAms3hUnit, rackExternalLabel, amsHasLoadedTray, getAmsLabel, getEmptySlotKind, getGlobalTrayId, getFillBarColor, getSpoolmanFillLevel, getFallbackSpoolTag, installedNozzleDiameters, isAmsHtUnit, isBambuLabSpool, trayForSlot, resolveSlotNozzleDiameter, resolveSlotExtruder, formatSlotLabel, slotPresetDescribesTray, FTS_INLET_SIDE } from '../utils/amsHelpers';
 import { RACK_SLOT_COUNT, externalHotend, externalSlotIndex, isExternalTray, layoutAmsType, locateTray, trayLayoutOf } from '../utils/trayIds';
 import { MAX_CHAMBER_TEMP_C, PANDA_BREATH_MAX_TARGET_C, getPrinterImage, getWifiStrength, filterCompatibleQueueItems, isPrinterCurrentlyDispatchable, IDLE_PRINTER_STATES } from '../utils/printer';
 import { FilamentSlotCircle } from '../components/FilamentSlotCircle';
@@ -1399,14 +1399,14 @@ function StatusSummaryBar({ printers, smartPlugs }: { printers: Printer[] | unde
               <span className="text-white font-medium">{nextFinish.name}</span>
             </div>
             <div className="flex items-center gap-2 w-full sm:w-auto">
-              <div className="w-full sm:w-16 bg-bambu-dark-tertiary rounded-full h-1.5">
+              <div className="w-16 flex-1 min-w-0 sm:flex-none bg-bambu-dark-tertiary rounded-full h-1.5">
                 <div
                   className="bg-bambu-green h-1.5 w-full rounded-full origin-left transition-transform duration-300 ease-(--ease-signature) motion-reduce:transition-none"
                   style={{ transform: `scaleX(${Math.min(100, Math.max(0, nextFinish.progress)) / 100})` }}
                 />
               </div>
-              <span className="text-white font-medium">{Math.round(nextFinish.progress)}%</span>
-              <span className="text-bambu-gray">({formatDuration(nextFinish.remainingMin * 60)})</span>
+              <span className="shrink-0 whitespace-nowrap text-white font-medium">{Math.round(nextFinish.progress)}%</span>
+              <span className="shrink-0 whitespace-nowrap text-bambu-gray">({formatDuration(nextFinish.remainingMin * 60)})</span>
             </div>
           </div>
         </>
@@ -2336,6 +2336,7 @@ function PrinterCard({
   const [showFileManager, setShowFileManager] = useState(false);
   const [showMQTTDebug, setShowMQTTDebug] = useState(false);
   const [showPowerOnConfirm, setShowPowerOnConfirm] = useState(false);
+  const [showUnloadAllConfirm, setShowUnloadAllConfirm] = useState(false);
   const [showPowerOffConfirm, setShowPowerOffConfirm] = useState(false);
   const [haToggleConfirm, setHaToggleConfirm] = useState<SmartPlug | null>(null);
   const [showHMSModal, setShowHMSModal] = useState(false);
@@ -2488,7 +2489,7 @@ function PrinterCard({
   const [isSavingRoi, setIsSavingRoi] = useState(false);
   const [plateCheckLightWasOff, setPlateCheckLightWasOff] = useState(false);
 
-  const { data: status } = useQuery({
+  const { data: status, isError: statusFailed } = useQuery({
     queryKey: ['printerStatus', printer.id],
     queryFn: () => api.getPrinterStatus(printer.id),
     refetchInterval: 30000, // Fallback polling, WebSocket handles real-time
@@ -2647,6 +2648,10 @@ function PrinterCard({
     }
   }, [status?.connected]);
   const isConnected = status?.connected ?? cachedConnected.current;
+  // Before the first status arrives the printer is neither connected nor
+  // offline: showing Offline and Run diagnostic then was wrong (#3570).
+  const connectionState: 'connected' | 'offline' | 'pending' | 'unavailable' =
+    isConnected === true ? 'connected' : isConnected === false ? 'offline' : statusFailed ? 'unavailable' : 'pending';
 
   // Cache ams_extruder_map to prevent L/R indicators bouncing on updates
   const cachedAmsExtruderMap = useRef<Record<string, number>>({});
@@ -3437,6 +3442,15 @@ function PrinterCard({
     },
   });
 
+  // H3C: every loaded AMS 3H slot in one command (#3531).
+  const unloadAllAmsMutation = useMutation({
+    mutationFn: () => api.unloadAllAms(printer.id),
+    onSuccess: () => showToast(t('printers.toast.unloadAllAms3h'), 'warning'),
+    onError: (error: Error) => {
+      showToast(error.message || t('printers.toast.failedToUnload'), 'error');
+    },
+  });
+
   // Pending "which hotend?" question, non-null only while the dialog is open.
   // A Filament Track Switch makes both hotends reachable from every slot, so the
   // load command has to name one — see FeedDirectionModal.
@@ -4110,14 +4124,20 @@ function PrinterCard({
                       const hmsErrors = status?.connected && status.hms_errors ? filterKnownHMSErrors(status.hms_errors) : [];
                       const hasSevere = hmsErrors.some(isSevereHMSError);
                       const hasWarning = hmsErrors.length > 0;
-                      const pipColor = !status?.connected
+                      const pipColor = connectionState === 'pending' || connectionState === 'unavailable'
+                        ? 'bg-bambu-gray'
+                        : !status?.connected
                         ? 'bg-status-error'
                         : hasSevere
                           ? 'bg-status-error'
                           : hasWarning
                             ? 'bg-status-warning'
                             : 'bg-status-ok';
-                      const pipTitle = !status?.connected
+                      const pipTitle = connectionState === 'pending'
+                        ? t('printers.connection.pending')
+                        : connectionState === 'unavailable'
+                        ? t('printers.connection.unavailable')
+                        : !status?.connected
                         ? t('printers.connection.offline')
                         : hasWarning
                           ? `${hmsErrors.length} HMS ${hmsErrors.length === 1 ? 'error' : 'errors'}`
@@ -4191,22 +4211,34 @@ function PrinterCard({
                 </span>
               ) : (
                 <span
+                  data-testid="printer-connection-badge"
+                  data-connection={connectionState}
                   className={`flex items-center gap-1.5 px-2 py-1 rounded-full text-xs ${
-                    status?.connected
+                    connectionState === 'connected'
                       ? 'bg-status-ok/20 text-status-ok'
-                      : 'bg-status-error/20 text-status-error'
+                      : connectionState === 'offline'
+                        ? 'bg-status-error/20 text-status-error'
+                        : 'bg-bambu-dark-tertiary text-bambu-gray'
                   }`}
                 >
-                  {status?.connected ? (
+                  {connectionState === 'connected' ? (
                     <Link className="w-[var(--pc-i3,0.75rem)] h-[var(--pc-i3,0.75rem)]" />
+                  ) : connectionState === 'pending' ? (
+                    <Loader2 className="w-[var(--pc-i3,0.75rem)] h-[var(--pc-i3,0.75rem)] animate-spin" />
                   ) : (
                     <Unlink className="w-[var(--pc-i3,0.75rem)] h-[var(--pc-i3,0.75rem)]" />
                   )}
-                  {status?.connected ? t('printers.connection.connected') : t('printers.connection.offline')}
+                  {connectionState === 'connected'
+                    ? t('printers.connection.connected')
+                    : connectionState === 'offline'
+                      ? t('printers.connection.offline')
+                      : connectionState === 'pending'
+                        ? t('printers.connection.pending')
+                        : t('printers.connection.unavailable')}
                 </span>
               )}
-              {/* Run connection diagnostic — offered when the printer is offline, NOT in maintenance */}
-              {printer.is_active !== false && !status?.connected && (
+              {/* Run connection diagnostic — offered once the printer is known to be offline, NOT in maintenance */}
+              {printer.is_active !== false && connectionState === 'offline' && (
                 <button
                   onClick={() => setShowDiagnostic(true)}
                   className="flex items-center gap-1 px-2 py-1 rounded-full text-xs cursor-pointer bg-bambu-dark-tertiary text-bambu-gray hover:text-white transition-colors"
@@ -5140,7 +5172,7 @@ function PrinterCard({
               const isControlBusy = stopPrintMutation.isPending || pausePrintMutation.isPending || resumePrintMutation.isPending;
               const unavailablePrintActionClass = 'bg-bambu-dark text-bambu-gray/50 cursor-not-allowed opacity-50';
               const iconControlClass = 'btn-press flex h-8 w-8 items-center justify-center rounded-lg text-xs font-medium disabled:opacity-50 disabled:cursor-not-allowed';
-              const printControlClass = 'btn-press flex h-8 w-20 items-center justify-center gap-1 px-2 rounded-lg text-xs font-medium';
+              const printControlClass = 'btn-press flex h-8 items-center justify-center gap-1 px-2 whitespace-nowrap rounded-lg text-xs font-medium';
 
               return (
                 <div className="mt-3">
@@ -5152,9 +5184,12 @@ function PrinterCard({
                     <div className="flex-1 h-[2px] bg-bambu-dark-tertiary" />
                   </div>
 
-                  <div className="flex flex-wrap items-start justify-between gap-x-2 gap-y-2">
+                  {/* Pause/Stop stay on the icons' row where it fits; wrapped, they line
+                      up on the left under the icons (justify-between puts a
+                      line's only item at its start) (#3663). */}
+                  <div className="flex flex-wrap items-center justify-between gap-1.5">
                     {/* Left: Secondary controls */}
-                    <div className="flex flex-wrap items-center gap-2 min-w-0">
+                    <div className="flex flex-wrap items-center gap-1.5 min-w-0">
                       <button
                         onClick={() => chamberLightMutation.mutate(!status.chamber_light)}
                         disabled={!status.connected || chamberLightMutation.isPending || !hasPermission('printers:control')}
@@ -5479,7 +5514,7 @@ function PrinterCard({
                     </div>
 
                     {/* Right: Print Control Buttons */}
-                    <div className="ml-auto flex items-center justify-end gap-2 flex-shrink-0">
+                    <div className="flex items-center gap-1.5 flex-shrink-0">
                       {/* Pause/Resume button */}
                       {(() => {
                         const pauseUnavailable = !isPrinting || isControlBusy || !hasPermission('printers:control');
@@ -5727,6 +5762,22 @@ function PrinterCard({
                                       title={status.drying_screen_only ? t('printers.drying.screenOnly') : ams.dry_time > 0 ? t('printers.drying.stop') : ams.dry_sf_reason?.length ? t(dryingBlockedKey(ams.dry_sf_reason)) : t('printers.drying.start')}
                                     >
                                       <Flame className="w-[var(--pc-i3,0.75rem)] h-[var(--pc-i3,0.75rem)]" />
+                                    </button>
+                                  )}
+                                  {/* H3C Unload all (#3531): only while a slot's filament is in its hotend. */}
+                                  {cardAms3h && ams3hHasLoadedSlot(ams) && hasPermission('printers:control') && (
+                                    <button
+                                      disabled={status.state === 'RUNNING' || unloadAllAmsMutation.isPending}
+                                      onClick={() => setShowUnloadAllConfirm(true)}
+                                      className={`ml-1 flex items-center gap-0.5 px-1 py-0.5 rounded text-[length:var(--pc-t9,9px)] transition-colors ${
+                                        status.state === 'RUNNING'
+                                          ? 'bg-bambu-dark text-bambu-gray/50 cursor-not-allowed'
+                                          : 'bg-bambu-dark text-bambu-gray hover:text-white hover:bg-bambu-dark/80'
+                                      }`}
+                                      title={status.state === 'RUNNING' ? t('printers.bedJog.disabledWhilePrinting') : t('printers.ams.unloadAll')}
+                                      aria-label={t('printers.ams.unloadAll')}
+                                    >
+                                      <LogOut className="w-[var(--pc-i3,0.75rem)] h-[var(--pc-i3,0.75rem)]" />
                                     </button>
                                   )}
                                 </div>
@@ -7430,6 +7481,20 @@ function PrinterCard({
             </div>
           </div>
         </div>
+      )}
+
+      {showUnloadAllConfirm && (
+        <ConfirmModal
+          title={t('printers.ams.unloadAllTitle')}
+          message={t('printers.ams.unloadAllMessage')}
+          confirmText={t('printers.ams.unloadAll')}
+          variant="default"
+          onConfirm={() => {
+            unloadAllAmsMutation.mutate();
+            setShowUnloadAllConfirm(false);
+          }}
+          onCancel={() => setShowUnloadAllConfirm(false)}
+        />
       )}
 
       {/* Power On Confirmation */}

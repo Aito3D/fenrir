@@ -65,7 +65,7 @@ class TestCreateBackupZipPostgresExportBranch:
         db_session.add(key)
         await db_session.commit()
 
-        zip_path, filename = await create_backup_zip(output_path=tmp_path)
+        zip_path, filename, _warnings = await create_backup_zip(output_path=tmp_path)
         try:
             # Output contract: returns (zip_path, filename), zip_path is
             # output_path/filename, and the ZIP contains bambuddy.db.
@@ -134,7 +134,7 @@ class TestCreateBackupZipPostgresExportBranch:
         )
         await db_session.commit()
 
-        zip_path, filename = await create_backup_zip(output_path=tmp_path)
+        zip_path, filename, _warnings = await create_backup_zip(output_path=tmp_path)
         try:
             extract_dir = tmp_path / "extracted-large"
             with zipfile.ZipFile(zip_path) as zf:

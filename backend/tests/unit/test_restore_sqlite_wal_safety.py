@@ -257,7 +257,7 @@ async def test_create_backup_zip_includes_rows_still_in_wal(monkeypatch, tmp_pat
     try:
         monkeypatch.setattr(app_settings, "base_dir", tmp_path)
         monkeypatch.setattr(app_settings, "database_url", f"sqlite+aiosqlite:///{live_db}")
-        zip_path, _ = await create_backup_zip(output_path=tmp_path)
+        zip_path, *_ = await create_backup_zip(output_path=tmp_path)
     finally:
         reader.close()
 

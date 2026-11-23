@@ -547,22 +547,33 @@ def _clone_queue_item(source: PrintQueueItem, *, position: int, created_by_id: i
     return clone
 
 
+async def add_queue_item_clone(
+    db: AsyncSession, source: PrintQueueItem, *, position: int, created_by_id: int | None
+) -> PrintQueueItem:
+    """Add a clone of *source* (see ``_clone_queue_item``) with its cross-model
+    candidates (#671), and return it flushed, with an id.
+
+    *source* must have its ``variants`` loaded.
+    """
+    clone = _clone_queue_item(source, position=position, created_by_id=created_by_id)
+    db.add(clone)
+    await db.flush()
+    for variant in source.variants:
+        cloned_variant = PrintQueueVariant(queue_item_id=clone.id)
+        for column in CLONED_VARIANT_COLUMNS:
+            setattr(cloned_variant, column, getattr(variant, column))
+        db.add(cloned_variant)
+    return clone
+
+
 async def clone_runs(
     db: AsyncSession, source: PrintQueueItem, count: int, *, position: int, created_by_id: int | None
 ) -> list[PrintQueueItem]:
     """Add *count* pending copies of *source* (variants loaded) at consecutive positions from *position*."""
-    created: list[PrintQueueItem] = []
-    for offset in range(count):
-        clone = _clone_queue_item(source, position=position + offset, created_by_id=created_by_id)
-        db.add(clone)
-        await db.flush()
-        for variant in source.variants:
-            cloned_variant = PrintQueueVariant(queue_item_id=clone.id)
-            for column in CLONED_VARIANT_COLUMNS:
-                setattr(cloned_variant, column, getattr(variant, column))
-            db.add(cloned_variant)
-        created.append(clone)
-    return created
+    return [
+        await add_queue_item_clone(db, source, position=position + offset, created_by_id=created_by_id)
+        for offset in range(count)
+    ]
 
 
 def _plate_label(plate: PlateProgress) -> str:

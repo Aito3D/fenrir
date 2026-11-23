@@ -44,6 +44,7 @@ import {
 // Lazy: opens only on '?', and its <Trans> footer would put react-i18next's
 // HTML parser in the eager preload set (check-preload-budget).
 const KeyboardShortcutsModal = lazy(() => import('./KeyboardShortcutsModal').then(m => ({ default: m.KeyboardShortcutsModal })));
+import { ScrollableModalOverlay } from './ScrollableModalOverlay';
 
 
 interface NavItem {
@@ -1198,8 +1199,8 @@ export function Layout() {
 
       {/* Change Password Modal */}
       {showChangePasswordModal && (
-        <div
-          className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4 animate-overlay-in"
+        <ScrollableModalOverlay
+          className="bg-black/70 animate-overlay-in"
           onClick={() => {
             setShowChangePasswordModal(false);
             setChangePasswordData({ currentPassword: '', newPassword: '', confirmPassword: '' });
@@ -1338,7 +1339,7 @@ export function Layout() {
               </div>
             </CardContent>
           </Card>
-        </div>
+        </ScrollableModalOverlay>
       )}
     </div>
   );
