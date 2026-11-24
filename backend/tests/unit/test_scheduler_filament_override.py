@@ -46,6 +46,15 @@ class TestCountOverrideColorMatches:
         result = scheduler._count_override_color_matches(1, [{"type": "PETG", "color": "#00FF00"}])
         assert result == 0
 
+    @pytest.mark.parametrize(("loaded", "expected"), [("161616FF", 1), ("FFFFFFFF", 0)])
+    def test_similar_colour_matches_a_different_one_does_not(self, scheduler, loaded, expected):
+        """A near-black spool meets a black override, as in the slot matcher; a
+        white one does not. Exact-only left an "any printer" job waiting forever
+        on printers with near-black PA-CF loaded."""
+        raw = {"ams": [{"id": 128, "tray": [{"id": 0, "tray_type": "PA-CF", "tray_color": loaded}]}]}
+        overrides = [{"type": "PA-CF", "color": "#000000", "force_color_match": False}]
+        assert scheduler._count_override_color_matches(1, overrides, raw) == expected
+
     @patch("backend.app.services.print_scheduler.printer_manager")
     def test_multiple_overrides_partial_match(self, mock_pm, scheduler):
         """2 overrides, only 1 matching = returns 1."""

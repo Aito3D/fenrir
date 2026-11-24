@@ -4552,12 +4552,15 @@ class PrintScheduler:
                 loaded.add((canonical_filament_type(vt_type), color_norm))
 
         # Types compared as the type check compares them: a PA12-CF override
-        # is met by PA-CF in its colour.
+        # is met by PA-CF in its colour. Colours as the slot matcher compares
+        # them, the same hex or a similar one: a black override must be met by
+        # a spool reporting #161616, or the job waits forever on a printer
+        # that would print it.
         matches = 0
         for o in overrides:
             o_type = canonical_filament_type(o.get("type") or "")
             o_color = (o.get("color") or "").replace("#", "").lower()[:6]
-            if (o_type, o_color) in loaded:
+            if any(t == o_type and (c == o_color or self._colors_are_similar(c, o_color)) for t, c in loaded):
                 matches += 1
         return matches
 
