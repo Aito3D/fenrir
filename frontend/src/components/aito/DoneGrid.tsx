@@ -112,7 +112,7 @@ export function DoneGrid({
 }) {
   const { t } = useTranslation();
 
-  const projectCodes = useProjectCodes();
+  const projectCodes = useProjectCodes(query);
   const searched = useMemo(
     () => projects.filter((project) => matchesSearch(project, query, projectCodes[String(project.id)])),
     [projects, query, projectCodes],

@@ -290,7 +290,7 @@ export function AitoPage() {
   //
   // The six columns the board RENDERS, not COLUMN_IDS — which still carries
   // `done`. The archive is behind the Show Done button, not on the board.
-  const projectCodes = useProjectCodes();
+  const projectCodes = useProjectCodes(search);
   const visible = (project: AitoProject) =>
     (followupIds === null || followupIds.has(project.id)) &&
     matchesSearch(project, search, projectCodes[String(project.id)]);

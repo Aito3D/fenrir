@@ -102,6 +102,7 @@ from backend.app.schemas.aito import (
     AitoTaxesResponse,
     AitoTaxUpdate,
     AitoTerminalPaymentView,
+    AitoTrackingCodeResponse,
     AitoTrackingLinkResponse,
     AitoTrackingResponse,
     AitoTrackingViewsResponse,
@@ -170,6 +171,7 @@ from backend.app.services.aito_tracking import (
     compute_tracking,
     external_url as tracking_external_url,
     mint_unique_token,
+    normalize_token,
     shop_opening_hours,
     with_opening_hours_sms,
     with_tracking_sms,
@@ -1650,6 +1652,24 @@ async def _post_lta_comment(project_id: int, lta: str, invoice_id: str | None = 
             await zoho_service.add_invoice_comment(session, invoice_id, f"LTA Air Tahiti : {lta}")
     except Exception as e:  # noqa: BLE001
         logger.warning("Aito: could not note LTA on the invoice of project %s: %s", project_id, e)
+
+
+@router.get("/tracking-code/{code}", response_model=AitoTrackingCodeResponse)
+async def get_tracking_code_card(
+    code: str,
+    db: AsyncSession = Depends(get_db, scope="function"),
+    current_user: User | None = RequirePermissionIfAuthEnabled(Permission.AITO_READ),
+):
+    """The board search's code-de-suivi lookup: which card (active or trashed)
+    holds this code. The token is never sent with the board, so the search asks
+    here; the answer is only an id, never the token. Ahead of `/{project_id}`."""
+    token = normalize_token(code.strip())
+    project_id = (
+        (await db.execute(select(AitoProject.id).where(AitoProject.tracking_token == token))).scalar_one_or_none()
+        if token
+        else None
+    )
+    return AitoTrackingCodeResponse(project_id=project_id)
 
 
 @router.get("/track/{token}", response_model=AitoTrackingResponse)

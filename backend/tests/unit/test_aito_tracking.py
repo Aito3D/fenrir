@@ -628,6 +628,19 @@ async def test_link_route_mints_once_and_keeps_the_token(async_client, db_sessio
 
 
 @pytest.mark.asyncio
+async def test_tracking_code_lookup_finds_the_card_by_its_code(async_client, db_session):
+    """The board search's lookup: case, hyphens and look-alike letters fold
+    like on /t; an unknown or malformed code is a null id, not an error."""
+    pid = await _create(async_client)
+    token = await _token(async_client, db_session, pid)
+    typed = f"{token[:3]}-{token[3:]}".lower().replace("0", "o").replace("1", "l")
+    for code in (token, typed):
+        assert (await async_client.get(f"/api/v1/aito/tracking-code/{code}")).json() == {"project_id": pid}
+    for code in ("ZZZZZZ" if token != "ZZZZZZ" else "YYYYYY", "abc"):
+        assert (await async_client.get(f"/api/v1/aito/tracking-code/{code}")).json() == {"project_id": None}
+
+
+@pytest.mark.asyncio
 async def test_link_route_without_external_url_returns_null_but_mints(async_client, db_session):
     pid = await _create(async_client)
     resp = await async_client.get(f"/api/v1/aito/{pid}/tracking-link")

@@ -1643,6 +1643,10 @@ class AitoTrackingLinkResponse(BaseModel):
     tracking_url: str | None
 
 
+class AitoTrackingCodeResponse(BaseModel):
+    project_id: int | None
+
+
 class AitoTrackingViewsResponse(BaseModel):
     views: int
     last_viewed_at: datetime | None

@@ -14,6 +14,7 @@ import { applyRestore, replaceProject } from '../../utils/aitoOptimistic';
 import { useArchiveGroups } from '../../hooks/useArchiveGroups';
 import { sortDone, type DoneSort } from '../../utils/aitoDoneArchive';
 import { matchesSearch } from '../../utils/aitoSearch';
+import { useProjectCodes } from '../projects/aito/useProjectCodes';
 import { formatElapsedTime } from '../../utils/date';
 import { restoreButtonCls, restoreHoldDurationMs } from './restoreButton';
 
@@ -134,9 +135,15 @@ export function TrashGrid({
 }) {
   const { t } = useTranslation();
 
+  const projectCodes = useProjectCodes(query);
   const visible = useMemo(
-    () => sortDone(projects.filter((project) => matchesSearch(project, query)), sort, deletedAt),
-    [projects, query, sort],
+    () =>
+      sortDone(
+        projects.filter((project) => matchesSearch(project, query, projectCodes[String(project.id)])),
+        sort,
+        deletedAt,
+      ),
+    [projects, query, sort, projectCodes],
   );
   const groupOf = useArchiveGroups(sort, deletedAt);
 
