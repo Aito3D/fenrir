@@ -1,4 +1,4 @@
-"""The nine per-document Books methods, pinned side by side.
+"""The eight per-document Books methods, pinned side by side (``email_retainer`` is tested on its own).
 
 PDF fetch, default-email read and email send each exist for estimates,
 invoices and retainer invoices. Within a family the three must differ ONLY in
@@ -38,7 +38,7 @@ CONTENT_METHODS = [
 SEND_METHODS = [
     ("email_estimate", "estimates"),
     ("email_invoice", "invoices"),
-    ("email_retainer", "retainerinvoices"),
+    # email_retainer is not one of the family: it reads Books' defaults and uploads the PDF (test_zoho_retainers).
 ]
 ALL_METHODS = (
     [(name, res, "pdf") for name, res in PDF_METHODS]
@@ -171,7 +171,7 @@ async def test_pdf_rejects_a_200_that_is_not_a_pdf(async_client, db_session, nam
     assert str(excinfo.value) == "Zoho Books did not return a PDF"
 
 
-# --- error mapping, all nine --------------------------------------------------------
+# --- error mapping, all eight -------------------------------------------------------
 
 ERROR_CASES = [
     # (id, response, exception type, message) — identical for every method.

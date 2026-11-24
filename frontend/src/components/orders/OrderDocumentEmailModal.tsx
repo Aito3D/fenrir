@@ -37,7 +37,8 @@ export function OrderDocumentEmailModal({ onClose, ...target }: Target & { onClo
         // The once-a-minute guard and the email rate limit answer 409 too: the server's words, not "another action".
         : quoteId && e instanceof ApiError && e.status === 409 ? t('orders.quotes.emailFailed', { reason: e.message })
         : quoteId ? t('orders.quotes.emailFailed', { reason: quoteReason(t, e) })
-        : t(quote ? 'aito.quoteEmailFailed' : 'aito.retainerEmailFailed'),
+        // The server's reason (Books' own words on a 502) is what tells a refusal from an outage.
+        : `${t(quote ? 'aito.quoteEmailFailed' : 'aito.retainerEmailFailed')}${e instanceof ApiError && e.message ? ` — ${e.message}` : ''}`,
         'error',
       );
       throw e;

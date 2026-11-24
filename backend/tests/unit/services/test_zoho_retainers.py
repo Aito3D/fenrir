@@ -1,5 +1,7 @@
 """Books' retainer-invoice endpoints: deep link, PDF, email prefill and send."""
 
+import json
+
 import httpx
 import pytest
 
@@ -119,14 +121,33 @@ async def test_get_retainer_email_content_maps_subject_body_and_recipients(async
 
 
 @pytest.mark.asyncio
-async def test_email_retainer_posts_only_the_recipients(async_client, db_session):
+async def test_email_retainer_echoes_the_defaults_and_uploads_the_pdf(async_client, db_session):
+    """Books refuses a retainer email with no subject and attaches no PDF to an API send: its default subject and body
+    are echoed back and the retainer's PDF is uploaded with the email, multipart, under Books' own file name."""
     await _configure(async_client)
     seen: list[httpx.Request] = []
-    zoho_service.transport = _transport(httpx.Response(200, json={"code": 0, "message": "sent"}), seen)
+    default = {"subject": "Acompte RET-1", "body": "<p>Bonjour</p>", "file_name": "RET-1.pdf", "to_contacts": []}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if "/oauth/v2/token" in str(request.url):
+            return httpx.Response(200, json={"access_token": "at-1", "expires_in": 3600})
+        seen.append(request)
+        if request.method == "POST":
+            return httpx.Response(200, json={"code": 0, "message": "sent"})
+        if request.url.params.get("accept") == "pdf":
+            return httpx.Response(200, content=b"%PDF-1.4 retainer")
+        return httpx.Response(200, json={"code": 0, "data": default})
+
+    zoho_service.transport = httpx.MockTransport(handler)
 
     await zoho_service.email_retainer(db_session, "RET-1", to_mail_ids=["jp@example.pf"])
 
-    request = seen[-1]
-    assert request.method == "POST"
-    assert "/retainerinvoices/RET-1/email" in str(request.url)
-    assert request.read() == b'{"to_mail_ids":["jp@example.pf"]}'
+    assert [r.method for r in seen] == ["GET", "GET", "POST"]
+    post = seen[-1]
+    assert post.url.raw_path.split(b"?")[0] == b"/books/v3/retainerinvoices/RET-1/email"
+    assert post.headers["content-type"].startswith("multipart/form-data")
+    raw = post.read()
+    assert b'name="attachments"; filename="RET-1.pdf"' in raw
+    assert b"%PDF-1.4 retainer" in raw
+    mail = {"to_mail_ids": ["jp@example.pf"], "subject": "Acompte RET-1", "body": "<p>Bonjour</p>"}
+    assert json.dumps(mail).encode() in raw

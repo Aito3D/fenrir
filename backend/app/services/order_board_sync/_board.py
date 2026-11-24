@@ -87,8 +87,9 @@ async def _add_links(db: AsyncSession, rows: list[dict], details: list[dict | No
         order_base = await zoho_service.books_salesorder_url_base(db)
         invoice_base = await zoho_service.books_invoice_url(db, "")
         quote_base = await zoho_service.books_app_url(db, "")
+        retainer_base = await zoho_service.books_retainer_url(db, "")
     except ZohoNotConfiguredError:
-        order_base = invoice_base = quote_base = None
+        order_base = invoice_base = quote_base = retainer_base = None
     store = ""
     if any(r["facts"]["shopify_order"] for r in rows):
         store = _store_handle(details) if details is not None else await _shopify_store(db)
@@ -99,6 +100,8 @@ async def _add_links(db: AsyncSession, rows: list[dict], details: list[dict | No
             facts["shopify_url"] = f"https://admin.shopify.com/store/{store}/orders?query={facts['shopify_order']}"
         for invoice in (row.get("payment") or {}).get("invoices", []):
             invoice["url"] = f"{invoice_base}{invoice['id']}" if invoice_base and invoice["id"] else None
+        for retainer in row.get("retainers") or []:
+            retainer["url"] = f"{retainer_base}{retainer['id']}" if retainer_base and retainer["id"] else None
         facts = row["facts"]
         facts["quote_url"] = f"{quote_base}{facts['estimate_id']}" if quote_base and facts["estimate_id"] else None
 

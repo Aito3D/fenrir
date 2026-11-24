@@ -64,7 +64,7 @@ describe('OrderDocumentEmailModal', () => {
     open(kind, onClose);
     await waitFor(() => expect(screen.getByRole('combobox')).toHaveValue('moana@client.pf'));
     await user.click(screen.getByRole('button', { name: 'Send' }));
-    expect(await screen.findByText(toast)).toBeInTheDocument();
+    expect(await screen.findByText(`${toast} — Books says no`)).toBeInTheDocument();
     expect(screen.queryByText(/sent to/)).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Send' })).toBeEnabled();
     expect(onClose).not.toHaveBeenCalled();

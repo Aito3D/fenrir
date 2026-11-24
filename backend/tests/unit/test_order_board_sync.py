@@ -223,6 +223,9 @@ class FakeZoho:
     async def books_app_url(self, db, estimate_id):
         return "https://books.example/app/1#/quotes/" + estimate_id
 
+    async def books_retainer_url(self, db, retainer_id):
+        return "https://books.example/app/1#/retainerinvoices/" + retainer_id
+
     async def is_configured(self, db):
         return self.configured
 
@@ -261,6 +264,7 @@ def zoho(monkeypatch):
         "books_salesorder_url_base",
         "books_invoice_url",
         "books_app_url",
+        "books_retainer_url",
         "is_configured",
         "calls_in_last_minute",
     ):
@@ -1211,8 +1215,9 @@ async def test_no_estimate_reads_the_retainers_under_the_order_number(db_session
     assert doc is not None
     stored = doc.detail
     assert [(r["id"], r["unused"]) for r in stored["_retainers"]] == [("r1", 300.0)]
-    payment = (await sync.read_board(db_session))["rows"][0]["payment"]
-    assert payment["retainer"] == 300.0
+    board_row = (await sync.read_board(db_session))["rows"][0]
+    assert board_row["payment"]["retainer"] == 300.0
+    assert [r["url"] for r in board_row["retainers"]] == ["https://books.example/app/1#/retainerinvoices/r1"]
 
 
 @pytest.mark.asyncio

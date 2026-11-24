@@ -5438,7 +5438,7 @@ export interface OrderFacts { channel: string; reference: string; shopify_order:
 
 export interface OrderPackage { id: string; shipment_id: string; number: string; status: string; date: string }
 /** A deposit (retainer) invoice of the order's quote, or of the order itself. */
-export interface OrderRetainer { id: string; number: string; date: string; total: number; balance: number; status: string }
+export interface OrderRetainer { id: string; number: string; date: string; total: number; balance: number; status: string; url?: string | null }
 export type OrderDocumentKind = 'quote' | 'retainer';
 /** What a sync of one order changed: a figure, or a list of document numbers. */
 export interface OrderSyncChange { field: 'total' | 'paid' | 'left' | 'state' | 'invoices' | 'retainers' | 'packages'; from: unknown; to: unknown }

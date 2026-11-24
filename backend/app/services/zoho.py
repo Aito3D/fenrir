@@ -548,6 +548,8 @@ class ZohoService:
         *,
         params: dict | None = None,
         json: dict | None = None,
+        data: dict | None = None,
+        files: dict | None = None,
     ) -> httpx.Response:
         """One Books API call: token, org scoping, 401-retry-once.
 
@@ -568,6 +570,8 @@ class ZohoService:
                     f"{config['zoho_base_url']}/books/v3{path}",
                     params=request_params,
                     json=json,
+                    data=data,
+                    files=files,
                     headers={"Authorization": f"Zoho-oauthtoken {token}"},
                 )
             except httpx.HTTPError as e:
@@ -616,12 +620,16 @@ class ZohoService:
         *,
         params: dict | None = None,
         json: dict | None = None,
+        data: dict | None = None,
+        files: dict | None = None,
     ) -> dict:
         """One Books API call returning parsed JSON.
 
         ``path`` is relative to ``/books/v3`` (e.g. ``"/contacts/z1"``).
         """
-        response = await self._send(db, method, path, params=params, json=json)
+        # Multipart only when uploading, so a plain JSON call keeps its exact signature.
+        upload = {"data": data, "files": files} if files else {}
+        response = await self._send(db, method, path, params=params, json=json, **upload)
         try:
             payload = response.json() if response.content else {}
         except ValueError as e:
@@ -673,10 +681,10 @@ class ZohoService:
             "recipients": [_map_email_recipient(c) for c in (data.get("to_contacts") or []) if c.get("email")],
         }
 
-    async def _send_email(self, db: AsyncSession, path: str, to_mail_ids: list[str]) -> None:
+    async def _send_email(self, db: AsyncSession, path: str, to_mail_ids: list[str], **extra: str) -> None:
         """POST ``path`` (a document's ``/email``) with only the recipients,
         so Books renders its own default template."""
-        await self._request(db, "POST", path, json={"to_mail_ids": to_mail_ids})
+        await self._request(db, "POST", path, json={"to_mail_ids": to_mail_ids, **extra})
 
     async def get_estimate_pdf(self, db: AsyncSession, estimate_id: str) -> bytes:
         """The estimate rendered as a PDF, for printing.
@@ -1730,11 +1738,28 @@ class ZohoService:
 
     async def email_retainer(self, db: AsyncSession, retainer_invoice_id: str, *, to_mail_ids: list[str]) -> None:
         """Email the retainer invoice through Books, on the org's default
-        template. ``subject`` and ``body`` are omitted for the reason on
-        ``email_estimate``. Books marks the retainer ``sent`` as a side
-        effect, so the Aito route re-reads it afterwards.
+        template. Unlike estimates, Books refuses a retainer email with no
+        subject ("L'objet de l'e-mail ne peut pas être vide"), so its own
+        default subject and body are read and echoed back unchanged. Books
+        marks the retainer ``sent`` as a side effect, so the Aito route
+        re-reads it afterwards.
+
+        Books does not attach the retainer's own PDF to an API send (its
+        ``send_attachment`` flag was tried and does not either), unlike an
+        estimate's, so the PDF is fetched and uploaded with the email:
+        multipart, the JSON body in Books' ``JSONString`` form field.
         """
-        await self._send_email(db, f"/retainerinvoices/{_seg(retainer_invoice_id)}/email", to_mail_ids)
+        path = f"/retainerinvoices/{_seg(retainer_invoice_id)}/email"
+        content = (await self._request(db, "GET", path)).get("data") or {}
+        pdf = await self.get_retainer_invoice_pdf(db, retainer_invoice_id)
+        mail = {"to_mail_ids": to_mail_ids, "subject": content.get("subject", ""), "body": content.get("body", "")}
+        await self._request(
+            db,
+            "POST",
+            path,
+            data={"JSONString": json.dumps(mail)},
+            files={"attachments": (content.get("file_name") or "retainer.pdf", pdf, "application/pdf")},
+        )
 
     async def create_invoice(self, db: AsyncSession, payload: dict) -> dict:
         """Raise an invoice. Returns Books' own copy, ids and totals included.

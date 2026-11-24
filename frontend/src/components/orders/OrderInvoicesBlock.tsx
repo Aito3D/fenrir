@@ -103,6 +103,7 @@ export function OrderInvoicesBlock({ row, onCreateInvoice, onInvoiceNow, busy = 
               numberTitle={r.date || undefined}
               status={r.status ? { text: key ? t(key) : r.status, toneClass: RETAINER_STATUS_TEXT_TONE_CLASSES[retainerStatusTone(r.status)] } : null}
               amount={money(r.total)}
+              booksUrl={r.url}
               booksLabel={t('aito.invoiceOpenInZoho')}
               {...docButtons('retainer', r.id, r.number)}
             />
