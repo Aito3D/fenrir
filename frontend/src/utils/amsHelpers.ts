@@ -629,10 +629,12 @@ interface MatchTray {
  * Every (requirement, tray) pair the requirement may use is scored and the
  * best-scoring pair is assigned before the next, so the result does not depend
  * on the order of filaments in the file and a filament never takes the tray
- * another one matches better. Score: a tray of the same variant
- * (`tray_info_idx`, e.g. "GFA00" — Basic is not Matte, #2650) before another
- * tray of the type, then perceptual colour distance, then tray order (slot
- * order, or lowest remaining first when `preferLowest` is on).
+ * another one matches better. Score: a colour within tolerance first, then a
+ * tray of the same variant (`tray_info_idx`, e.g. "GFA00" — Basic is not
+ * Matte, #2650) before another tray of the type, then perceptual colour
+ * distance, then tray order (slot order, or lowest remaining first when
+ * `preferLowest` is on). Variant used to rank above colour, so a white Basic
+ * job took a yellow Basic spool over a light-grey generic PLA.
  *
  * A far colour is still assigned — the nearest one, where this used to take
  * the first free tray of the type and printed blue in yellow with a blue spool
@@ -671,7 +673,7 @@ export function matchFilamentsToTrays<R extends MatchRequirement, T extends Matc
       )
     : trays;
 
-  const pairs: { key: [number, number, number, number]; requirement: number; tray: T }[] = [];
+  const pairs: { key: [number, number, number, number, number]; requirement: number; tray: T }[] = [];
   requirements.forEach((requirement, index) => {
     if (options.skip?.(requirement, index)) return;
     ordered.forEach((tray, rank) => {
@@ -680,7 +682,10 @@ export function matchFilamentsToTrays<R extends MatchRequirement, T extends Matc
       const sameVariant = !!requirement.tray_info_idx && tray.trayInfoIdx === requirement.tray_info_idx;
       if (!sameVariant && !filamentTypesCompatible(tray.type, requirement.type)) return;
       const distance = colorDistance(tray.color, requirement.color) ?? Infinity;
-      pairs.push({ key: [sameVariant ? 0 : 1, distance, rank, index], requirement: index, tray });
+      // Colour within tolerance outranks variant: a white Basic job takes the
+      // light-grey generic PLA, not the yellow Basic spool.
+      const colourOk = coloursMatchForPick(tray.color, requirement.color);
+      pairs.push({ key: [colourOk ? 0 : 1, sameVariant ? 0 : 1, distance, rank, index], requirement: index, tray });
     });
   });
   pairs.sort((x, y) => compareKeys(x.key, y.key));
@@ -694,6 +699,12 @@ export function matchFilamentsToTrays<R extends MatchRequirement, T extends Matc
   return picked;
 }
 
+/** Same verdict as `coloursMatch` in useFilamentMapping: no required colour, exact hex, or within tolerance. */
+function coloursMatchForPick(trayColor: string | undefined, requiredColor: string | undefined): boolean {
+  const required = normalizeColorForCompare(requiredColor);
+  return !required || normalizeColorForCompare(trayColor) === required || colorsAreSimilar(trayColor, requiredColor);
+}
+
 // Not `a - b`: Infinity - Infinity is NaN, which is no order at all.
 function compareKeys(x: number[], y: number[]): number {
   for (let i = 0; i < x.length; i++) {
@@ -704,8 +715,8 @@ function compareKeys(x: number[], y: number[]): number {
 
 /**
  * Order the trays of a slot picker for one required filament: the trays it can
- * use first, best match on top (same variant, then same type, then nearest
- * colour — the matcher's ranking), then the trays it cannot use (the other
+ * use first, best match on top (type, then colour within tolerance, then same
+ * variant, then nearest colour — the matcher's ranking), then the trays it cannot use (the other
  * nozzle's AMS) in slot order. `usable` is the caller's own disabled rule.
  */
 export function rankTraysForPicker<T extends MatchTray>(
@@ -716,8 +727,16 @@ export function rankTraysForPicker<T extends MatchTray>(
   const key = (tray: T, index: number): number[] => {
     if (!usable(tray)) return [1, 0, 0, index];
     const sameVariant = !!requirement.tray_info_idx && tray.trayInfoIdx === requirement.tray_info_idx;
-    const fit = sameVariant ? 0 : filamentTypesCompatible(tray.type, requirement.type) ? 1 : 2;
-    return [0, fit, colorDistance(tray.color, requirement.color) ?? Infinity, index];
+    const typeOk = sameVariant || filamentTypesCompatible(tray.type, requirement.type);
+    const colourOk = coloursMatchForPick(tray.color, requirement.color);
+    return [
+      0,
+      typeOk ? 0 : 1,
+      colourOk ? 0 : 1,
+      sameVariant ? 0 : 1,
+      colorDistance(tray.color, requirement.color) ?? Infinity,
+      index,
+    ];
   };
   return trays
     .map((tray, index) => ({ tray, key: key(tray, index) }))

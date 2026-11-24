@@ -117,13 +117,13 @@ describe('matchFilamentsToTrays', () => {
     expect(ids(matchFilamentsToTrays([req('#FF8000', 1)], loaded, { ftsActive: true }))).toEqual([0]);
   });
 
-  it('prefers a tray of the same variant over a closer colour of another', () => {
+  it('prefers a matching colour of another variant over the same variant in the wrong colour', () => {
     const loaded = [
       { ...tray(0, '3A7BD5FF'), trayInfoIdx: 'GFG00' },
       { ...tray(1, 'FF0000FF'), trayInfoIdx: 'GFG99' },
     ];
     const required = [{ ...req(REQUIRED), tray_info_idx: 'GFG99' }];
-    expect(ids(matchFilamentsToTrays(required, loaded))).toEqual([1]);
+    expect(ids(matchFilamentsToTrays(required, loaded))).toEqual([0]);
   });
 });
 
@@ -153,5 +153,27 @@ describe('rankTraysForPicker', () => {
     ];
     const ranked = rankTraysForPicker({ type: 'PLA', color: '#FF0000', nozzle_id: 1 }, trays, (t) => t.extruderId === 1);
     expect(ranked.map((t) => t.globalTrayId)).toEqual([6, 4, 5, 0, 1]);
+  });
+});
+
+describe('colour within tolerance outranks variant', () => {
+  // White Bambu PLA Basic (GFA00) on a printer with a yellow Basic spool and a
+  // light-grey generic PLA: grey is 35/35/35 off (inside tolerance), so it wins.
+  const white = { type: 'PLA', color: '#FFFFFF', tray_info_idx: 'GFA00' };
+  const yellowBasic = { globalTrayId: 1, type: 'PLA', color: 'FFF144FF', trayInfoIdx: 'GFA00' };
+  const greyGeneric = { globalTrayId: 2, type: 'PLA', color: 'DCDCDCFF', trayInfoIdx: 'GFL99' };
+
+  it('picks the light-grey generic over the yellow Basic', () => {
+    expect(ids(matchFilamentsToTrays([white], [yellowBasic, greyGeneric]))).toEqual([2]);
+  });
+
+  it('still prefers the same variant among colour matches (#2650)', () => {
+    const whiteBasic = { ...yellowBasic, globalTrayId: 3, color: 'F5F5F5FF' };
+    expect(ids(matchFilamentsToTrays([white], [greyGeneric, whiteBasic]))).toEqual([3]);
+  });
+
+  it('falls back to the variant when no colour is within tolerance', () => {
+    const black = { ...greyGeneric, color: '000000FF' };
+    expect(ids(matchFilamentsToTrays([white], [black, yellowBasic]))).toEqual([1]);
   });
 });

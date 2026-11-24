@@ -158,3 +158,19 @@ class TestClosestPairFirst:
         loaded = [tray(0, "FF8000FF"), tray(1, "DCDCDCFF") | {"extruder_id": 1}]
         required = [req(slot_id=1, color="#FF8000") | {"nozzle_id": 1}]
         assert scheduler._match_filaments_to_slots(required, loaded) == [1]
+
+
+class TestColourOutranksVariant:
+    """White Bambu PLA Basic with a yellow Basic and a light-grey generic PLA loaded."""
+
+    def test_light_grey_generic_beats_yellow_basic(self, scheduler):
+        yellow = {**tray(1, "FFF144FF", "PLA"), "tray_info_idx": "GFA00"}
+        grey = {**tray(2, "DCDCDCFF", "PLA"), "tray_info_idx": "GFL99"}
+        required = [req("#FFFFFF", type_="PLA", tray_info_idx="GFA00")]
+        assert scheduler._match_filaments_to_slots(required, [yellow, grey]) == [2]
+
+    def test_variant_still_wins_among_colour_matches(self, scheduler):
+        grey = {**tray(2, "DCDCDCFF", "PLA"), "tray_info_idx": "GFL99"}
+        white_basic = {**tray(3, "F5F5F5FF", "PLA"), "tray_info_idx": "GFA00"}
+        required = [req("#FFFFFF", type_="PLA", tray_info_idx="GFA00")]
+        assert scheduler._match_filaments_to_slots(required, [grey, white_basic]) == [3]

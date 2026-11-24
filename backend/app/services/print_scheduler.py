@@ -6142,8 +6142,9 @@ class PrintScheduler:
         """Match required filaments to loaded filaments and build AMS mapping.
 
         Forced slots take their exact tray first. The rest are assigned closest
-        pair first: a tray of the same variant (tray_info_idx, e.g. "GFA00")
-        before another tray of the type, then by perceptual colour distance.
+        pair first: a colour within tolerance, then a tray of the same variant
+        (tray_info_idx, e.g. "GFA00") before another tray of the type, then by
+        perceptual colour distance.
 
         Mirrored by `matchFilamentsToTrays` in `frontend/src/utils/amsHelpers.ts`.
 
@@ -6238,24 +6239,33 @@ class PrintScheduler:
         # may use is scored, and the best-scoring pair is assigned before the
         # next, so the result does not depend on the order of slots in the file
         # and a slot never takes the tray another slot matches better.
-        # Score: same variant (tray_info_idx, #2650) before other trays of the
-        # type, then perceptual colour distance, then tray order. A far colour
-        # is still assigned -- nearest, not first -- and the caller reports it
-        # as a substitution.
+        # Score: colour within tolerance first, then same variant
+        # (tray_info_idx, #2650) before other trays of the type, then
+        # perceptual colour distance, then tray order. Variant used to rank
+        # above colour, so a white Basic slot took a yellow Basic spool over a
+        # light-grey generic PLA. A far colour is still assigned -- nearest,
+        # not first -- and the caller reports it as a substitution.
         rank = {f["global_tray_id"]: n for n, f in enumerate(ordered)}
-        pairs: list[tuple[bool, float, int, int, dict]] = []
+        pairs: list[tuple[bool, bool, float, int, int, dict]] = []
         for i, req in enumerate(required):
             if i in forced_indices:
                 continue
             req_type = canonical_filament_type((req.get("type") or "").upper())
             req_tray_info_idx = req.get("tray_info_idx", "")
+            want_color = self._normalize_color_for_compare(req.get("color", ""))
             for f in reachable(req):
                 same_variant = bool(req_tray_info_idx) and f.get("tray_info_idx") == req_tray_info_idx
                 if not same_variant and canonical_filament_type((f.get("type") or "").upper()) != req_type:
                     continue
                 distance = self._color_distance(f.get("color", ""), req.get("color", ""))
+                colour_ok = (
+                    not want_color
+                    or self._normalize_color_for_compare(f.get("color", "")) == want_color
+                    or self._colors_are_similar(f.get("color"), req.get("color"))
+                )
                 pairs.append(
                     (
+                        not colour_ok,
                         not same_variant,
                         float("inf") if distance is None else distance,
                         rank[f["global_tray_id"]],
@@ -6264,7 +6274,7 @@ class PrintScheduler:
                     )
                 )
         distances: dict[int, float] = {}
-        for _other_variant, distance, _rank, i, f in sorted(pairs, key=lambda pair: pair[:4]):
+        for _far_colour, _other_variant, distance, _rank, i, f in sorted(pairs, key=lambda pair: pair[:5]):
             if i in picked or f["global_tray_id"] in used_tray_ids:
                 continue
             picked[i] = f
