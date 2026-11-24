@@ -13018,6 +13018,8 @@ export default {
       failedDay: '失敗的日期：{{day}}，{{time}} 重試',
       failedDays: '失敗的天數：{{n}}，下次重試 {{time}}',
       retry: '重試',
+      syncRecent: '同步最新發票',
+      syncRecentDone: '已從 Zoho 同步最新發票。',
       rebuild: '重建',
       rebuildConfirm: '要從 Zoho 重新載入每一天嗎（約 1 小時）？',
       rebuildYes: '是，重建',

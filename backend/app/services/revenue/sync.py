@@ -343,7 +343,7 @@ async def refresh_revenue_items(db, now: datetime) -> bool:
     return True
 
 
-async def _execute_batch(full: bool) -> dict:
+async def _execute_batch(full: bool, recent: bool = False) -> dict:
     global _last_batch_at, _last_error
     try:
         async with database.async_session() as db:
@@ -362,9 +362,10 @@ async def _execute_batch(full: bool) -> dict:
                 now=now,
                 history_start=REVENUE_HISTORY_START,
                 format=REVENUE_LINE_FORMAT,
-                live_ttl_s=SYNC.live_ttl_s,
+                live_ttl_s=0 if recent else SYNC.live_ttl_s,
                 recent_days=SYNC.recent_days,
-                recent_ttl_s=SYNC.recent_ttl_s,
+                # `recent`: the ⋯ menu's « sync last invoices » refetches the last week now instead of every 12 h.
+                recent_ttl_s=0 if recent else SYNC.recent_ttl_s,
             )
             plan = [d for d in planned if not _in_back_off(d)]
             days: list[str] = []
@@ -466,21 +467,22 @@ async def _check_rebuild_possible() -> None:
         raise RevenueRebuildRefused("Zoho's daily API budget is too low to rebuild; try again after it resets")
 
 
-async def _after(previous: asyncio.Task | None, full: bool) -> dict:
+async def _after(previous: asyncio.Task | None, full: bool, recent: bool = False) -> dict:
     if previous is not None:
         await asyncio.wait([previous])  # its failure must not poison the chained full rebuild
     async with _lane:
         if full:
             await _check_rebuild_possible()
-        return await _execute_batch(full)
+        return await _execute_batch(full, recent)
 
 
-async def run_revenue_sync_batch(*, full: bool = False) -> dict:
-    """Concurrent callers share one in-flight batch; `full` chains behind it, then clears and rebuilds."""
+async def run_revenue_sync_batch(*, full: bool = False, recent: bool = False) -> dict:
+    """Concurrent callers share one in-flight batch; `full` chains behind it, then clears and rebuilds;
+    `recent` chains behind it too, then refetches the last `recent_days` days whatever their age."""
     global _inflight
-    if _inflight is not None and not full:
+    if _inflight is not None and not (full or recent):
         return await asyncio.shield(_inflight)
-    task = asyncio.get_running_loop().create_task(_after(_inflight, full))
+    task = asyncio.get_running_loop().create_task(_after(_inflight, full, recent))
     _inflight = task
 
     def _clear(t: asyncio.Task) -> None:

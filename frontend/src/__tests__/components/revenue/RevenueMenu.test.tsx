@@ -5,12 +5,13 @@ import { RevenueMenu } from '../../../components/revenue/RevenueMenu';
 
 function setup() {
   const onRebuild = vi.fn();
+  const onSyncRecent = vi.fn();
   render(
     <RevenueMenu canExport={false} canSync ready rebuildBusy={false} reviewCount={0} targetsOpen={false}
-      onTargets={vi.fn()} onReview={vi.fn()} onCopy={vi.fn()} onExport={vi.fn()} onRebuild={onRebuild} triggerRef={createRef<HTMLButtonElement>()} />,
+      onTargets={vi.fn()} onReview={vi.fn()} onCopy={vi.fn()} onExport={vi.fn()} onRebuild={onRebuild} onSyncRecent={onSyncRecent} triggerRef={createRef<HTMLButtonElement>()} />,
   );
   fireEvent.click(screen.getByRole('button', { name: 'More actions' }));
-  return { onRebuild };
+  return { onRebuild, onSyncRecent };
 }
 
 const item = (name: string) => within(screen.getByRole('menu')).getByRole('menuitem', { name });
@@ -20,6 +21,16 @@ function pressEnter(repeat = false) {
   const el = focused();
   if (fireEvent.keyDown(el, { key: 'Enter', repeat })) fireEvent.click(el, { detail: 0 });
 }
+
+describe('RevenueMenu — sync latest invoices', () => {
+  it('runs straight away, without the rebuild confirmation, and closes the menu', () => {
+    const { onRebuild, onSyncRecent } = setup();
+    fireEvent.click(item('Sync latest invoices'));
+    expect(onSyncRecent).toHaveBeenCalledTimes(1);
+    expect(onRebuild).not.toHaveBeenCalled();
+    expect(screen.queryByRole('menu')).toBeNull();
+  });
+});
 
 describe('RevenueMenu — rebuild confirmation', () => {
   it('focuses Cancel when the confirmation opens, so Enter twice never confirms', () => {
@@ -84,7 +95,7 @@ describe('RevenueMenu — placement', () => {
   function openWithTriggerRight(right: number) {
     render(
       <RevenueMenu canExport={false} canSync ready rebuildBusy={false} reviewCount={0} targetsOpen={false}
-        onTargets={vi.fn()} onReview={vi.fn()} onCopy={vi.fn()} onExport={vi.fn()} onRebuild={vi.fn()} triggerRef={createRef<HTMLButtonElement>()} />,
+        onTargets={vi.fn()} onReview={vi.fn()} onCopy={vi.fn()} onExport={vi.fn()} onRebuild={vi.fn()} onSyncRecent={vi.fn()} triggerRef={createRef<HTMLButtonElement>()} />,
     );
     const button = screen.getByRole('button', { name: 'More actions' });
     button.getBoundingClientRect = () => ({ right, left: right - 36, top: 0, bottom: 31, width: 36, height: 31, x: right - 36, y: 0, toJSON: () => ({}) });

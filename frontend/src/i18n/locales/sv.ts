@@ -13092,6 +13092,8 @@ errors: {
       failedDay: 'Misslyckad dag: {{day}}, nytt försök kl. {{time}}',
       failedDays: 'Misslyckade dagar: {{n}}, nästa försök kl. {{time}}',
       retry: 'Försök igen',
+      syncRecent: 'Synka senaste fakturorna',
+      syncRecentDone: 'Senaste fakturorna synkade från Zoho.',
       rebuild: 'Bygg om',
       rebuildConfirm: 'Ladda om varje dag från Zoho (~1 tim)?',
       rebuildYes: 'Ja, bygg om',

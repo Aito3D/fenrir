@@ -13034,6 +13034,8 @@ export default {
       failedDay: '取得失敗の日: {{day}}、{{time}} に再試行',
       failedDays: '取得失敗の日数: {{n}}、次回の再試行 {{time}}',
       retry: '再試行',
+      syncRecent: '最新の請求書を同期',
+      syncRecentDone: 'Zoho から最新の請求書を同期しました。',
       rebuild: '再構築',
       rebuildConfirm: 'Zoho から全日を再読み込みしますか（約1時間）？',
       rebuildYes: 'はい、再構築します',

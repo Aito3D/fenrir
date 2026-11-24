@@ -12682,6 +12682,8 @@ export default {
       failedDay: 'День із помилкою: {{day}}, повтор о {{time}}',
       failedDays: 'Днів із помилкою: {{n}}, наступний повтор о {{time}}',
       retry: 'Повторити',
+      syncRecent: 'Синхронізувати останні рахунки',
+      syncRecentDone: 'Останні рахунки синхронізовано з Zoho.',
       rebuild: 'Перебудувати',
       rebuildConfirm: 'Заново завантажити кожен день із Zoho (~1 год)?',
       rebuildYes: 'Так, перебудувати',

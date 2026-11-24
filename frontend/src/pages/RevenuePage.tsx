@@ -327,6 +327,19 @@ export function RevenuePage() {
       setRebuildBusy(false);
     }
   };
+  const syncRecent = async () => {
+    setRebuildBusy(true);
+    try {
+      const res = await fetch('/api/v1/revenue/sync?recent=1', { method: 'POST', headers: bearerAuthHeaders() });
+      if (!res.ok) throw new Error(failureMessage(res.status, await readJsonBody(res)));
+      showToast(t('revenue.sync.syncRecentDone'), 'success');
+    } catch (e) {
+      showToast(e instanceof Error ? e.message : String(e), 'error');
+    } finally {
+      setRebuildBusy(false);
+    }
+    refresh();
+  };
   const retry = async () => {
     try {
       await postSync();
@@ -434,7 +447,7 @@ export function RevenuePage() {
           <div data-slot="revenue-menu">
             <RevenueMenu canExport={can.export} canSync={can.sync} ready={ready} rebuildBusy={rebuildBusy} reviewCount={reviewCount ?? 0}
               targetsOpen={targetsOpen} onTargets={toggleTargets} laborOpen={laborOpen} onLabor={can.margin ? toggleLabor : undefined} fixedCostsOpen={fixedOpen} onFixedCosts={can.margin ? toggleFixed : undefined} onReview={() => toggleReview()} onCopy={() => void copySummary()} onExport={exportCsv}
-              onRebuild={() => void rebuild()} triggerRef={menuTrigger} />
+              onRebuild={() => void rebuild()} onSyncRecent={() => void syncRecent()} triggerRef={menuTrigger} />
           </div>
         </div>
       </div>

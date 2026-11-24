@@ -28,6 +28,8 @@ export function RevenueMenu(p: {
   onCopy: () => void;
   onExport: () => void;
   onRebuild: () => void;
+  /** Refetches the last week's invoices now (`revenue:sync`). */
+  onSyncRecent: () => void;
   /** The ⋯ button, for the page to put focus back on. */
   triggerRef: RefObject<HTMLButtonElement | null>;
 }) {
@@ -131,6 +133,7 @@ export function RevenueMenu(p: {
                 {p.canSync && (
                   <>
                     <div role="separator" className="my-1 border-t border-bambu-dark-tertiary" />
+                    <button type="button" role="menuitem" className={ITEM} disabled={p.rebuildBusy} onClick={pick(p.onSyncRecent)}>{t('revenue.sync.syncRecent')}</button>
                     <button type="button" role="menuitem" className={ITEM} disabled={p.rebuildBusy} onClick={() => setConfirm(true)}>{t('revenue.sync.rebuild')}</button>
                   </>
                 )}

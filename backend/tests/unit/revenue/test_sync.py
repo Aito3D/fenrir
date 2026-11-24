@@ -199,6 +199,14 @@ async def test_a_second_batch_finishes_the_back_fill_and_a_third_has_nothing_to_
     assert len(zoho.sales_calls) == 15
 
 
+async def test_a_recent_batch_refetches_today_and_the_last_week_even_when_fresh(zoho):
+    await sync.run_revenue_sync_batch()
+    await sync.run_revenue_sync_batch()
+    r = await sync.run_revenue_sync_batch(recent=True)
+    assert r["days"] == [f"2026-10-{d:02d}" for d in range(15, 7, -1)]
+    assert len(zoho.sales_calls) == 23
+
+
 async def test_writes_every_day_that_succeeded_before_a_failing_one_records_last_error_and_rethrows(zoho, engine):
     async def sales(day, page):
         if len(zoho.sales_calls) == 3:

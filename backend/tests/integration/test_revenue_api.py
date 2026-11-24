@@ -398,7 +398,7 @@ WRITES = [
 def stub_sync(monkeypatch):
     calls = []
 
-    async def fake(*, full=False):
+    async def fake(*, full=False, recent=False):
         calls.append(full)
         return {"fetched": 3, "pending": 2, "days": 10, "customers": 1}
 
@@ -508,7 +508,7 @@ async def test_sync_post_returns_the_batch_and_status_and_honours_full(async_cli
 
 @pytest.mark.asyncio
 async def test_sync_post_timeout_and_failure_are_clean_errors(async_client, revenue_db, tokens, monkeypatch):
-    async def boom(*, full=False):
+    async def boom(*, full=False, recent=False):
         raise RuntimeError("https://zoho.example/?token=SECRET")
 
     monkeypatch.setattr(sync, "run_revenue_sync_batch", boom)
@@ -516,7 +516,7 @@ async def test_sync_post_timeout_and_failure_are_clean_errors(async_client, reve
     assert r.status_code == 500
     assert r.json()["detail"] == "Internal server error"
 
-    async def slow(*, full=False):
+    async def slow(*, full=False, recent=False):
         await asyncio.sleep(5)
 
     monkeypatch.setattr(sync, "run_revenue_sync_batch", slow)
@@ -528,7 +528,7 @@ async def test_sync_post_timeout_and_failure_are_clean_errors(async_client, reve
 
 @pytest.mark.asyncio
 async def test_sync_post_refused_rebuild_is_a_503_with_its_reason(async_client, revenue_db, tokens, monkeypatch):
-    async def refused(*, full=False):
+    async def refused(*, full=False, recent=False):
         raise sync.RevenueRebuildRefused("Zoho credentials are not configured")
 
     monkeypatch.setattr(sync, "run_revenue_sync_batch", refused)

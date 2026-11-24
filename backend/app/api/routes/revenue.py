@@ -852,11 +852,15 @@ async def refetch_month(month: str, user: User | None = RequirePermissionIfAuthE
 
 @router.post("/sync")
 async def post_sync(
-    full: str | None = None, user: User | None = RequirePermissionIfAuthEnabled(Permission.REVENUE_SYNC)
+    full: str | None = None,
+    recent: str | None = None,
+    user: User | None = RequirePermissionIfAuthEnabled(Permission.REVENUE_SYNC),
 ):
     sync.ensure_revenue_sync_loop()
     try:
-        result = await asyncio.wait_for(sync.run_revenue_sync_batch(full=full == "1"), SYNC_TIMEOUT_S)
+        result = await asyncio.wait_for(
+            sync.run_revenue_sync_batch(full=full == "1", recent=recent == "1"), SYNC_TIMEOUT_S
+        )
     except TimeoutError:
         raise HTTPException(status_code=504, detail="Upstream request timed out") from None
     except sync.RevenueRebuildRefused as e:

@@ -432,14 +432,14 @@ describe('RevenuePage — menu', () => {
     fireEvent.click(trigger);
     expect(trigger).toHaveAttribute('aria-expanded', 'true');
     const items = within(screen.getByRole('menu')).getAllByRole('menuitem');
-    expect(items.map((i) => i.textContent)).toEqual(['Monthly targets…', 'Items to classify', 'Rebuild']);
+    expect(items.map((i) => i.textContent)).toEqual(['Monthly targets…', 'Items to classify', 'Sync latest invoices', 'Rebuild']);
     expect(items[0]).toHaveFocus();
     fireEvent.keyDown(items[0], { key: 'ArrowDown' });
     expect(items[1]).toHaveFocus();
     fireEvent.keyDown(items[1], { key: 'ArrowUp' });
     fireEvent.keyDown(items[0], { key: 'ArrowUp' });
-    expect(items[2]).toHaveFocus();
-    fireEvent.keyDown(items[2], { key: 'Escape' });
+    expect(items[3]).toHaveFocus();
+    fireEvent.keyDown(items[3], { key: 'Escape' });
     expect(screen.queryByRole('menu')).toBeNull();
     expect(trigger).toHaveFocus();
   });

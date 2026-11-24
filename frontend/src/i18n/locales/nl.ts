@@ -13059,6 +13059,8 @@ export default {
       failedDay: 'Mislukte dag: {{day}}, nieuwe poging om {{time}}',
       failedDays: 'Mislukte dagen: {{n}}, volgende poging om {{time}}',
       retry: 'Opnieuw proberen',
+      syncRecent: 'Laatste facturen synchroniseren',
+      syncRecentDone: 'Laatste facturen gesynchroniseerd vanuit Zoho.',
       rebuild: 'Opnieuw opbouwen',
       rebuildConfirm: 'Elke dag opnieuw uit Zoho laden (~1 u)?',
       rebuildYes: 'Ja, opnieuw opbouwen',

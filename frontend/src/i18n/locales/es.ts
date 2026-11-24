@@ -13043,6 +13043,8 @@ export default {
       failedDay: 'Día con error: {{day}}, nuevo intento a las {{time}}',
       failedDays: 'Días con error: {{n}}, próximo intento a las {{time}}',
       retry: 'Reintentar',
+      syncRecent: 'Sincronizar las últimas facturas',
+      syncRecentDone: 'Últimas facturas sincronizadas desde Zoho.',
       rebuild: 'Reconstruir',
       rebuildConfirm: '¿Volver a cargar cada día desde Zoho (~1 h)?',
       rebuildYes: 'Sí, reconstruir',

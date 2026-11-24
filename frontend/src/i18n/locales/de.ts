@@ -13035,6 +13035,8 @@ export default {
       failedDay: 'Fehlgeschlagener Tag: {{day}}, neuer Versuch um {{time}}',
       failedDays: 'Fehlgeschlagene Tage: {{n}}, nächster Versuch um {{time}}',
       retry: 'Erneut versuchen',
+      syncRecent: 'Neueste Rechnungen synchronisieren',
+      syncRecentDone: 'Neueste Rechnungen aus Zoho synchronisiert.',
       rebuild: 'Neu aufbauen',
       rebuildConfirm: 'Jeden Tag neu aus Zoho laden (~1 Std.)?',
       rebuildYes: 'Ja, neu aufbauen',

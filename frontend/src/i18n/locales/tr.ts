@@ -12962,6 +12962,8 @@ export default {
       failedDay: 'Başarısız gün: {{day}}, yeniden deneme {{time}}',
       failedDays: 'Başarısız gün sayısı: {{n}}, sonraki deneme {{time}}',
       retry: 'Yeniden dene',
+      syncRecent: 'Son faturaları eşitle',
+      syncRecentDone: 'Son faturalar Zoho\'dan eşitlendi.',
       rebuild: 'Yeniden oluştur',
       rebuildConfirm: 'Her gün Zoho\'dan yeniden yüklensin mi (~1 sa)?',
       rebuildYes: 'Evet, yeniden oluştur',

@@ -12617,6 +12617,8 @@ export default {
       failedDay: '실패한 날짜: {{day}}, {{time}}에 다시 시도',
       failedDays: '실패한 날짜 수: {{n}}, 다음 시도 {{time}}',
       retry: '다시 시도',
+      syncRecent: '최신 청구서 동기화',
+      syncRecentDone: 'Zoho에서 최신 청구서를 동기화했습니다.',
       rebuild: '다시 구축',
       rebuildConfirm: 'Zoho에서 모든 날을 다시 불러올까요 (약 1시간)?',
       rebuildYes: '예, 다시 구축',

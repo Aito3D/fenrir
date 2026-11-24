@@ -13240,6 +13240,8 @@ export default {
       failedDay: 'Dzień z błędem: {{day}}, ponowna próba o {{time}}',
       failedDays: 'Dni z błędem: {{n}}, następna próba o {{time}}',
       retry: 'Ponów',
+      syncRecent: 'Synchronizuj najnowsze faktury',
+      syncRecentDone: 'Zsynchronizowano najnowsze faktury z Zoho.',
       rebuild: 'Odbuduj',
       rebuildConfirm: 'Wczytać ponownie każdy dzień z Zoho (~1 godz.)?',
       rebuildYes: 'Tak, odbuduj',

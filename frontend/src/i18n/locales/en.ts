@@ -13091,6 +13091,8 @@ export default {
       failedDay: 'Failed day: {{day}}, retry at {{time}}',
       failedDays: 'Failed days: {{n}}, next retry at {{time}}',
       retry: 'Retry',
+      syncRecent: 'Sync latest invoices',
+      syncRecentDone: 'Latest invoices synced from Zoho.',
       rebuild: 'Rebuild',
       rebuildConfirm: 'Reload every day from Zoho (~1 h)?',
       rebuildYes: 'Yes, rebuild',
