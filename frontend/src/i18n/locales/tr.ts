@@ -12944,6 +12944,8 @@ export default {
       clients: 'Müşteriler',
       products: 'Ürünler',
       seasonality: 'Mevsimsellik',
+      journal: 'Satış günlüğü',
+      journalReferences: 'Kalemler',
     },
     state: {
       itemsPending: 'Ürün kataloğu bekleniyor…',
@@ -13243,6 +13245,7 @@ export default {
       energy: 'Enerji',
       wear: 'Yazıcı aşınması',
       labor: 'İşçilik',
+      fixed: 'Sabit giderler',
       margin: 'Brüt marj HT',
     },
     fixedCosts: {

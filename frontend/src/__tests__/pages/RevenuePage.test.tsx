@@ -192,7 +192,7 @@ describe('RevenuePage — view tabs and tax switch', () => {
     const { unmount } = renderPage();
     await flush();
     const tabs = screen.getByRole('tablist', { name: 'View' });
-    expect(within(tabs).getAllByRole('tab').map((t) => t.textContent)).toEqual(['Evolution', 'Customers', 'Products', 'Seasonality']);
+    expect(within(tabs).getAllByRole('tab').map((t) => t.textContent)).toEqual(['Evolution', 'Customers', 'Products', 'Seasonality', 'Sales log']);
     fireEvent.click(within(tabs).getByRole('tab', { name: 'Products' }));
     expect(screen.getByRole('tabpanel')).toHaveAttribute('data-slot', 'revenue-view-produits');
     expect(localStorage.getItem('revenue-view')).toBe('produits');
@@ -318,7 +318,7 @@ describe('RevenuePage — view tabs keyboard', () => {
     renderPage();
     await flush();
     const tabs = () => within(screen.getByRole('tablist', { name: 'View' })).getAllByRole('tab');
-    expect(tabs().map((t) => t.tabIndex)).toEqual([0, -1, -1, -1]);
+    expect(tabs().map((t) => t.tabIndex)).toEqual([0, -1, -1, -1, -1]);
     const panel = screen.getByRole('tabpanel');
     expect(tabs()[0]).toHaveAttribute('aria-controls', panel.id);
     expect(panel).toHaveAttribute('aria-labelledby', tabs()[0].id);
@@ -326,17 +326,17 @@ describe('RevenuePage — view tabs keyboard', () => {
     fireEvent.keyDown(tabs()[0], { key: 'ArrowRight' });
     expect(tabs()[1]).toHaveAttribute('aria-selected', 'true');
     expect(tabs()[1]).toHaveFocus();
-    expect(tabs().map((t) => t.tabIndex)).toEqual([-1, 0, -1, -1]);
+    expect(tabs().map((t) => t.tabIndex)).toEqual([-1, 0, -1, -1, -1]);
     expect(screen.getByRole('tabpanel')).toHaveAttribute('aria-labelledby', tabs()[1].id);
 
     fireEvent.keyDown(tabs()[1], { key: 'End' });
-    expect(tabs()[3]).toHaveAttribute('aria-selected', 'true');
-    expect(tabs()[3]).toHaveFocus();
-    fireEvent.keyDown(tabs()[3], { key: 'ArrowRight' });
+    expect(tabs()[4]).toHaveAttribute('aria-selected', 'true');
+    expect(tabs()[4]).toHaveFocus();
+    fireEvent.keyDown(tabs()[4], { key: 'ArrowRight' });
     expect(tabs()[0]).toHaveFocus();
     fireEvent.keyDown(tabs()[0], { key: 'ArrowLeft' });
-    expect(tabs()[3]).toHaveFocus();
-    fireEvent.keyDown(tabs()[3], { key: 'Home' });
+    expect(tabs()[4]).toHaveFocus();
+    fireEvent.keyDown(tabs()[4], { key: 'Home' });
     expect(tabs()[0]).toHaveAttribute('aria-selected', 'true');
     expect(tabs()[0]).toHaveFocus();
   });

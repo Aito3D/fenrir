@@ -13000,6 +13000,8 @@ export default {
       clients: '客戶',
       products: '產品',
       seasonality: '季節性',
+      journal: '銷售明細',
+      journalReferences: '品項數',
     },
     state: {
       itemsPending: '正在等待商品目錄…',
@@ -13299,6 +13301,7 @@ export default {
       energy: '電費',
       wear: '印表機損耗',
       labor: '人工',
+      fixed: '固定成本',
       margin: '毛利 HT',
     },
     fixedCosts: {

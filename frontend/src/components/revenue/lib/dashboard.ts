@@ -236,12 +236,13 @@ export const REVENUE_STORAGE_KEYS = {
 export const segmentTabId = (idPrefix: string, id: string) => `${idPrefix}-tab-${id}`;
 export const segmentPanelId = (idPrefix: string, id: string) => `${idPrefix}-panel-${id}`;
 
-/** The page's four views: the series (« Évolution »), the customer split, the product analysis, the seasonality charts. */
+/** The page's five views: the series (« Évolution »), the customer split, the product analysis, the seasonality charts, the per-period sales log. */
 export const REVENUE_VIEWS = [
   { id: "evolution", label: "Évolution" },
   { id: "clients", label: "Clients" },
   { id: "produits", label: "Produits" },
   { id: "saison", label: "Saisonnalité" },
+  { id: "journal", label: "Journal" },
 ] as const;
 export type RevenueView = (typeof REVENUE_VIEWS)[number]["id"];
 export const isRevenueView = (v: unknown): v is RevenueView => REVENUE_VIEWS.some((x) => x.id === v);

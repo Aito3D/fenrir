@@ -2,7 +2,7 @@ import { useTranslation } from 'react-i18next';
 import { formatFcp } from './lib/format';
 import type { RevenueBucket } from './lib/types';
 
-const PARTS = ['items', 'filament', 'energy', 'wear', 'labor'] as const;
+const PARTS = ['items', 'filament', 'energy', 'wear', 'labor', 'fixed'] as const;
 
 /** How a bucket's gross margin is made: costed HT, minus each cost part the server sent, equals the margin. */
 export function MarginBreakdown({ bucket, className = '' }: { bucket: RevenueBucket; className?: string }) {

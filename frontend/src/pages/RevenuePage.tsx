@@ -12,6 +12,7 @@ import { RevenuePace } from '../components/revenue/RevenuePace';
 import { RevenueCash } from '../components/revenue/RevenueCash';
 import { RevenueChart } from '../components/revenue/RevenueChart';
 import { RevenueTable } from '../components/revenue/RevenueTable';
+import { RevenueJournal } from '../components/revenue/RevenueJournal';
 import { RevenueMovers } from '../components/revenue/RevenueMovers';
 import { RevenueCustomers } from '../components/revenue/RevenueCustomers';
 import { RevenueAnalysis } from '../components/revenue/RevenueAnalysis';
@@ -95,7 +96,7 @@ export interface RevenuePanelProps {
 
 type Zoom = Pick<RevenueControls, 'granularity' | 'range'>;
 
-const VIEW_KEYS: Record<RevenueView, string> = { evolution: 'evolution', clients: 'clients', produits: 'products', saison: 'seasonality' };
+const VIEW_KEYS: Record<RevenueView, string> = { evolution: 'evolution', clients: 'clients', produits: 'products', saison: 'seasonality', journal: 'journal' };
 
 /** Restored before the first render and the first request: a linked URL wins, localStorage fills the rest. */
 function initialControls(): RevenueControls {
@@ -577,6 +578,7 @@ export function RevenuePage() {
               <RevenueAnalysis from={data.from} to={data.to} filterParams={filterParams} version={data} />
             </>
           )}
+          {view === 'journal' && <RevenueJournal today={today} filterParams={filterParams} version={data} />}
           {view === 'saison' && data && (
             <>
               <RevenueYoy filterParams={filterParams} taxMode={active.taxMode} version={data} />

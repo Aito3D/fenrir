@@ -82,9 +82,32 @@ def test_labor_costs_each_provider_on_its_working_days_from_its_start_up_to_yest
     # 2026-11-13 is a Friday; 11-14 a Saturday, 11-15 a Sunday, 11-16 a Monday.
     out = labor_by_day([alice, bob], today="2026-11-17", since="2026-11-13")
     assert out == {"2026-11-13": 12000, "2026-11-14": 14400, "2026-11-16": 12000 + 14400}
-    # Today (the 17th) is not worked yet.
+    # Today (the 17th) only counts for the share of the working window gone.
     assert "2026-11-17" not in out
+    assert labor_by_day([alice], today="2026-11-17", since="2026-11-17", today_share=0.5) == {"2026-11-17": 6000}
+    assert labor_by_day([alice], today="2026-11-15", since="2026-11-15", today_share=0.5) == {}  # a Sunday
     assert labor_by_day([{**alice, "since": "2026-12-01"}], today="2026-11-16") == {}
+
+
+def test_fixed_costs_are_spread_over_each_months_days_and_todays_share():
+    from backend.app.services.revenue.production import fixed_by_day
+
+    out = fixed_by_day(93000, today="2026-11-03", since="2026-10-30", today_share=0.5)
+    assert out == {"2026-10-30": 3000, "2026-10-31": 3000, "2026-11-01": 3100, "2026-11-02": 3100, "2026-11-03": 1550}
+    assert "2026-11-03" not in fixed_by_day(93000, today="2026-11-03", since="2026-10-30")
+    assert fixed_by_day(0, today="2026-11-03") == {}
+
+
+def test_day_shares_follow_the_org_clock_to_the_minute():
+    from zoneinfo import ZoneInfo
+
+    from backend.app.services.revenue.config import ORG_TIME_ZONE
+    from backend.app.services.revenue.production import day_shares
+
+    at = lambda h, m=0: datetime(2026, 11, 17, h, m, tzinfo=ZoneInfo(ORG_TIME_ZONE))  # noqa: E731
+    assert day_shares(at(6)) == (0.25, 0.0)
+    assert day_shares(at(12, 30)) == (12.5 / 24, 0.5)
+    assert day_shares(at(20)) == (20 / 24, 1.0)
 
 
 def test_filament_prices_take_the_cheapest_sheet_of_the_material_then_a_named_sheet_then_the_median():

@@ -38,6 +38,18 @@ def test_closed_month_result_takes_every_cost_off_the_revenue():
     }
 
 
+def test_the_buckets_daily_fixed_share_is_not_counted_twice():
+    month = mb("2026-10", 1_000_000, items=300_000)
+    month["costParts"]["fixed"] = 150_000
+    row = build_result([month, mb("2026-11", 0)], [], 150_000, "2026-11-01")["months"][0]
+    assert (row["variable"], row["fixed"], row["result"]) == (300_000, 150_000, 550_000)
+
+
+def test_current_month_fixed_costs_grow_with_the_share_of_today_gone():
+    r = result.build_result([mb("2026-11", 0)], [], 120_000, "2026-11-11", 0, "2024-01-01", 0.5)
+    assert r["months"][0]["fixed"] == 42_000
+
+
 def test_current_month_fixed_costs_count_only_the_days_gone():
     r = build_result([mb("2026-11", 0)], [], 120_000, "2026-11-11")
     assert r["months"][0]["fixed"] == 40_000

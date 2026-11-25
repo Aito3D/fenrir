@@ -1,7 +1,7 @@
 """Monthly operating result and break-even, from the month buckets of the series and the fixed costs typed by hand.
 
-A bucket's `costParts` already holds the item costs, the print log's filament/energy/wear and the labour; labour
-counts as a fixed charge here, everything else as variable.
+A bucket's `costParts` already holds the item costs, the print log's filament/energy/wear, the labour and the daily
+share of the fixed costs; labour and fixed costs are charges here, everything else is variable.
 """
 
 import math
@@ -16,7 +16,7 @@ def _split(bucket: dict) -> tuple[float, float, float]:
     """(revenue HT, variable costs, labour) of a month bucket."""
     parts = bucket.get("costParts") or {}
     labor = parts.get("labor", 0)
-    return bucket["ht"], sum(parts.values()) - labor, labor
+    return bucket["ht"], sum(parts.values()) - labor - parts.get("fixed", 0), labor
 
 
 def _break_even(months: list[dict], day_buckets: list[dict], charges: float, gone: int, total: int) -> dict | None:
@@ -52,12 +52,14 @@ def build_result(
     today: str,
     month_labor: float,
     costs_since: str | None,
+    day_share: float = 0.0,
 ) -> dict:
     """`month_buckets`: oldest first, the last one is today's month; `day_buckets`: that month's days.
 
     `month_labor` is the labour of the whole current month (worked days are not spread evenly, so scaling the days
     gone would swing). `costs_since` is the first day print and labour costs exist: months before it are `partial`,
-    their result would count services at full margin. `coverage` is the share of the HT whose cost is known.
+    their result would count services at full margin. `day_share` is the part of today already gone: fixed costs
+    grow by the minute. `coverage` is the share of the HT whose cost is known.
     """
     year, month = int(today[:4]), int(today[5:7])
     total = days_in_month(year, month)
@@ -65,7 +67,7 @@ def build_result(
     rows = []
     for b in month_buckets:
         ht, variable, labor = _split(b)
-        fixed = fixed_monthly * gone / total if b["key"] == today[:7] else fixed_monthly
+        fixed = fixed_monthly * (gone + day_share) / total if b["key"] == today[:7] else fixed_monthly
         rows.append(
             {
                 "month": b["key"],

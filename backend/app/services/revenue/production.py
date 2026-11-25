@@ -6,6 +6,7 @@ from collections.abc import Iterable
 from dataclasses import dataclass, field
 from datetime import date, datetime, timezone
 from typing import Protocol, cast
+from zoneinfo import ZoneInfo
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncConnection
@@ -14,7 +15,8 @@ from backend.app.models.calculator import CalculatorDefaults, CalculatorFilament
 from backend.app.models.print_log import RUN_OPEN, PrintLogEntry
 from backend.app.models.printer import Printer
 from backend.app.models.settings import Settings
-from backend.app.services.revenue.dates import _org_day_of, add_days, all_days
+from backend.app.services.revenue.config import ORG_TIME_ZONE
+from backend.app.services.revenue.dates import _org_day_of, all_days, days_in_month
 
 # Before July 2026 the print log priced filament at ~25-31 per kg (not XPF), so earlier costs are not usable.
 COSTS_START = "2026-07-01"
@@ -153,17 +155,42 @@ def costs_by_day(
     return ProductionCosts(by_day=by_day, first_day=min(by_day, default=None), hours_by_day=hours)
 
 
-def labor_by_day(providers: Iterable[dict], today: str, since: str = COSTS_START) -> dict[str, float]:
-    """Each provider costs rate × hours on its first `daysPerWeek` weekdays (Monday first), up to yesterday:
-    today is not worked yet, like a month to date counts only the days gone."""
-    end = add_days(today, -1)
+WORK_START_H, WORK_END_H = 8, 17
+
+
+def day_shares(now: datetime) -> tuple[float, float]:
+    """(share of the org day gone, share of its 8h-17h working window gone), to the minute."""
+    local = now.astimezone(ZoneInfo(ORG_TIME_ZONE))
+    hours = local.hour + local.minute / 60
+    return hours / 24, min(max((hours - WORK_START_H) / (WORK_END_H - WORK_START_H), 0.0), 1.0)
+
+
+def labor_by_day(
+    providers: Iterable[dict], today: str, since: str = COSTS_START, today_share: float = 0.0
+) -> dict[str, float]:
+    """Each provider costs rate × hours on its first `daysPerWeek` weekdays (Monday first), up to yesterday, plus
+    `today_share` of today: the part of the working window already gone."""
     by_day: dict[str, float] = {}
     for p in providers:
         start = max(since, p.get("since") or since)
         daily = p["hourlyRate"] * p["hoursPerDay"]
-        for day in all_days(start, end) if start <= end else []:
-            if date.fromisoformat(day).weekday() < p["daysPerWeek"]:
-                by_day[day] = by_day.get(day, 0.0) + daily
+        for day in all_days(start, today) if start <= today else []:
+            cost = daily * (today_share if day == today else 1.0)
+            if cost and date.fromisoformat(day).weekday() < p["daysPerWeek"]:
+                by_day[day] = by_day.get(day, 0.0) + cost
+    return by_day
+
+
+def fixed_by_day(monthly: float, today: str, since: str = COSTS_START, today_share: float = 0.0) -> dict[str, float]:
+    """The monthly fixed charges spread evenly over each month's days: whole days up to yesterday, then
+    `today_share` of today, so they grow by the minute."""
+    if monthly <= 0:
+        return {}
+    by_day = {}
+    for day in all_days(since, today):
+        cost = monthly / days_in_month(int(day[:4]), int(day[5:7])) * (today_share if day == today else 1.0)
+        if cost:
+            by_day[day] = cost
     return by_day
 
 
@@ -204,7 +231,9 @@ def fixed_monthly(costs: Iterable[dict]) -> float:
     return sum((c["monthly"] for c in costs), 0.0)
 
 
-async def read_production_costs(conn: AsyncConnection, today: str) -> ProductionCosts:
+async def read_production_costs(conn: AsyncConnection, today: str, now: datetime | None = None) -> ProductionCosts:
+    """`now` adds today's share of labour and fixed costs; without it today carries neither."""
+    day_share, work_share = day_shares(now) if now else (0.0, 0.0)
     sheets = (await conn.execute(select(CalculatorPrinter))).all()
     # A Core row carries the model's columns as attributes; the checker only sees Row.
     rates = {p.name.casefold(): machine_rate(cast(PrinterSheet, p)) for p in sheets}
@@ -247,6 +276,9 @@ async def read_production_costs(conn: AsyncConnection, today: str) -> Production
         runs.append(Run(started, printer_id, seconds, grams, cost, energy, wear, material))
     costs = costs_by_day(runs, rates_by_printer, tariff, prices)
     by_day = costs.by_day
-    for day, cost in labor_by_day(await read_labor(conn), today).items():
+    for day, cost in labor_by_day(await read_labor(conn), today, today_share=work_share).items():
         _add(by_day, day, {"labor": cost})
+    fixed = fixed_monthly(await read_fixed_costs(conn))
+    for day, cost in fixed_by_day(fixed, today, today_share=day_share).items():
+        _add(by_day, day, {"fixed": cost})
     return ProductionCosts(by_day=by_day, first_day=min(by_day, default=None), hours_by_day=costs.hours_by_day)

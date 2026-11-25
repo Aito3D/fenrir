@@ -13016,6 +13016,8 @@ export default {
       clients: '顧客',
       products: '商品',
       seasonality: '季節性',
+      journal: '売上明細',
+      journalReferences: '品目数',
     },
     state: {
       itemsPending: '商品カタログを待っています…',
@@ -13315,6 +13317,7 @@ export default {
       energy: '電力',
       wear: 'プリンター摩耗',
       labor: '人件費',
+      fixed: '固定費',
       margin: '粗利 HT',
     },
     fixedCosts: {

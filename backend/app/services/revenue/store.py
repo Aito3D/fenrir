@@ -435,8 +435,10 @@ async def revenue_data_stamp(conn: AsyncConnection) -> str:
     ):
         n, at = (await conn.execute(select(func.count(), func.max(col)).select_from(model))).one()
         parts.append(f"{n}@{at or ''}")
-    labor = (await conn.execute(select(Settings.updated_at).where(Settings.key == "revenue_labor"))).scalar()
-    parts.append(f"labor@{labor or ''}")
+    # Both lists feed the daily margin.
+    for key in ("revenue_labor", "revenue_fixed_costs"):
+        at = (await conn.execute(select(Settings.updated_at).where(Settings.key == key))).scalar()
+        parts.append(f"{key}@{at or ''}")
     return "|".join(parts)
 
 

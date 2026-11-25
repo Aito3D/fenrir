@@ -13017,6 +13017,8 @@ export default {
       clients: 'Kunden',
       products: 'Produkte',
       seasonality: 'Saisonalität',
+      journal: 'Verkaufsjournal',
+      journalReferences: 'Artikel',
     },
     state: {
       itemsPending: 'Warte auf den Artikelkatalog…',
@@ -13316,6 +13318,7 @@ export default {
       energy: 'Energie',
       wear: 'Druckerverschleiß',
       labor: 'Personal',
+      fixed: 'Fixkosten',
       margin: 'Bruttomarge HT',
     },
     fixedCosts: {

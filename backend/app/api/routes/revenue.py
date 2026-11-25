@@ -91,6 +91,9 @@ async def _respond(
             stamp += f"|{status}"
         if extra_stamp is not None:
             stamp += f"|{await extra_stamp(conn)}"
+        if flags.margin and (await production.read_fixed_costs(conn) or await production.read_labor(conn)):
+            # Fixed costs and today's labour grow by the minute, and so does the margin.
+            stamp += f"|{now:%H:%M}"
         return await memo.revenue_json(request, flags, stamp, lambda: _timed_build(request, build(conn, now, status)))
 
 
@@ -162,7 +165,7 @@ async def get_revenue(
             today=today,
             history_start=REVENUE_HISTORY_START,
             filters=filters,
-            production=await production.read_production_costs(conn, today) if flags.margin else None,
+            production=await production.read_production_costs(conn, today, now) if flags.margin else None,
         )
         if not series.is_filtered(filters):
             buckets = attach_targets(buckets, granularity, await store.read_targets(conn))
@@ -767,7 +770,7 @@ async def get_result(
 
     async def build(conn, _now, _status):
         ctx = await _context(conn, start, today)
-        costs = await production.read_production_costs(conn, today)
+        costs = await production.read_production_costs(conn, today, now)
 
         def buckets(granularity: str, from_: str) -> list[dict]:
             return series.build_revenue_series(
@@ -786,7 +789,13 @@ async def get_result(
         # The whole month's labour, days still to come included.
         labor = sum(production.labor_by_day(await production.read_labor(conn), next_month, month_start).values())
         return result.build_result(
-            buckets("month", start), buckets("day", month_start), fixed, today, labor, costs.first_day
+            buckets("month", start),
+            buckets("day", month_start),
+            fixed,
+            today,
+            labor,
+            costs.first_day,
+            production.day_shares(now)[0],
         )
 
     return await _respond(request, user, build, now=now, extra_stamp=stamp)

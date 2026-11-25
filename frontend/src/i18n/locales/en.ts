@@ -13073,6 +13073,8 @@ export default {
       clients: 'Customers',
       products: 'Products',
       seasonality: 'Seasonality',
+      journal: 'Sales log',
+      journalReferences: 'Distinct items',
     },
     state: {
       itemsPending: 'Waiting for the item catalogue…',
@@ -13372,6 +13374,7 @@ export default {
       energy: 'Energy',
       wear: 'Printer wear',
       labor: 'Labour',
+      fixed: 'Fixed costs',
       margin: 'Gross margin HT',
     },
     fixedCosts: {

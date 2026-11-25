@@ -170,8 +170,12 @@ Reads: `GET /api/v1/revenue/pipeline` (`revenue:read`):
   `settings`). Type the 3D part only: the Zoho org is shared with the sailing business. Reading takes `view_margin`,
   saving `view_margin` + `manage_targets`, like labour.
 - **Per month** (last 12): `result = HT − variable − labour − fixed`. `variable` is the bucket's item costs plus the
-  print log's filament, energy and wear; `labour` is the labour list. The current month counts fixed costs for the days
-  gone only (up to yesterday), as labour already does.
+  print log's filament, energy and wear; `labour` is the labour list. The current month counts fixed costs up to
+  this minute.
+- **Per day.** A month's fixed costs are spread evenly over its days and grow by the minute during today. Labour
+  weighs on worked days only; today it grows over the 08:00–17:00 window (org time). Both sit in every bucket's
+  `costParts` (`fixed`, `labor`) and so in the margin of the charts and the table, from the print log's first day.
+  Responses to margin viewers are rebuilt at most once a minute while either list is non-empty.
 - **Break-even** of the current month: `(fixed + labour of the full month) ÷ rate`, with
   `rate = (HT − variable) ÷ HT`. Labour of the full month is the labour list over every working day of the month, days
   to come included (scaling the days gone would swing with week-ends). A month with no sale yet borrows the rate of the three closed months before. `breakEven` is `null` when the rate

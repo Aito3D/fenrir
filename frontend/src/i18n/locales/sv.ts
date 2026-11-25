@@ -13074,6 +13074,8 @@ errors: {
       clients: 'Kunder',
       products: 'Produkter',
       seasonality: 'Säsongsmönster',
+      journal: 'Försäljningslogg',
+      journalReferences: 'Artiklar',
     },
     state: {
       itemsPending: 'Väntar på artikelkatalogen…',
@@ -13373,6 +13375,7 @@ errors: {
       energy: 'Energi',
       wear: 'Skrivarslitage',
       labor: 'Personal',
+      fixed: 'Fasta kostnader',
       margin: 'Bruttomarginal HT',
     },
     fixedCosts: {

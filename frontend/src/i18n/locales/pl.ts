@@ -13222,6 +13222,8 @@ export default {
       clients: 'Klienci',
       products: 'Produkty',
       seasonality: 'Sezonowość',
+      journal: 'Dziennik',
+      journalReferences: 'Pozycje',
     },
     state: {
       itemsPending: 'Oczekiwanie na katalog artykułów…',
@@ -13521,6 +13523,7 @@ export default {
       energy: 'Energia',
       wear: 'Zużycie drukarek',
       labor: 'Praca',
+      fixed: 'Koszty stałe',
       margin: 'Marża brutto HT',
     },
     fixedCosts: {

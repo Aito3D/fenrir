@@ -13041,6 +13041,8 @@ export default {
       clients: 'Klanten',
       products: 'Producten',
       seasonality: 'Seizoenspatroon',
+      journal: 'Verkoopjournaal',
+      journalReferences: 'Artikelen',
     },
     state: {
       itemsPending: 'Wachten op de artikelcatalogus…',
@@ -13340,6 +13342,7 @@ export default {
       energy: 'Energie',
       wear: 'Printerslijtage',
       labor: 'Personeel',
+      fixed: 'Vaste kosten',
       margin: 'Brutomarge HT',
     },
     fixedCosts: {

@@ -35,8 +35,8 @@ export interface RevenueBucket {
   costedHt?: number;
   /** Gross margin HT per key, services' print + labour costs shared pro rata of their HT; same stripping as cost. */
   marginSplit?: { nature: Record<string, number>; brand: Record<string, number>; segment?: Record<string, number>; kind: Record<string, number> };
-  /** What `cost` is made of: Zoho item costs (`items`), then the services' filament, energy, wear and labour. */
-  costParts?: Partial<Record<'items' | 'filament' | 'energy' | 'wear' | 'labor', number>>;
+  /** What `cost` is made of: Zoho item costs (`items`), then the services' filament, energy, wear, labour and the share of the fixed costs. */
+  costParts?: Partial<Record<'items' | 'filament' | 'energy' | 'wear' | 'labor' | 'fixed', number>>;
   /** Printer hours of the print log in the bucket (null before the log began); stripped with the margin figures. */
   printHours?: number | null;
   projection: Money | null;

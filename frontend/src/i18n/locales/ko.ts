@@ -12599,6 +12599,8 @@ export default {
       clients: '고객',
       products: '제품',
       seasonality: '계절성',
+      journal: '판매 내역',
+      journalReferences: '품목 수',
     },
     state: {
       itemsPending: '품목 카탈로그를 기다리는 중…',
@@ -12898,6 +12900,7 @@ export default {
       energy: '전력',
       wear: '프린터 마모',
       labor: '인건비',
+      fixed: '고정비',
       margin: '매출총이익 HT',
     },
     fixedCosts: {

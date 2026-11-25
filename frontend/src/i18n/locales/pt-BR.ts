@@ -13002,6 +13002,8 @@ export default {
       clients: 'Clientes',
       products: 'Produtos',
       seasonality: 'Sazonalidade',
+      journal: 'Diário',
+      journalReferences: 'Referências',
     },
     state: {
       itemsPending: 'Aguardando o catálogo de itens…',
@@ -13301,6 +13303,7 @@ export default {
       energy: 'Energia',
       wear: 'Desgaste das impressoras',
       labor: 'Mão de obra',
+      fixed: 'Custos fixos',
       margin: 'Margem bruta HT',
     },
     fixedCosts: {

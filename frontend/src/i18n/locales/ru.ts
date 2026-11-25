@@ -12621,6 +12621,8 @@ export default {
       clients: 'Клиенты',
       products: 'Товары',
       seasonality: 'Сезонность',
+      journal: 'Журнал',
+      journalReferences: 'Позиции',
     },
     state: {
       itemsPending: 'Ожидание каталога товаров…',
@@ -12920,6 +12922,7 @@ export default {
       energy: 'Энергия',
       wear: 'Износ принтеров',
       labor: 'Труд',
+      fixed: 'Постоянные расходы',
       margin: 'Валовая маржа HT',
     },
     fixedCosts: {
