@@ -397,6 +397,7 @@ describe("persisted controls", () => {
       kind: "revenue-kind",
       segment: "revenue-segment",
       view: "revenue-view",
+      journalGroup: "revenue-journal-group",
     });
   });
   it("restores each valid stored value", () => {

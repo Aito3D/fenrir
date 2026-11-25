@@ -230,6 +230,7 @@ export const REVENUE_STORAGE_KEYS = {
   kind: "revenue-kind",
   segment: "revenue-segment",
   view: "revenue-view",
+  journalGroup: "revenue-journal-group",
 } as const;
 
 /** The ids tying a `RevenueSegmented` tab to its panel (fast refresh wants the component file to export components only). */

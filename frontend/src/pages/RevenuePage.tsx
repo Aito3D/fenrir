@@ -578,7 +578,7 @@ export function RevenuePage() {
               <RevenueAnalysis from={data.from} to={data.to} filterParams={filterParams} version={data} />
             </>
           )}
-          {view === 'journal' && <RevenueJournal today={today} filterParams={filterParams} version={data} />}
+          {view === 'journal' && <RevenueJournal today={today} filterParams={filterParams} version={data} taxMode={active.taxMode} canMargin={can.margin} />}
           {view === 'saison' && data && (
             <>
               <RevenueYoy filterParams={filterParams} taxMode={active.taxMode} version={data} />
