@@ -1082,6 +1082,10 @@ class ZohoService:
         """Every sales order's list row (no line items)."""
         return await self._list_all(db, "/salesorders", "salesorders")
 
+    async def list_fixed_assets(self, db: AsyncSession) -> list[dict]:
+        """Every fixed asset's list row: cost, depreciation start, life in months, status, asset type."""
+        return await self._list_all(db, "/fixedassets", "fixedassets")
+
     async def list_estimates(self, db: AsyncSession) -> list[dict]:
         """Every estimate's list row (no line items)."""
         return await self._list_all(db, "/estimates", "estimates")

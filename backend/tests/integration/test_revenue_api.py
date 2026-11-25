@@ -756,9 +756,19 @@ async def test_result_needs_margin_and_carries_twelve_months(async_client, reven
     url = f"{URL}/result"
     assert (await async_client.get(url, headers=tokens["read"])).status_code == 403
     body = (await async_client.get(url, headers=tokens["read_margin"])).json()
-    assert set(body) == {"fixedMonthly", "months", "costsSince", "breakEven"}
+    assert set(body) == {"fixedMonthly", "charges", "months", "costsSince", "breakEven"}
     assert len(body["months"]) == 12
-    assert set(body["months"][0]) == {"month", "ht", "variable", "labor", "fixed", "result", "coverage", "partial"}
+    assert set(body["months"][0]) == {
+        "month",
+        "ht",
+        "variable",
+        "labor",
+        "fixed",
+        "depreciation",
+        "result",
+        "coverage",
+        "partial",
+    }
 
 
 @pytest.mark.asyncio
@@ -842,3 +852,92 @@ async def test_pvm_says_when_the_period_before_falls_outside_the_history(async_c
     assert (body["new"], body["current"]) == (0, 1000)
     month = (await async_client.get(f"{URL}/pvm?from={DAY[:7]}-01&to={DAY}", headers=tokens["read"])).json()
     assert month["comparable"] is True
+
+
+ZOHO_ASSET = {
+    "fixed_asset_id": "a1",
+    "asset_number": "IMMO-1",
+    "asset_name": "H2S01",
+    "fixed_asset_type_name": "Machine 3D",
+    "asset_cost": 360000,
+    "depreciation_start_date": "2026-09-01",
+    "total_life": 36,
+    "status": "active",
+    "created_by": "left out",
+}
+ASSET = {
+    "id": "a1",
+    "number": "IMMO-1",
+    "name": "H2S01",
+    "type": "Machine 3D",
+    "cost": 360000,
+    "start": "2026-09-01",
+    "months": 36,
+    "status": "active",
+}
+
+
+def _zoho_assets(monkeypatch, rows):
+    from backend.app.services.zoho import zoho_service
+
+    async def fake(_db):
+        if isinstance(rows, Exception):
+            raise rows
+        return rows
+
+    monkeypatch.setattr(zoho_service, "list_fixed_assets", fake)
+
+
+@pytest.mark.asyncio
+async def test_depreciation_rights_refresh_and_selection(async_client, revenue_db, tokens, monkeypatch):
+    url = f"{URL}/depreciation"
+    _zoho_assets(monkeypatch, [ZOHO_ASSET])
+    assert (await async_client.get(url, headers=tokens["read"])).status_code == 403
+    empty = {"assets": [], "selected": [], "readAt": None}
+    assert (await async_client.get(url, headers=tokens["read_margin"])).json() == empty
+    for who in ("read_margin", "targets"):
+        assert (await async_client.post(f"{url}/refresh", headers=tokens[who])).status_code == 403
+        assert (await async_client.put(url, json={"selected": []}, headers=tokens[who])).status_code == 403
+    r = await async_client.post(f"{url}/refresh", headers=tokens["labor"])
+    assert r.status_code == 200
+    assert (r.json()["assets"], r.json()["selected"]) == ([ASSET], [])
+    assert r.json()["readAt"]
+    r = await async_client.put(url, json={"selected": ["a1"]}, headers=tokens["labor"])
+    assert r.status_code == 200 and r.json()["selected"] == ["a1"]
+    assert (await async_client.get(url, headers=tokens["labor"])).json() == r.json()
+    assert (await async_client.put(url, json={"selected": ["nope"]}, headers=tokens["labor"])).status_code == 422
+    # An asset deleted in Zoho leaves the selection with the list.
+    _zoho_assets(monkeypatch, [])
+    r = await async_client.post(f"{url}/refresh", headers=tokens["labor"])
+    assert (r.json()["assets"], r.json()["selected"]) == ([], [])
+
+
+@pytest.mark.asyncio
+async def test_refresh_keeps_the_stored_list_when_zoho_fails(async_client, revenue_db, tokens, monkeypatch):
+    from backend.app.services.zoho import ZohoNotConfiguredError, ZohoUnreachable
+
+    url = f"{URL}/depreciation"
+    _zoho_assets(monkeypatch, [ZOHO_ASSET])
+    await async_client.post(f"{url}/refresh", headers=tokens["labor"])
+    stored = (await async_client.put(url, json={"selected": ["a1"]}, headers=tokens["labor"])).json()
+    _zoho_assets(monkeypatch, ZohoUnreachable("https://zoho.example/?token=SECRET"))
+    r = await async_client.post(f"{url}/refresh", headers=tokens["labor"])
+    assert r.status_code == 502 and "SECRET" not in r.text
+    _zoho_assets(monkeypatch, ZohoNotConfiguredError("no credentials"))
+    assert (await async_client.post(f"{url}/refresh", headers=tokens["labor"])).status_code == 409
+    assert (await async_client.get(url, headers=tokens["labor"])).json() == stored
+
+
+@pytest.mark.asyncio
+async def test_result_etag_moves_when_the_depreciation_selection_changes(async_client, revenue_db, tokens, monkeypatch):
+    url = f"{URL}/result"
+    # A life that covers any "today" the test runs on.
+    _zoho_assets(monkeypatch, [{**ZOHO_ASSET, "total_life": 1200}])
+    await async_client.post(f"{URL}/depreciation/refresh", headers=tokens["labor"])
+    etag = (await async_client.get(url, headers=tokens["labor"])).headers["etag"]
+    assert (await async_client.get(url, headers={**tokens["labor"], "If-None-Match": etag})).status_code == 304
+    put = await async_client.put(f"{URL}/depreciation", json={"selected": ["a1"]}, headers=tokens["labor"])
+    assert put.status_code == 200
+    again = await async_client.get(url, headers={**tokens["labor"], "If-None-Match": etag})
+    assert again.status_code == 200 and again.json()["charges"]["depreciation"] == 300
+    assert again.json()["months"][-1]["depreciation"] > 0

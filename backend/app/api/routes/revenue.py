@@ -1,4 +1,5 @@
-"""Revenue dashboard read endpoints. Camel-case plain dicts (loki's shapes); zero Zoho calls."""
+"""Revenue dashboard read endpoints. Camel-case plain dicts (loki's shapes); the only Zoho call is the
+fixed-asset refresh the operator asks for."""
 
 import asyncio
 import logging
@@ -37,6 +38,7 @@ from backend.app.services.revenue.insights import attach_targets, calendar_days,
 from backend.app.services.revenue.scope import ITEM_ID_RE, build_review_list
 from backend.app.services.revenue.series import LineFilters, js_round
 from backend.app.services.revenue.sync_plan import month_window
+from backend.app.services.zoho import ZohoNotConfiguredError, ZohoUpstreamError, zoho_service
 
 router = APIRouter(prefix="/revenue", tags=["revenue"])
 
@@ -91,8 +93,12 @@ async def _respond(
             stamp += f"|{status}"
         if extra_stamp is not None:
             stamp += f"|{await extra_stamp(conn)}"
-        if flags.margin and (await production.read_fixed_costs(conn) or await production.read_labor(conn)):
-            # Fixed costs and today's labour grow by the minute, and so does the margin.
+        if flags.margin and (
+            await production.read_fixed_costs(conn)
+            or await production.read_labor(conn)
+            or production.selected_assets(await production.read_depreciation(conn))
+        ):
+            # Fixed costs, depreciation and today's labour grow by the minute, and so does the margin.
             stamp += f"|{now:%H:%M}"
         return await memo.revenue_json(request, flags, stamp, lambda: _timed_build(request, build(conn, now, status)))
 
@@ -651,6 +657,10 @@ class FixedCostsBody(BaseModel):
     costs: list[FixedCost] = Field(max_length=50)
 
 
+class DepreciationBody(BaseModel):
+    selected: list[str] = Field(max_length=500)
+
+
 class AnnotationBody(BaseModel):
     day: Any = None
     label: Any = None
@@ -765,7 +775,7 @@ async def get_result(
     start = max(f"{cash.last_months(today, 12)[0]}-01", REVENUE_HISTORY_START)
 
     async def stamp(conn) -> str:
-        keys = (production.FIXED_COSTS_KEY, production.LABOR_KEY)
+        keys = (production.FIXED_COSTS_KEY, production.LABOR_KEY, production.DEPRECIATION_KEY)
         return "|".join([str(await store.get_setting(conn, k)) for k in keys])
 
     async def build(conn, _now, _status):
@@ -788,6 +798,7 @@ async def get_result(
         next_month = add_days(month_start, days_in_month(int(today[:4]), int(today[5:7])))
         # The whole month's labour, days still to come included.
         labor = sum(production.labor_by_day(await production.read_labor(conn), next_month, month_start).values())
+        assets = production.selected_assets(await production.read_depreciation(conn))
         return result.build_result(
             buckets("month", start),
             buckets("day", month_start),
@@ -796,6 +807,7 @@ async def get_result(
             labor,
             costs.first_day,
             production.day_shares(now)[0],
+            sum(production.depreciation_by_day(assets, next_month, month_start).values()),
         )
 
     return await _respond(request, user, build, now=now, extra_stamp=stamp)
@@ -822,6 +834,68 @@ async def put_fixed_costs(
         raise _unprocessable("label must not be blank")
     async with _writer()() as db:
         return {"costs": await production.save_fixed_costs(db, costs)}
+
+
+@router.get("/depreciation")
+async def get_depreciation(
+    user: User | None = RequirePermissionIfAuthEnabled(Permission.REVENUE_READ, Permission.REVENUE_VIEW_MARGIN),
+):
+    async with store.snapshot() as conn:
+        return await production.read_depreciation(conn)
+
+
+# Same rights as the fixed costs: charges are margin data.
+_MANAGE_CHARGES = (Permission.REVENUE_VIEW_MARGIN, Permission.REVENUE_MANAGE_TARGETS)
+
+
+@router.post("/depreciation/refresh")
+async def refresh_depreciation(user: User | None = RequirePermissionIfAuthEnabled(*_MANAGE_CHARGES)):
+    """Re-read Zoho's fixed assets. Zoho is asked first: a failure leaves the stored list and selection as they are."""
+    async with _writer()() as db:
+        try:
+            rows = await zoho_service.list_fixed_assets(db)
+        except ZohoNotConfiguredError:
+            raise HTTPException(status_code=409, detail="Zoho is not configured") from None
+        except ZohoUpstreamError as e:
+            # The upstream message can carry a URL with credentials: only its kind is logged or returned.
+            logger.warning("Fixed-asset refresh failed: %s", type(e).__name__)
+            raise HTTPException(status_code=502, detail="Zoho could not be read") from None
+        assets = [
+            {
+                "id": str(r.get("fixed_asset_id") or ""),
+                "number": r.get("asset_number") or "",
+                "name": r.get("asset_name") or "",
+                "type": r.get("fixed_asset_type_name") or "",
+                "cost": r.get("asset_cost"),
+                "start": r.get("depreciation_start_date") or None,
+                "months": r.get("total_life"),
+                "status": r.get("status") or "",
+            }
+            for r in rows
+        ]
+        async with store.snapshot() as conn:
+            before = await production.read_depreciation(conn)
+        ids = {a["id"] for a in assets}
+        return await production.save_depreciation(
+            db,
+            {
+                "assets": assets,
+                "selected": [i for i in before["selected"] if i in ids],
+                "readAt": datetime.now(timezone.utc).isoformat(),
+            },
+        )
+
+
+@router.put("/depreciation")
+async def put_depreciation(
+    body: DepreciationBody, user: User | None = RequirePermissionIfAuthEnabled(*_MANAGE_CHARGES)
+):
+    async with store.snapshot() as conn:
+        dep = await production.read_depreciation(conn)
+    if not set(body.selected) <= {a["id"] for a in dep["assets"]}:
+        raise _unprocessable("selected must be asset ids of the stored list")
+    async with _writer()() as db:
+        return await production.save_depreciation(db, {**dep, "selected": list(dict.fromkeys(body.selected))})
 
 
 @router.post("/annotations", status_code=201)

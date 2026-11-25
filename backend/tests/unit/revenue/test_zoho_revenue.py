@@ -152,3 +152,19 @@ async def test_get_customer_payment_and_unpaid_invoice_listing(async_client, db_
     q = seen[1].url.params
     assert seen[1].url.path == "/books/v3/invoices"
     assert (q["status"], q["page"], q["per_page"]) == ("overdue", "2", "200")
+
+
+@pytest.mark.asyncio
+async def test_list_fixed_assets_reads_the_whole_listing(async_client, db_session):
+    await _configure(async_client)
+    seen: list[httpx.Request] = []
+    rows = [{"fixed_asset_id": "a1", "asset_name": "H2S01", "asset_cost": 360000}]
+
+    def handler(request):
+        seen.append(request)
+        return httpx.Response(200, json={"fixedassets": rows, "page_context": {"has_more_page": False}})
+
+    zoho_service.transport = _books(handler)
+    assert await zoho_service.list_fixed_assets(db_session) == rows
+    assert seen[0].url.path == "/books/v3/fixedassets"
+    assert seen[0].url.params["per_page"] == "200"
