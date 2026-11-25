@@ -201,7 +201,6 @@ function modeOf(tally: Map<number, number>): number | undefined {
 function readAxis(line: string, axis: string): number | undefined {
   const at = line.indexOf(axis);
   if (at < 0) return undefined;
-  // Guard against matching inside a comment or a word ("; X marks").
   const value = Number.parseFloat(line.slice(at + 1));
   return Number.isFinite(value) ? value : undefined;
 }
@@ -221,7 +220,12 @@ export function parseGcodeToolpath(gcode: string, onProgress?: (share: number) =
   let y = 0;
   let z = 0;
   let e = 0;
+  let relativePosition = false;
   let relativeExtrusion = false;
+  const endpoint = (value: number | undefined, current: number) => {
+    if (value === undefined) return current;
+    return relativePosition ? current + value : value;
+  };
   let feature: number = ToolpathType.wall;
   let width = 0;
   // Tally of observed widths. The *typical* one is wanted, not the largest: a
@@ -311,7 +315,7 @@ export function parseGcodeToolpath(gcode: string, onProgress?: (share: number) =
   for (let lineNo = 0; lineNo < lines.length; lineNo += 1) {
     if (onProgress && lineNo % reportEvery === 0 && lineNo > 0) onProgress(lineNo / lines.length);
     const rawLine = lines[lineNo];
-    const line = rawLine.trim();
+    let line = rawLine.trim();
     if (line.length === 0) continue;
 
     if (line.charCodeAt(0) === 59 /* ; */) {
@@ -349,6 +353,13 @@ export function parseGcodeToolpath(gcode: string, onProgress?: (share: number) =
       continue;
     }
 
+    const comment = line.indexOf(';');
+    if (comment >= 0) line = line.slice(0, comment).trimEnd();
+
+    if (line === 'G90' || line === 'G91') {
+      relativePosition = line === 'G91';
+      continue;
+    }
     if (line.startsWith('M73')) {
       const r = readAxis(line, 'R');
       if (r !== undefined && Number.isFinite(r)) remainingSec = Math.round(r * 60);
@@ -383,9 +394,9 @@ export function parseGcodeToolpath(gcode: string, onProgress?: (share: number) =
     if (isArc && !/^G[23](\s|$)/.test(line)) continue;
     if (isLinear && !/^G[01](\s|$)/.test(line)) continue;
 
-    const nx = readAxis(line, 'X') ?? x;
-    const ny = readAxis(line, 'Y') ?? y;
-    const nz = readAxis(line, 'Z') ?? z;
+    const nx = endpoint(readAxis(line, 'X'), x);
+    const ny = endpoint(readAxis(line, 'Y'), y);
+    const nz = endpoint(readAxis(line, 'Z'), z);
     const rawE = readAxis(line, 'E');
     const rawF = readAxis(line, 'F');
     if (rawF !== undefined && rawF > 0) feed = rawF;
@@ -435,13 +446,14 @@ export function parseGcodeToolpath(gcode: string, onProgress?: (share: number) =
 
         const arcLength = Math.hypot(Math.abs(sweep) * radius, nz - z);
         const ePerMm = extruding && arcLength > 0 ? extruded / arcLength : 0;
+        const startZ = z;
         for (let step = 1; step <= steps; step += 1) {
           const fraction = step / steps;
           const angle = startAngle + sweep * fraction;
           emit(
             cx + radius * Math.cos(angle),
             cy + radius * Math.sin(angle),
-            z + (nz - z) * fraction,
+            startZ + (nz - startZ) * fraction,
             extruding,
             ePerMm,
           );
@@ -486,7 +498,7 @@ export function layersByFilament(layers: ToolpathLayer[]): ToolpathLayer[] {
     for (let i = 0; i < paths.length; i += RECORD_STRIDE) {
       if (paths[i + 3] !== ToolpathType.travel) {
         // +1 so filament 0 does not collide with the travel index.
-        paths[i + 3] = Math.min(paths[i + 7] + 1, MAX_TOOL);
+        paths[i + 3] = paths[i + 7] + 1;
       }
     }
     return { ...layer, paths };

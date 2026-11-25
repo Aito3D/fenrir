@@ -350,20 +350,9 @@ function buildObjectGroup(parsed: Parsed3MFData, selectedPlateId: number | null,
     let extruder = object.defaultExtruder;
     for (const meshData of object.meshes) {
       extruder = item?.extruder ?? meshData.extruder;
-      let vertices = meshData.vertices;
-      if (item) {
-        vertices = [];
-        const v = new THREE.Vector3();
-        for (let k = 0; k < meshData.vertices.length; k += 3) {
-          v.set(meshData.vertices[k], meshData.vertices[k + 1], meshData.vertices[k + 2]).applyMatrix4(item.transform);
-          vertices.push(v.x, v.y, v.z);
-        }
-      }
-      const geometry = createGeometryFromMesh({ vertices, triangles: meshData.triangles, extruder });
-      // The shared loader swaps printer Y and Z (a reflection); mirroring Z turns that into the
-      // slicer frame (x, z, -y) — a proper rotation, so winding and normals come out outward.
-      geometry.scale(1, 1, -1);
-      geometry.computeVertexNormals();
+      // The shared loader bakes the build (and component) transform and turns the printer
+      // frame into the slicer frame (x, z, -y), a proper rotation: winding and normals stay outward.
+      const geometry = createGeometryFromMesh({ ...meshData, extruder }, item?.transform);
       const mesh = new THREE.Mesh(geometry, material(colors[extruder] || '#00ae42'));
       mesh.castShadow = true;
       objectGroup.add(mesh);

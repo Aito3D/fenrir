@@ -184,6 +184,8 @@ import { HeaterHistoryModal } from '../components/HeaterHistoryModal';
 import type { HeaterSensorKind } from '../api/client';
 import { FilamentHoverCard, EmptySlotHoverCard } from '../components/FilamentHoverCard';
 import { AssignSpoolModal } from '../components/AssignSpoolModal';
+import { hasRfidTag, type RfidTag } from '../utils/rfidTagLink';
+import { LinkTagModal, type LinkTagTarget } from '../components/LinkTagModal';
 import { ConfigureAmsSlotModal } from '../components/ConfigureAmsSlotModal';
 import { useToast } from '../contexts/ToastContext';
 import { usePrinterFocus } from '../hooks/usePrinterFocus';
@@ -2253,6 +2255,7 @@ function PrinterCard({
   amsThresholds,
   spoolmanEnabled = false,
   spoolmanModeOn = false,
+  rfidActionsReady = false,
   linkedSpools,
   spoolmanUrl,
   onGetAssignment,
@@ -2295,6 +2298,7 @@ function PrinterCard({
   spoolmanEnabled?: boolean;
   /** Spoolman mode is on, connected or not: the built-in slot rows don't apply (#3430). */
   spoolmanModeOn?: boolean;
+  rfidActionsReady?: boolean;
   linkedSpools?: Record<string, LinkedSpoolInfo>;
   spoolmanUrl?: string | null;
   onGetAssignment?: (printerId: number, amsId: number, trayId: number) => SpoolAssignment | undefined;
@@ -2457,6 +2461,33 @@ function PrinterCard({
     trayId: number;
     trayInfo: { type: string; color: string; location: string; material?: string; profile?: string; emptyKind?: 'physical' | 'reset' | null };
   } | null>(null);
+  // Linking an RFID slot's tag to a spool, or moving it to the right one (#3658).
+  const [linkTagTarget, setLinkTagTarget] = useState<LinkTagTarget | null>(null);
+  // The slot card's tag actions for a slot the AMS read an RFID tag in, in
+  // built-in inventory: link the tag when no spool is assigned (the
+  // unknown-tag prompt was missed or dismissed), or move it when the assigned
+  // spool got it from an automatic match.
+  const rfidTagActions = (
+    assignment: SpoolAssignment | undefined,
+    tray: (RfidTag & { tray_type?: string | null; tray_color?: string | null }) | null | undefined,
+    amsId: number,
+    trayId: number,
+    slotLabel: string,
+  ): { onLinkExistingSpool?: () => void; onMoveTag?: () => void } => {
+    if (!rfidActionsReady || !tray || !hasRfidTag(tray)) return {};
+    const target: LinkTagTarget = {
+      tag: tray,
+      slot: { printerId: printer.id, amsId, trayId },
+      location: `${printer.name} • ${slotLabel}`,
+      material: tray.tray_type ?? null,
+      colorHex: tray.tray_color ?? null,
+    };
+    if (!assignment) return { onLinkExistingSpool: () => setLinkTagTarget(target) };
+    if (assignment.spool?.data_origin === 'rfid_linked') {
+      return { onMoveTag: () => setLinkTagTarget({ ...target, holder: assignment.spool }) };
+    }
+    return {};
+  };
   const [configureSlotModal, setConfigureSlotModal] = useState<{
     amsId: number;
     trayId: number;
@@ -6123,6 +6154,7 @@ function PrinterCard({
                                               },
                                             }),
                                             onUnassignSpool: (assignment && !isBambuLabSpool(tray)) ? () => onUnassignSpool?.(printer.id, ams.id, slotIdx) : undefined,
+                                            ...rfidTagActions(assignment, tray, ams.id, slotIdx, t('configureAmsSlot.slotLabel', { ams: cardLabel, slot: slotIdx + 1 })),
                                             isAssigned: !!assignment || isBambuLabSpool(tray),
                                           };
                                         })()}
@@ -6540,6 +6572,7 @@ function PrinterCard({
                                           },
                                         }),
                                         onUnassignSpool: (assignment && !isBambuLabSpool(tray)) ? () => onUnassignSpool?.(printer.id, ams.id, htSlotId) : undefined,
+                                        ...rfidTagActions(assignment, tray, ams.id, htSlotId, getAmsLabel(ams.id)),
                                         isAssigned: !!assignment || isBambuLabSpool(tray),
                                       };
                                     })()}
@@ -6856,6 +6889,7 @@ function PrinterCard({
                                             },
                                           }),
                                           onUnassignSpool: (assignment && !isBambuLabSpool(extTray)) ? () => onUnassignSpool?.(printer.id, 255, slotTrayId) : undefined,
+                                          ...rfidTagActions(assignment, extTray, 255, slotTrayId, extLabel || t('printers.external')),
                                           isAssigned: !!assignment || isBambuLabSpool(extTray),
                                         };
                                       })()}
@@ -7696,6 +7730,8 @@ function PrinterCard({
           spoolmanEnabled={!!spoolmanEnabled}
         />
       )}
+
+      {linkTagTarget && <LinkTagModal target={linkTagTarget} onClose={() => setLinkTagTarget(null)} />}
 
       {/* Configure AMS Slot Modal */}
       {configureSlotModal && (
@@ -9691,12 +9727,17 @@ export function PrintersPage() {
   const linkedSpools = linkedSpoolsData?.linked;
 
   // Fetch spool assignments for inventory feature
-  const { data: spoolAssignments } = useQuery({
+  const { data: inventorySettings } = useUiSettings();
+  const { data: spoolAssignments, isSuccess: assignmentsReady } = useQuery({
     queryKey: ['spool-assignments'],
     queryFn: () => api.getAssignments(),
     enabled: hasPermission('inventory:view_assignments'),
     staleTime: 30 * 1000,
   });
+
+  const rfidActionsReady = inventorySettings?.spoolman_enabled === false && !spoolmanStatus?.enabled &&
+    assignmentsReady && hasPermission('inventory:view_assignments') && hasPermission('inventory:read') &&
+    hasPermission('inventory:update');
 
   const unassignMutation = useMutation({
     mutationFn: ({ printerId, amsId, trayId }: { printerId: number; amsId: number; trayId: number }) =>
@@ -10794,6 +10835,7 @@ export function PrintersPage() {
                   } : undefined}
                   spoolmanEnabled={spoolmanEnabled}
                   spoolmanModeOn={!!spoolmanStatus?.enabled}
+                  rfidActionsReady={rfidActionsReady}
                   linkedSpools={linkedSpools}
                   spoolmanUrl={spoolmanStatus?.url}
                   onGetAssignment={getAssignment}

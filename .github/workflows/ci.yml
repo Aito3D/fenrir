@@ -114,10 +114,10 @@ jobs:
         run: pip install "$(grep -E '^ruff==' requirements-dev.txt)"
 
       - name: Run ruff check
-        run: ruff check backend/
+        run: ruff check backend/ spoolbuddy/
 
       - name: Run ruff format check
-        run: ruff format --check backend/
+        run: ruff format --check backend/ spoolbuddy/
 
       # Was its own Security job; folded in to stay under the Free plan's
       # 20 concurrent jobs. Still advisory (step-level continue-on-error).

@@ -1407,7 +1407,21 @@ export function PrintModal({
     // keeps it while its slot stays on the tray it was saved with, whatever
     // that tray holds now (it may have been reloaded since). Everything else
     // keeps the filament the dialog asks for.
+    //
+    // With several printers each one has its own editor, and a tray picked
+    // there is that printer's choice just the same (#3711): a job queued
+    // forced (a VP with "Force color match") and sent to three printers with
+    // a spool picked on each kept the sliced colour, and the scheduler then
+    // threw the picks away waiting for it. Only slots the user picked count,
+    // not the trays auto-configure filled in. Several plates on several
+    // printers carry no mapping at all, so nothing was picked there.
     const chosenTray = (printerId: number, plateId: number | null, slotId: number): number | undefined => {
+      if (selectedPrinters.length > 1) {
+        if (isMultiPlateSelection) return undefined;
+        const config = perPrinterConfigs[printerId];
+        if (!config || config.useDefault || !config.pickedSlots?.includes(slotId)) return undefined;
+        return config.manualMappings[slotId];
+      }
       if (selectedPrinters.length !== 1) return undefined;
       const picks = isMultiPlateSelection
         ? plateId != null ? manualMappingsByPlate[plateId] : undefined
@@ -2223,13 +2237,18 @@ export function PrintModal({
         {...shared}
         filamentReqs={mappingFilamentReqs}
         manualMappings={inForce}
-        onManualMappingChange={(next) =>
+        onManualMappingChange={(next) => {
+          // #3711: a slot whose tray changed here is this printer's pick; the
+          // trays auto-configure filled in are not.
+          const was = config && !config.useDefault ? config.pickedSlots ?? [] : [];
+          const changed = Object.keys(next).map(Number).filter((id) => next[id] !== inForce[id]);
           multiPrinterMapping.updatePrinterConfig(printerId, {
             useDefault: false,
             manualMappings: next,
             autoConfigured: false,
-          })
-        }
+            pickedSlots: [...was.filter((id) => next[id] === inForce[id]), ...changed],
+          });
+        }}
         defaultExpanded={settings?.per_printer_mapping_expanded ?? false}
         // Rack positions are one shared choice today, so read-only here.
         nozzleRackChoice={nozzleRackChoice}

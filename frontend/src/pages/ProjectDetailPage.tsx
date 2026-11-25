@@ -22,6 +22,7 @@ import {
   Copy,
   FolderKanban,
   Download,
+  Tag,
   Info,
 } from 'lucide-react';
 import { api } from '../api/client';
@@ -32,6 +33,7 @@ import { Button } from '../components/Button';
 import { useToast } from '../contexts/ToastContext';
 import { useAuth } from '../contexts/AuthContext';
 import { RichTextEditor } from '../components/RichTextEditor';
+import { LabelTemplatePickerModal } from '../components/LabelTemplatePickerModal';
 import { PrintModal } from '../components/PrintModal';
 
 // Project edit modal (reused from ProjectsPage)
@@ -156,6 +158,7 @@ export function ProjectDetailPage() {
   const { hasPermission } = useAuth();
   const [showEditModal, setShowEditModal] = useState(false);
   const [headerEditing, setHeaderEditing] = useState(false);
+  const [showLabelModal, setShowLabelModal] = useState(false);
   const [editingNotes, setEditingNotes] = useState(false);
   const [notesContent, setNotesContent] = useState('');
   const [printFile, setPrintFile] = useState<LibraryFileListItem | null>(null);
@@ -390,6 +393,17 @@ export function ProjectDetailPage() {
               {t('projectDetail.export')}
             </Button>
             <Button
+              variant="secondary"
+              className="flex-1 sm:flex-none"
+              data-testid="project-print-label"
+              onClick={() => setShowLabelModal(true)}
+              disabled={!hasPermission('projects:read')}
+              title={t('projectDetail.labels.buttonTitle', 'Print a label for the bag or box of finished parts')}
+            >
+              <Tag className="w-4 h-4 mr-2" />
+              {t('projectDetail.labels.button', 'Label')}
+            </Button>
+            <Button
               className="flex-1 sm:flex-none"
               onClick={() => setShowEditModal(true)}
               disabled={!canUpdate}
@@ -570,6 +584,13 @@ export function ProjectDetailPage() {
           isLoading={updateMutation.isPending}
         />
       )}
+
+      {/* Bag label for the finished parts (#3655) */}
+      <LabelTemplatePickerModal
+        isOpen={showLabelModal}
+        onClose={() => setShowLabelModal(false)}
+        project={{ id: project.id, name: project.name, color: project.color }}
+      />
 
       {/* Print from project */}
       {printFile && (

@@ -69,6 +69,7 @@ export type StepMeshData = StepWorkerMesh;
 export interface MeshData {
   vertices: number[];
   triangles: number[];
+  componentTransform?: THREE.Matrix4;
   extruder: number; // Per-mesh extruder index for coloring
 }
 
@@ -137,9 +138,6 @@ function parseTransform3MF(transformStr: string | null): THREE.Matrix4 {
   }
   return matrix;
 }
-
-// Alias for backwards compatibility
-const parseTransform = parseTransform3MF;
 
 async function parseMeshFromDoc(doc: Document, defaultExtruder: number = 0): Promise<MeshData[]> {
   const meshes: MeshData[] = [];
@@ -477,23 +475,9 @@ export async function parse3MF(arrayBuffer: ArrayBuffer): Promise<Parsed3MFData>
 
           const extMeshes = await parseMeshFromDoc(extDoc, compExtruder);
 
-          // Apply component transform if present
-          const compTransformStr = compEl.getAttribute('transform');
-          const compTransform = parseTransform(compTransformStr);
-
+          const componentTransform = parseTransform3MF(compEl.getAttribute('transform'));
           for (const mesh of extMeshes) {
-            if (compTransformStr) {
-              // Apply transform to vertices (in 3MF coordinate space, before Y/Z swap)
-              const transformedVertices: number[] = [];
-              for (let k = 0; k < mesh.vertices.length; k += 3) {
-                const v = new THREE.Vector3(mesh.vertices[k], mesh.vertices[k + 1], mesh.vertices[k + 2]);
-                v.applyMatrix4(compTransform);
-                transformedVertices.push(v.x, v.y, v.z);
-              }
-              meshes.push({ vertices: transformedVertices, triangles: mesh.triangles, extruder: mesh.extruder });
-            } else {
-              meshes.push(mesh);
-            }
+            meshes.push({ ...mesh, componentTransform });
           }
         }
       }
@@ -513,7 +497,7 @@ export async function parse3MF(arrayBuffer: ArrayBuffer): Promise<Parsed3MFData>
       const objectId = itemEl.getAttribute('objectid');
       if (!objectId) continue;
 
-      const transform = parseTransform(itemEl.getAttribute('transform'));
+      const transform = parseTransform3MF(itemEl.getAttribute('transform'));
       const itemPlateId = parsePlateIdFromAttributes(itemEl);
       const objectPlateId = objects.get(objectId)?.plateId ?? null;
       const objectName = objectNameById.get(objectId);
@@ -525,20 +509,34 @@ export async function parse3MF(arrayBuffer: ArrayBuffer): Promise<Parsed3MFData>
   return { objects, buildItems, plateBounds, plateOffsets };
 }
 
-export function createGeometryFromMesh(mesh: MeshData): THREE.BufferGeometry {
+export function createGeometryFromMesh(mesh: MeshData, buildTransform?: THREE.Matrix4): THREE.BufferGeometry {
   const geometry = new THREE.BufferGeometry();
+  const transform = new THREE.Matrix4();
+  if (buildTransform) transform.copy(buildTransform);
+  if (mesh.componentTransform) transform.multiply(mesh.componentTransform);
 
-  // Convert from 3MF Z-up to Three.js Y-up coordinate system
-  // 3MF: X right, Y back, Z up -> Three.js: X right, Y up, Z forward
   const positions = new Float32Array(mesh.vertices.length);
+  const vertex = new THREE.Vector3();
   for (let i = 0; i < mesh.vertices.length; i += 3) {
-    positions[i] = mesh.vertices[i];       // X stays X
-    positions[i + 1] = mesh.vertices[i + 2]; // Y becomes Z (up)
-    positions[i + 2] = mesh.vertices[i + 1]; // Z becomes Y
+    vertex.fromArray(mesh.vertices, i).applyMatrix4(transform);
+    // Rotate -90° about X: printer +Z is up and printer +Y points away.
+    positions[i] = vertex.x;
+    positions[i + 1] = vertex.z;
+    positions[i + 2] = -vertex.y;
   }
 
   geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
   geometry.setIndex(mesh.triangles);
+  // The instance transform is baked into the vertices, so Three.js cannot
+  // switch front-face winding itself for a mirrored build item or component.
+  if (transform.determinant() < 0) {
+    const index = geometry.getIndex()!;
+    for (let i = 0; i < index.count; i += 3) {
+      const second = index.getX(i + 1);
+      index.setX(i + 1, index.getX(i + 2));
+      index.setX(i + 2, second);
+    }
+  }
 
   // Compute normals
   geometry.computeVertexNormals();
@@ -608,23 +606,7 @@ export function buildModelGroup(
         // Use mesh's extruder, or item override, or object default
         const extruder = item.extruder ?? meshData.extruder;
 
-        // Apply build transform to vertices in 3MF space BEFORE coordinate conversion
-        const transformedVertices: number[] = [];
-        for (let k = 0; k < meshData.vertices.length; k += 3) {
-          const v = new THREE.Vector3(
-            meshData.vertices[k],
-            meshData.vertices[k + 1],
-            meshData.vertices[k + 2]
-          );
-          v.applyMatrix4(item.transform);
-          transformedVertices.push(v.x, v.y, v.z);
-        }
-        // Now create geometry with coordinate conversion
-        const geometry = createGeometryFromMesh({
-          vertices: transformedVertices,
-          triangles: meshData.triangles,
-          extruder: extruder,
-        });
+        const geometry = createGeometryFromMesh(meshData, item.transform);
 
         if (!geometriesByExtruder.has(extruder)) {
           geometriesByExtruder.set(extruder, []);

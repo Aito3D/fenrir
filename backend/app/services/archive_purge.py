@@ -2,8 +2,9 @@
 
 Age-based hard-delete of print archives. Unlike the library trash flow there is
 no soft-delete intermediate — archives are historical print records, so the
-"undo" window the library bin provides doesn't apply here. A user who wants to
-keep an archive should download or favourite it before the purge window elapses.
+"undo" window the library bin provides doesn't apply here. A favourite archive
+is never purged (#3700); a user who wants to keep any other should download or
+favourite it before the purge window elapses.
 
 The sweeper runs on the same 15-minute cadence as the library trash sweeper but
 throttles actual purge runs to once per 24h. Admins can also trigger a manual
@@ -99,6 +100,11 @@ def _eligible_clause(cutoff: datetime, purge_stats: bool):
         # promotion to hard-delete when the user opts in.
         clause = and_(clause, PrintArchive.deleted_at.is_(None))
     return clause
+
+
+def _kept_favourites(cutoff: datetime):
+    """Favourites past the cutoff, which the purge leaves alone."""
+    return (_last_activity_expr() < cutoff) & (PrintArchive.is_favorite == True)  # noqa: E712
 
 
 class ArchivePurgeService:
@@ -236,6 +242,7 @@ class ArchivePurgeService:
                 "total_bytes": 0,
                 "sample_filenames": [],
                 "older_than_days": older_than_days,
+                "favorites_kept": 0,
             }
         now = datetime.now(timezone.utc)
         cutoff = _age_cutoff(now, older_than_days)
@@ -244,6 +251,9 @@ class ArchivePurgeService:
         count_stmt = select(func.count(PrintArchive.id)).where(clause)
         size_stmt = select(func.coalesce(func.sum(PrintArchive.file_size), 0)).where(clause)
         sample_stmt = select(PrintArchive.filename).where(clause).order_by(_last_activity_expr()).limit(sample_limit)
+        kept_stmt = select(func.count(PrintArchive.id)).where(_kept_favourites(cutoff))
+        if not purge_stats:
+            kept_stmt = kept_stmt.where(PrintArchive.deleted_at.is_(None))
 
         count_result = await db.execute(count_stmt)
         count = int(count_result.scalar() or 0)
@@ -254,11 +264,14 @@ class ArchivePurgeService:
         sample_result = await db.execute(sample_stmt)
         samples = [row[0] for row in sample_result.all()]
 
+        favorites_kept = int((await db.execute(kept_stmt)).scalar() or 0)
+
         return {
             "count": count,
             "total_bytes": total_bytes,
             "sample_filenames": samples,
             "older_than_days": older_than_days,
+            "favorites_kept": favorites_kept,
         }
 
     async def purge_older_than(
@@ -268,7 +281,7 @@ class ArchivePurgeService:
         *,
         purge_stats: bool = False,
     ) -> int:
-        """Bulk-delete archives older than ``older_than_days``. Returns count.
+        """Bulk-delete archives older than ``older_than_days``, except favourites. Returns count.
 
         Two modes, parameter-controlled (#1390):
 

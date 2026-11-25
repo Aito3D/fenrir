@@ -5,6 +5,7 @@ import logging
 import os
 import shutil
 import sqlite3
+import tempfile
 import zipfile
 from datetime import datetime
 from pathlib import Path
@@ -1118,47 +1119,57 @@ def _copy_sqlite_database(src: Path, dest: Path) -> None:
 _BACKUP_SKIP = {"archive": {"temp"}}
 
 
-def _copy_backup_dirs(dirs_to_backup: list[tuple[str, Path]], temp_path: Path) -> list[str]:
-    """Copy the data directories into the backup staging folder (worker thread).
+def _copy_backup_file(source: str, destination: str) -> str:
+    try:
+        return shutil.copy2(source, destination)
+    except OSError:
+        # A failed copy may already have written part of the file. Discard
+        # it before copytree applies the source folder's (possibly read-only) mode.
+        Path(destination).unlink(missing_ok=True)
+        raise
 
-    Returns what could not be copied, as paths inside the backup. The app goes
-    on writing during the copy. A file it deleted meanwhile is simply gone and
-    was never part of the data; a file that is still there but could not be
-    copied is missing from the backup, which is then still made but must not
-    pass for complete.
-    """
-    import shutil
 
+def _copy_backup_dirs(dirs_to_backup: list[tuple[str, Path]], temp_path: Path) -> tuple[list[str], list[str]]:
+    """Stage the data directories. Return the directories captured in full and any missing paths."""
+    captured_dirs: list[str] = []
     copy_warnings: list[str] = []
     for name, src_dir in dirs_to_backup:
-        if src_dir.exists() and any(src_dir.iterdir()):
-            skip = _BACKUP_SKIP.get(name, set())
+        skip = _BACKUP_SKIP.get(name, set())
 
-            def ignore(directory: str, entries: list[str], src_dir: Path = src_dir, skip: set[str] = skip) -> set[str]:
-                # Only directly below the backed-up directory: a folder named
-                # "temp" deeper down is user data like any other.
-                return skip.intersection(entries) if Path(directory) == src_dir else set()
+        def ignore(directory: str, entries: list[str], src_dir: Path = src_dir, skip: set[str] = skip) -> set[str]:
+            # Only directly below the backed-up directory: a folder named
+            # "temp" deeper down is user data like any other.
+            return skip.intersection(entries) if Path(directory) == src_dir else set()
 
-            try:
-                shutil.copytree(
-                    src_dir, temp_path / name, ignore=ignore
-                )  # SEC-PATH-OK: name iterates the dirs_to_backup tuple of constant strings ("archive", "virtual_printer", ...)
-            except shutil.Error as e:
-                # One (source, destination, reason) per file.
-                missing = [
-                    f"{name}/{Path(source).relative_to(src_dir).as_posix()}"
-                    for source, _dest, _why in e.args[0]
-                    if Path(source).exists()
-                ]
-                if missing:
-                    logger.warning("Some files in %s could not be copied: %s", name, e)
-                else:
-                    logger.debug("Files in %s were deleted during the backup copy: %s", name, e)
+        try:
+            shutil.copytree(
+                src_dir, temp_path / name, ignore=ignore, copy_function=_copy_backup_file
+            )  # SEC-PATH-OK: name iterates the dirs_to_backup tuple of constant strings ("archive", "virtual_printer", ...)
+        except FileNotFoundError:
+            continue
+        except PermissionError as e:
+            logger.warning("Permission denied copying %s: %s", name, e)
+            copy_warnings.append(f"{name}/")
+            continue
+        except shutil.Error as e:
+            # copytree collects errors below the root. Only a file the app
+            # actually removed during the copy can be absent from a complete snapshot.
+            missing = []
+            for source, _dest, _why in e.args[0]:
+                try:
+                    Path(source).lstat()
+                except FileNotFoundError:
+                    continue
+                except OSError:
+                    pass  # A path we cannot inspect still counts as missing from the backup.
+                missing.append(f"{name}/{Path(source).relative_to(src_dir).as_posix()}")
+            if missing:
+                logger.warning("Some files in %s could not be copied: %s", name, e)
                 copy_warnings.extend(missing)
-            except PermissionError as e:
-                logger.warning("Permission denied copying %s: %s", name, e)
-                copy_warnings.append(f"{name}/")
-    return copy_warnings
+                continue
+            logger.debug("Files in %s were deleted during the backup copy: %s", name, e)
+        captured_dirs.append(name)
+    return captured_dirs, copy_warnings
 
 
 def _export_rows(dst, insert_sql: str, rows) -> None:
@@ -1170,11 +1181,16 @@ def _export_rows(dst, insert_sql: str, rows) -> None:
 
 def _write_backup_zip(temp_path: Path, zip_file: Path) -> None:
     """Deflate the staging folder into the backup ZIP (worker thread)."""
+
+    def raise_walk_error(error: OSError) -> None:
+        # A silently skipped staging folder would look like a captured empty folder on restore.
+        raise error
+
     with zipfile.ZipFile(zip_file, "w", zipfile.ZIP_DEFLATED) as zf:
-        for file_path in temp_path.rglob("*"):
-            if file_path.is_file():
-                arcname = file_path.relative_to(temp_path)
-                zf.write(file_path, arcname)
+        for directory, _subdirs, filenames in os.walk(temp_path, onerror=raise_walk_error):
+            for filename in filenames:
+                file_path = Path(directory) / filename  # SEC-PATH-OK: os.walk lists this private staging tree.
+                zf.write(file_path, file_path.relative_to(temp_path))
 
 
 def _extract_backup_zip(zip_path: Path, temp_path: Path) -> None:
@@ -1200,6 +1216,26 @@ def _extract_backup_zip(zip_path: Path, temp_path: Path) -> None:
             zf.extractall(temp_path)
     except zipfile.BadZipFile:
         raise HTTPException(400, "Invalid backup file: not a valid ZIP")
+
+
+def _restore_partial_dir(src: Path, dest: Path) -> None:
+    """Restore readable files without deleting destination-only files or following destination links."""
+    dest.mkdir(parents=True, exist_ok=True)
+    for item in src.iterdir():
+        target = dest / item.name
+        try:
+            if target.is_symlink():
+                continue
+            if item.is_dir():
+                _restore_partial_dir(item, target)
+            elif not target.exists() or target.is_file():
+                # Publish only a finished copy, without writing through hard links.
+                with tempfile.TemporaryDirectory(dir=dest) as staging:
+                    staged = Path(staging) / "file"
+                    shutil.copy2(item, staged)
+                    staged.replace(target)
+        except OSError as e:
+            logger.warning("Could not restore %s from the incomplete backup: %s", target, e)
 
 
 # The restore's database copy is the same online-backup copy as the backup's.
@@ -1278,8 +1314,6 @@ async def _build_backup_zip(output_path: Path | None) -> tuple[Path, str, list[s
     install, so that file work runs in worker threads. On the event loop it
     stalled the whole app for as long: no printer status, no queue, no API.
     """
-    import shutil
-    import tempfile
 
     from backend.app.core.db_dialect import is_sqlite
 
@@ -1363,7 +1397,7 @@ async def _build_backup_zip(output_path: Path | None) -> tuple[Path, str, list[s
                             columns = list(result.keys())
                             placeholders = ", ".join(["?"] * len(columns))
                             col_list = ", ".join(columns)
-                            insert_sql = f"INSERT INTO {table.name} ({col_list}) VALUES ({placeholders})"  # noqa: S608  # nosec B608 — table/column names from ORM metadata, not user input
+                            insert_sql = f"INSERT INTO {table.name} ({col_list}) VALUES ({placeholders})"  # noqa: S608  # nosec B608  # table/column names from ORM metadata, not user input
 
                             async for chunk in result.partitions(1000):
                                 await in_thread(_export_rows, dst, insert_sql, chunk)
@@ -1385,7 +1419,7 @@ async def _build_backup_zip(output_path: Path | None) -> tuple[Path, str, list[s
             ("overlay-branding", base_dir / "overlay-branding"),
         ]
 
-        copy_warnings = await in_thread(_copy_backup_dirs, dirs_to_backup, temp_path)
+        captured_dirs, copy_warnings = await in_thread(_copy_backup_dirs, dirs_to_backup, temp_path)
 
         # Say which version made this, so a restore that cannot import it can
         # name the versions rather than a list of columns. Backups from before
@@ -1395,6 +1429,7 @@ async def _build_backup_zip(output_path: Path | None) -> tuple[Path, str, list[s
 
         manifest = {
             "format": 1,
+            "captured_dirs": captured_dirs,
             "app_version": APP_VERSION,
             "created_at": datetime.now().isoformat(timespec="seconds"),
             "database": "sqlite" if is_sqlite() else "postgresql",
@@ -1578,7 +1613,7 @@ def check_backup_schema_compatible(sqlite_path: Path, backup_version: str | None
                 continue
             # An empty table inserts nothing, so a column it cannot supply
             # cannot fail. Refusing a restore over one would be a false alarm.
-            if src.execute(f'SELECT 1 FROM "{name}" LIMIT 1').fetchone() is None:  # noqa: S608  # nosec B608 — name comes from ORM metadata
+            if src.execute(f'SELECT 1 FROM "{name}" LIMIT 1').fetchone() is None:  # noqa: S608  # nosec B608  # name comes from ORM metadata
                 continue
             src_columns = {row[1] for row in src.execute(f'PRAGMA table_info("{name}")')}
             _, _, unfillable = _missing_required_columns(pg_table, src_columns)
@@ -1912,7 +1947,7 @@ async def _import_sqlite_to_postgres(sqlite_path: Path):
         await pg_engine.dispose()
 
 
-def _restore_data_directory(name: str, src_dir: Path, dest_dir: Path) -> None:
+def _restore_data_directory(name: str, src_dir: Path, dest_dir: Path, unlink_links: bool = False) -> bool:
     """Restore one data directory (archive, icons, ...) from a backup.
 
     T-017 fix: the previous implementation cleared ``dest_dir`` *before*
@@ -1926,7 +1961,13 @@ def _restore_data_directory(name: str, src_dir: Path, dest_dir: Path) -> None:
     If the staging copy raises OSError, the destination is never
     touched and the exception propagates to the caller so the restore
     is reported as failed rather than a false success.
+
+    Returns False when an old destination entry could not be deleted (#3708):
+    the backup's files are in, but the folder does not match the backup.
+    ``unlink_links`` removes a link to a folder instead of handing it to rmtree,
+    which refuses one.
     """
+    clean = True
     stage_dir = dest_dir.parent / f".{dest_dir.name}.restore-staging"
     if stage_dir.exists():
         # Leftover from a previous failed restore attempt.
@@ -1945,19 +1986,22 @@ def _restore_data_directory(name: str, src_dir: Path, dest_dir: Path) -> None:
         if dest_dir.exists():
             for item in dest_dir.iterdir():
                 try:
-                    if item.is_dir():
+                    if item.is_dir() and not (unlink_links and item.is_symlink()):
                         shutil.rmtree(item)
                     else:
                         item.unlink()
                 except OSError as e:
                     logger.warning("Could not delete %s: %s", item, e)
+                    clean = False
         else:
             dest_dir.mkdir(parents=True, exist_ok=True)
 
         for item in stage_dir.iterdir():
             shutil.move(str(item), str(dest_dir / item.name))
     finally:
-        shutil.rmtree(stage_dir, ignore_errors=True)
+        with contextlib.suppress(OSError):
+            shutil.rmtree(stage_dir, ignore_errors=True)
+    return clean
 
 
 def _raise_if_directories_failed(failed_dirs: list[str]) -> None:
@@ -1983,23 +2027,49 @@ def _raise_if_directories_failed(failed_dirs: list[str]) -> None:
     )
 
 
-def _restore_data_dirs(dirs_to_restore: list[tuple[str, Path]], temp_path: Path) -> list[str]:
-    """Restore each data directory present in the backup; returns the names that failed.
+def _restore_data_dirs(
+    dirs_to_restore: list[tuple[str, Path]],
+    temp_path: Path,
+    captured_dirs: list[str] | None = None,
+    failed: list[str] | None = None,
+) -> list[str]:
+    """Restore each data directory of the backup; returns the names not fully restored.
 
     T-017: a directory whose staging copy fails is left with its live contents
     untouched (see _restore_data_directory) -- it is NOT deleted then silently
     skipped. Every directory is still attempted so the ones that succeed are
-    restored; the caller turns any failure into an HTTP 500.
+    restored; those names also go into ``failed`` and the caller turns them
+    into an HTTP 500.
+
+    #3708: with ``captured_dirs`` (the manifest's list of directories the backup
+    holds in full) a captured directory that was empty is restored as empty, and
+    one the backup holds only in part gets its files merged in, deleting nothing.
     """
-    failed = []
+    skipped = []
     for name, dest_dir in dirs_to_restore:
         src_dir = (
             temp_path / name
         )  # SEC-PATH-OK: name iterates the dirs_to_restore tuple of constant strings ("archive", "virtual_printer", ...)
-        if src_dir.exists():
+        if captured_dirs is not None and name not in captured_dirs:
+            if src_dir.is_dir():
+                # Some files made it into this ZIP, but an incomplete tree
+                # cannot tell us which destination files to delete.
+                skipped.append(name)
+                try:
+                    _restore_partial_dir(src_dir, dest_dir)
+                except OSError as e:
+                    logger.warning("Could not restore files from incomplete %s directory: %s", name, e)
+            continue
+        if not src_dir.exists() and captured_dirs is not None:
+            # The ZIP only stores files. Recreate the empty staging directory
+            # so the normal replacement also clears a mounted destination.
+            src_dir.mkdir()
+        if src_dir.is_dir():
             logger.info("Restoring %s directory...", name)
             try:
-                _restore_data_directory(name, src_dir, dest_dir)
+                clean = _restore_data_directory(name, src_dir, dest_dir, unlink_links=captured_dirs is not None)
+                if not clean and captured_dirs is not None:
+                    skipped.append(name)
             except OSError as e:
                 logger.error(
                     "Could not restore %s directory: %s — destination left untouched.",
@@ -2007,8 +2077,10 @@ def _restore_data_dirs(dirs_to_restore: list[tuple[str, Path]], temp_path: Path)
                     e,
                     exc_info=True,
                 )
-                failed.append(name)
-    return failed
+                skipped.append(name)
+                if failed is not None:
+                    failed.append(name)
+    return skipped
 
 
 @router.post("/restore")
@@ -2049,7 +2121,6 @@ async def restore_backup(
 
 async def _restore_backup_zip(file: UploadFile, db: AsyncSession):
     """The work of restore_backup, which holds the backup lock around it."""
-    import tempfile
 
     from fastapi import HTTPException
 
@@ -2099,6 +2170,11 @@ async def _restore_backup_zip(file: UploadFile, db: AsyncSession):
         # anything.
 
         manifest = _read_backup_manifest(temp_path)
+        captured_dirs = manifest.get("captured_dirs")
+        if "captured_dirs" in manifest and not (
+            isinstance(captured_dirs, list) and all(isinstance(name, str) for name in captured_dirs)
+        ):
+            raise HTTPException(400, "Invalid backup: captured_dirs must be a list of directory names")
         backup_version = manifest.get("app_version")
         if backup_version:
             logger.info("Backup was created by Fenrir %s; this install runs %s", backup_version, APP_VERSION)
@@ -2248,8 +2324,12 @@ async def _restore_backup_zip(file: UploadFile, db: AsyncSession):
                 ("overlay-branding", base_dir / "overlay-branding"),
             ]
 
-            # T-017: any failed directory turns the request into an HTTP 500 below.
-            failed_dirs = await asyncio.to_thread(_restore_data_dirs, dirs_to_restore, temp_path)
+            # T-017: a directory in failed_dirs turns the request into an HTTP 500 below;
+            # skipped_dirs (#3708) also names the ones restored only in part.
+            failed_dirs: list[str] = []
+            skipped_dirs = await asyncio.to_thread(
+                _restore_data_dirs, dirs_to_restore, temp_path, captured_dirs, failed_dirs
+            )
 
             # 7. Reset the encryption singleton so the migration that runs
             # inside init_db() picks up the restored key file (if a new one
@@ -2314,9 +2394,12 @@ async def _restore_backup_zip(file: UploadFile, db: AsyncSession):
             await ws_manager.refresh_printer_scopes()
 
             logger.info("Restore complete - restart required")
+            message = "Backup restored successfully. Please restart Fenrir for changes to take effect."
+            if skipped_dirs:
+                message += f" Note: Some directories could not be fully restored ({', '.join(skipped_dirs)})."
             return {
                 "success": True,
-                "message": "Backup restored successfully. Please restart Fenrir for changes to take effect.",
+                "message": message,
             }
 
         except HTTPException:

@@ -3234,7 +3234,11 @@ describe('PrintModal edit: moving a job to another printer', () => {
     // The dialog adds printers; moving the job is deselecting one, selecting the other.
     await user.click(await screen.findByText('Printer 01'));
     await user.click(screen.getByText('Printer 02'));
-    await user.click(screen.getByRole('button', { name: /save/i }));
+    // Save waits for Printer 02's status (the AMS mapping needs it); a click
+    // before that lands on a disabled button and sends nothing (#3715).
+    const save = screen.getByRole('button', { name: /save/i });
+    await waitFor(() => expect(save).toBeEnabled());
+    await user.click(save);
 
     await waitFor(() => expect(patched).toHaveLength(1));
     expect(patched[0].printer_id).toBe(2);
@@ -3496,6 +3500,68 @@ describe('PrintModal — "Force color match" on a specific printer is saved (#34
     // The edited job stays on printer 01, a copy goes to printer 02.
     await waitFor(() => expect(patched.length + posted.length).toBe(2));
     for (const job of [...patched, ...posted]) expect(job.filament_overrides ?? null).toBeNull();
+  });
+
+  // #3711: a VP with "Force color match" queues the sliced colour forced. Sent to
+  // several printers with a spool picked on each, every job kept white forced
+  // next to its pick, and the scheduler dropped the pick to wait for white.
+  describe('a forced job sent to several printers (#3711)', () => {
+    const WHITE_FORCED = { slot_id: 1, type: 'PLA', color: '#CBC6B8', tray_info_idx: 'GFA01', force_color_match: true };
+
+    const openForcedJobOnTwoPrinters = async (user: ReturnType<typeof userEvent.setup>) => {
+      render(
+        <PrintModal
+          mode="edit-queue-item"
+          archiveId={1}
+          archiveName="Job"
+          queueItem={printer01Item({ ams_mapping: null, filament_overrides: [WHITE_FORCED] } as Partial<PrintQueueItem>)}
+          onClose={mockOnClose}
+        />,
+      );
+      await user.click(await screen.findByText('Printer 02'));
+      // Fork: each selected printer's card carries its own mapping panel with a
+      // SlotPicker (no "custom mapping" checkbox, no <select>).
+      await waitFor(() => expect(screen.getAllByText(/filament mapping/i)).toHaveLength(2));
+      for (const label of screen.getAllByText(/filament mapping/i)) {
+        const toggle = label.closest('button')!;
+        if (toggle.getAttribute('aria-expanded') !== 'true') await user.click(toggle);
+      }
+      await waitFor(() => expect(screen.getAllByRole('combobox', { name: /printer slot for/i })).toHaveLength(2));
+      // Option 0 is the empty '-- Select slot --'; 1 is the green tray, 2 the black.
+      return async (printer: number, option: number) => {
+        await user.click(screen.getAllByRole('combobox', { name: /printer slot for/i })[printer]);
+        await user.click(within(await screen.findByRole('listbox')).getAllByRole('option')[option]);
+      };
+    };
+
+    it("saves each printer's picked spool as its forced filament", async () => {
+      const user = userEvent.setup();
+      const pick = await openForcedJobOnTwoPrinters(user);
+      await pick(0, 2); // black on printer 01
+      await pick(1, 1); // green on printer 02
+      await submit(user);
+
+      await waitFor(() => expect(patched.length + posted.length).toBe(2));
+      const byPrinter = new Map([...patched, ...posted].map((job) => [job.printer_id, job]));
+      expect(byPrinter.get(1)?.ams_mapping).toEqual([1]);
+      expect(byPrinter.get(1)?.filament_overrides).toEqual([expect.objectContaining(BLACK_FORCED)]);
+      expect(byPrinter.get(2)?.ams_mapping).toEqual([0]);
+      expect(byPrinter.get(2)?.filament_overrides).toEqual([
+        expect.objectContaining({ slot_id: 1, color: '#68724D', force_color_match: true }),
+      ]);
+    });
+
+    it('keeps the sliced colour on a printer whose tray was only auto-filled', async () => {
+      const user = userEvent.setup();
+      const pick = await openForcedJobOnTwoPrinters(user);
+      await pick(0, 2); // printer 02 left untouched
+      await submit(user);
+
+      await waitFor(() => expect(patched.length + posted.length).toBe(2));
+      const byPrinter = new Map([...patched, ...posted].map((job) => [job.printer_id, job]));
+      expect(byPrinter.get(1)?.filament_overrides).toEqual([expect.objectContaining(BLACK_FORCED)]);
+      expect(byPrinter.get(2)?.filament_overrides).toEqual([expect.objectContaining(WHITE_FORCED)]);
+    });
   });
 
   it('waits for the sliced colour when the box is ticked on a tray the dialog matched itself', async () => {

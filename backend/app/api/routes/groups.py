@@ -48,6 +48,8 @@ _PERMISSION_LABEL_OVERRIDES: dict[Permission, str] = {
     Permission.REVENUE_SYNC: "Sync revenue from Zoho",
     Permission.REVENUE_VIEW_CUSTOMERS: "See revenue customers",
     Permission.REVENUE_VIEW_MARGIN: "See revenue margin",
+    # "Auth Threedfp" would say nothing to anyone (#2981)
+    Permission.THREEDFP_AUTH: "Connect 3D Filament Profiles and look up filaments",
 }
 
 

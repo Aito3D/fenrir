@@ -428,35 +428,22 @@ export function ModelViewer({
     const selectedPlateOffset = (!isPlainModel && selectedPlateId != null)
       ? parsedData!.plateOffsets.get(selectedPlateId)
       : undefined;
-    const shouldCenterOnPlate = isPlainModel
-      || parsedData!.buildItems.length === 0
-      || (selectedPlateId != null && !selectedPlateBounds && !selectedPlateOffset);
-    const centerOffsetX = shouldCenterOnPlate ? -center.x : 0;
-    const centerOffsetZ = shouldCenterOnPlate ? -center.z : 0;
-
-    let plateOffsetX = 0;
-    let plateOffsetZ = 0;
-    if (!isPlainModel && selectedPlateId != null && parsedData!.buildItems.length > 0 && selectedPlateBounds) {
-      const plateBox = new THREE.Box3().setFromObject(group);
-      plateOffsetX = plateBox.min.x - selectedPlateBounds.minX;
-      plateOffsetZ = plateBox.min.z - selectedPlateBounds.minY;
-    }
-
     const plateCenterX = buildVolume.x / 2;
     const plateCenterZ = buildVolume.y / 2;
 
-    if (!isPlainModel && selectedPlateId != null && parsedData!.buildItems.length > 0 && selectedPlateBounds) {
-      group.position.x = centerOffsetX - plateOffsetX;
-      group.position.z = centerOffsetZ - plateOffsetZ;
-    } else if (!isPlainModel && selectedPlateId != null && selectedPlateOffset) {
-      group.position.x = centerOffsetX + (plateCenterX - selectedPlateOffset.offsetX);
-      group.position.z = centerOffsetZ + (plateCenterZ - selectedPlateOffset.offsetY);
-    } else if (shouldCenterOnPlate) {
-      group.position.x = centerOffsetX + plateCenterX;
-      group.position.z = centerOffsetZ + plateCenterZ;
+    if (selectedPlateBounds) {
+      // Printer minimum Y is the front edge: maximum Z in the viewer.
+      group.position.x = selectedPlateBounds.minX - box.min.x;
+      group.position.z = buildVolume.y - selectedPlateBounds.minY - box.max.z;
+    } else if (selectedPlateOffset && parsedData!.buildItems.length > 0) {
+      group.position.x = plateCenterX - selectedPlateOffset.offsetX;
+      group.position.z = plateCenterZ + selectedPlateOffset.offsetY;
+    } else if (isPlainModel || parsedData!.buildItems.length === 0 || selectedPlateId != null) {
+      group.position.x = plateCenterX - center.x;
+      group.position.z = plateCenterZ - center.z;
     } else {
-      group.position.x = centerOffsetX;
-      group.position.z = centerOffsetZ;
+      // The printer origin is the front-left corner of the displayed bed.
+      group.position.z = buildVolume.y;
     }
 
     if (plateRef.current) {
