@@ -19,11 +19,9 @@ export function RevenueMenu(p: {
   reviewCount: number;
   targetsOpen: boolean;
   onTargets: () => void;
-  /** Absent without the margin permission: wages are margin data. */
-  laborOpen?: boolean;
-  onLabor?: () => void;
-  fixedCostsOpen?: boolean;
-  onFixedCosts?: () => void;
+  /** Absent without the margin permission: labour, fixed costs and depreciation are margin data. */
+  chargesOpen?: boolean;
+  onCharges?: () => void;
   onReview: () => void;
   onCopy: () => void;
   onExport: () => void;
@@ -110,14 +108,9 @@ export function RevenueMenu(p: {
                 <button type="button" role="menuitem" className={ITEM} onClick={pick(p.onTargets)}>
                   {p.targetsOpen ? t('revenue.menu.hideTargets') : t('revenue.menu.targets')}
                 </button>
-                {p.onLabor && (
-                  <button type="button" role="menuitem" className={ITEM} onClick={pick(p.onLabor)}>
-                    {p.laborOpen ? t('revenue.menu.hideLabor') : t('revenue.menu.labor')}
-                  </button>
-                )}
-                {p.onFixedCosts && (
-                  <button type="button" role="menuitem" className={ITEM} onClick={pick(p.onFixedCosts)}>
-                    {p.fixedCostsOpen ? t('revenue.fixedCosts.hideMenu') : t('revenue.fixedCosts.menu')}
+                {p.onCharges && (
+                  <button type="button" role="menuitem" className={ITEM} onClick={pick(p.onCharges)}>
+                    {p.chargesOpen ? t('revenue.charges.hideMenu') : t('revenue.charges.menu')}
                   </button>
                 )}
                 <button type="button" role="menuitem" className={ITEM} onClick={pick(p.onReview)}>

@@ -9,6 +9,12 @@ export function formatFcp(n: number): string {
   return `${r < 0 ? "−" : ""}${digits} FCP`;
 }
 
+/** A monthly charge per minute of the current month, one decimal. */
+export function formatPerMinute(monthly: number, now = new Date()): string {
+  const minutes = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate() * 1440;
+  return `${(monthly / minutes).toFixed(1).replace(".", ",")} FCP/min`;
+}
+
 /** formatFcp without the unit, for tables whose header states it once. */
 export function formatAmount(n: number): string {
   return formatFcp(n).slice(0, -" FCP".length);

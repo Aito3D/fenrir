@@ -23,8 +23,7 @@ import { RevenueReview } from '../components/revenue/RevenueReview';
 import { RevenueResult } from '../components/revenue/RevenueResult';
 import { RevenueBridge } from '../components/revenue/RevenueBridge';
 import { RevenueCohorts } from '../components/revenue/RevenueCohorts';
-import { RevenueLabor } from '../components/revenue/RevenueLabor';
-import { RevenueFixedCosts } from '../components/revenue/RevenueFixedCosts';
+import { RevenueCharges } from '../components/revenue/RevenueCharges';
 import { RevenueTargets } from '../components/revenue/RevenueTargets';
 import { RevenueControls as ControlsRow } from '../components/revenue/RevenueControls';
 import { RevenueChip, RevenueProductSearch } from '../components/revenue/RevenueProductSearch';
@@ -182,13 +181,11 @@ export function RevenuePage() {
   const [rebuildBusy, setRebuildBusy] = useState(false);
   const [reviewOpen, setReviewOpen] = useState(false);
   const [targetsOpen, setTargetsOpen] = useState(false);
-  const [laborOpen, setLaborOpen] = useState(false);
-  const [fixedOpen, setFixedOpen] = useState(false);
-  const fixedOpener = useRef<HTMLElement | null>(null);
+  const [chargesOpen, setChargesOpen] = useState(false);
+  const chargesOpener = useRef<HTMLElement | null>(null);
   // Where focus goes back when a panel closes: the pill or ⋯ that opened it.
   const reviewOpener = useRef<HTMLElement | null>(null);
   const targetsOpener = useRef<HTMLElement | null>(null);
-  const laborOpener = useRef<HTMLElement | null>(null);
   const menuTrigger = useRef<HTMLButtonElement>(null);
   // The opener may be gone (classifying the last item removes the pill): ⋯ is always there.
   const focusOpener = (opener: HTMLElement | null) => (opener?.isConnected ? opener : menuTrigger.current)?.focus();
@@ -407,13 +404,9 @@ export function RevenuePage() {
     if (!targetsOpen) targetsOpener.current = document.activeElement as HTMLElement | null;
     setTargetsOpen(!targetsOpen);
   };
-  const toggleFixed = () => {
-    if (!fixedOpen) fixedOpener.current = document.activeElement as HTMLElement | null;
-    setFixedOpen(!fixedOpen);
-  };
-  const toggleLabor = () => {
-    if (!laborOpen) laborOpener.current = document.activeElement as HTMLElement | null;
-    setLaborOpen(!laborOpen);
+  const toggleCharges = () => {
+    if (!chargesOpen) chargesOpener.current = document.activeElement as HTMLElement | null;
+    setChargesOpen(!chargesOpen);
   };
   const lastBucket = data?.buckets[data.buckets.length - 1];
   const filterParams = filterQuery(basketIds, active.brands, active.kind, active.segment);
@@ -447,7 +440,7 @@ export function RevenuePage() {
           />
           <div data-slot="revenue-menu">
             <RevenueMenu canExport={can.export} canSync={can.sync} ready={ready} rebuildBusy={rebuildBusy} reviewCount={reviewCount ?? 0}
-              targetsOpen={targetsOpen} onTargets={toggleTargets} laborOpen={laborOpen} onLabor={can.margin ? toggleLabor : undefined} fixedCostsOpen={fixedOpen} onFixedCosts={can.margin ? toggleFixed : undefined} onReview={() => toggleReview()} onCopy={() => void copySummary()} onExport={exportCsv}
+              targetsOpen={targetsOpen} onTargets={toggleTargets} chargesOpen={chargesOpen} onCharges={can.margin ? toggleCharges : undefined} onReview={() => toggleReview()} onCopy={() => void copySummary()} onExport={exportCsv}
               onRebuild={() => void rebuild()} onSyncRecent={() => void syncRecent()} triggerRef={menuTrigger} />
           </div>
         </div>
@@ -517,13 +510,9 @@ export function RevenuePage() {
         <RevenueTargets canManage={can.targets} onChanged={refresh} today={today} actualByMonth={actualByMonth}
           onClose={() => setTargetsOpen(false)} returnFocus={() => focusOpener(targetsOpener.current)} />
       )}
-      {fixedOpen && can.margin && (
-        <RevenueFixedCosts canManage={can.targets} onChanged={refresh}
-          onClose={() => setFixedOpen(false)} returnFocus={() => focusOpener(fixedOpener.current)} />
-      )}
-      {laborOpen && can.margin && (
-        <RevenueLabor canManage={can.targets} onChanged={refresh}
-          onClose={() => setLaborOpen(false)} returnFocus={() => focusOpener(laborOpener.current)} />
+      {chargesOpen && can.margin && (
+        <RevenueCharges canManage={can.targets} version={data} onChanged={refresh}
+          onClose={() => setChargesOpen(false)} returnFocus={() => focusOpener(chargesOpener.current)} />
       )}
 
       {!ready ? (

@@ -111,3 +111,16 @@ describe('RevenueMenu — placement', () => {
     expect(openWithTriggerRight(1411)).toHaveClass('right-0');
   });
 });
+
+describe('RevenueMenu — charges', () => {
+  it('has one entry for labour, fixed costs and depreciation together', () => {
+    const onCharges = vi.fn();
+    render(
+      <RevenueMenu canExport={false} canSync ready rebuildBusy={false} reviewCount={0} targetsOpen={false} onCharges={onCharges}
+        onTargets={vi.fn()} onReview={vi.fn()} onCopy={vi.fn()} onExport={vi.fn()} onRebuild={vi.fn()} onSyncRecent={vi.fn()} triggerRef={createRef<HTMLButtonElement>()} />,
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'More actions' }));
+    fireEvent.click(item('Costs…'));
+    expect(onCharges).toHaveBeenCalledTimes(1);
+  });
+});

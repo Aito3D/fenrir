@@ -38,11 +38,11 @@ export function RevenueResult({ version }: { version: unknown }) {
             <p className={NOTE}>{t('revenue.result.partial', { day: `${dayMonth(data.costsSince)}/${data.costsSince.slice(0, 4)}` })}</p>
           )}
           <div className="overflow-x-auto">
-            <table aria-label={t('revenue.result.title')} className="w-full min-w-[620px] text-[13px] tabular-nums">
+            <table aria-label={t('revenue.result.title')} className="w-full min-w-[720px] text-[13px] tabular-nums">
               <thead className="text-xs text-bambu-gray">
                 <tr>
                   <th className="px-2 py-1 text-left font-normal">{t('revenue.result.colMonth')}</th>
-                  {(['colRevenue', 'colVariable', 'colLabor', 'colFixed', 'colResult', 'colCoverage'] as const).map((k) => (
+                  {(['colRevenue', 'colVariable', 'colLabor', 'colFixed', 'colDepreciation', 'colResult', 'colCoverage'] as const).map((k) => (
                     <th key={k} scope="col" className="px-2 py-1 text-right font-normal">{t(`revenue.result.${k}`)}</th>
                   ))}
                 </tr>
@@ -55,6 +55,7 @@ export function RevenueResult({ version }: { version: unknown }) {
                     <td className="px-2 py-1 text-right text-bambu-gray-light">{m.partial ? DASH : formatFcp(m.variable)}</td>
                     <td className="px-2 py-1 text-right text-bambu-gray-light">{m.partial ? DASH : formatFcp(m.labor)}</td>
                     <td className="px-2 py-1 text-right text-bambu-gray-light">{formatFcp(m.fixed)}</td>
+                    <td className="px-2 py-1 text-right text-bambu-gray-light">{m.partial ? DASH : formatFcp(m.depreciation)}</td>
                     <td className={`px-2 py-1 text-right font-medium ${!m.partial && m.result < 0 ? 'text-status-error' : 'text-white'}`}>{m.partial ? DASH : formatFcp(m.result)}</td>
                     <td className={`px-2 py-1 text-right ${m.coverage !== null && m.coverage < 0.8 && !m.partial ? 'text-amber-700 dark:text-amber-400' : 'text-bambu-gray'}`}>
                       {m.partial || m.coverage === null ? DASH : `${Math.round(m.coverage * 100)} %`}

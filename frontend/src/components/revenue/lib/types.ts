@@ -36,7 +36,7 @@ export interface RevenueBucket {
   /** Gross margin HT per key, services' print + labour costs shared pro rata of their HT; same stripping as cost. */
   marginSplit?: { nature: Record<string, number>; brand: Record<string, number>; segment?: Record<string, number>; kind: Record<string, number> };
   /** What `cost` is made of: Zoho item costs (`items`), then the services' filament, energy, wear, labour and the share of the fixed costs. */
-  costParts?: Partial<Record<'items' | 'filament' | 'energy' | 'wear' | 'labor' | 'fixed', number>>;
+  costParts?: Partial<Record<'items' | 'filament' | 'energy' | 'wear' | 'labor' | 'fixed' | 'depreciation', number>>;
   /** Printer hours of the print log in the bucket (null before the log began); stripped with the margin figures. */
   printHours?: number | null;
   projection: Money | null;
@@ -405,12 +405,32 @@ export interface FixedCost {
   monthly: number;
 }
 
+/** A Zoho fixed asset as the server stored it; Zoho may leave cost, start or life empty. */
+export interface DepreciationAsset {
+  id: string;
+  number: string;
+  name: string;
+  type: string;
+  cost: number | null;
+  start: string | null;
+  months: number | null;
+  status: string;
+}
+
+export interface DepreciationState {
+  assets: DepreciationAsset[];
+  selected: string[];
+  /** When the list was last read from Zoho; null before the first read. */
+  readAt: string | null;
+}
+
 export interface ResultMonth {
   month: string;
   ht: number;
   variable: number;
   labor: number;
   fixed: number;
+  depreciation: number;
   result: number;
   /** Share of the HT whose cost is known (0–1); null without sales. */
   coverage: number | null;
@@ -420,6 +440,8 @@ export interface ResultMonth {
 
 export interface ResultResponse {
   fixedMonthly: number;
+  /** The three charges of the whole current month. */
+  charges: { labor: number; fixed: number; depreciation: number };
   months: ResultMonth[];
   /** First day print and labour costs exist; null when there are none yet. */
   costsSince: string | null;

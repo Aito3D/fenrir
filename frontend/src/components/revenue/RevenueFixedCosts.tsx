@@ -6,7 +6,7 @@ import { useToast } from '../../contexts/ToastContext';
 import { focusRingCls } from '../formStyles';
 import { RevenueClosablePanel } from './RevenueClosablePanel';
 import { failureMessage, readJsonBody } from './lib/dashboard';
-import { formatFcp } from './lib/format';
+import { formatFcp, formatPerMinute } from './lib/format';
 import type { FixedCost } from './lib/types';
 
 const URL = '/api/v1/revenue/fixed-costs';
@@ -132,7 +132,7 @@ export function RevenueFixedCosts({ canManage, onChanged, onClose, returnFocus }
           })}
           <p className="flex justify-between pt-1 text-sm text-bambu-gray-light">
             <span>{t('revenue.fixedCosts.total')}</span>
-            <span className="tabular-nums">{formatFcp(total)}</span>
+            <span className="tabular-nums"><span>{formatFcp(total)}</span> · <span>{formatPerMinute(total)}</span></span>
           </p>
           {!allValid && <p role="alert" className="text-xs text-red-400">{t('revenue.fixedCosts.invalid')}</p>}
         </div>

@@ -6,9 +6,10 @@ import type { ResultResponse } from '../../../components/revenue/lib/types';
 const json = (body: unknown) => new Response(JSON.stringify(body), { status: 200, headers: { 'Content-Type': 'application/json' } });
 const payload = (o: Partial<ResultResponse> = {}): ResultResponse => ({
   fixedMonthly: 120_000,
+  charges: { labor: 0, fixed: 120_000, depreciation: 45_000 },
   months: [
-    { month: '2026-10', ht: 1_000_000, variable: 400_000, labor: 200_000, fixed: 120_000, result: 280_000, coverage: 0.82, partial: false },
-    { month: '2026-11', ht: 300_000, variable: 120_000, labor: 60_000, fixed: 150_000, result: -30_000, coverage: 1, partial: false },
+    { month: '2026-10', ht: 1_000_000, variable: 400_000, labor: 200_000, fixed: 120_000, depreciation: 0, result: 280_000, coverage: 0.82, partial: false },
+    { month: '2026-11', ht: 300_000, variable: 120_000, labor: 60_000, fixed: 150_000, depreciation: 45_000, result: -30_000, coverage: 1, partial: false },
   ],
   costsSince: '2026-07-01',
   breakEven: { amount: 500_000, reached: 0.6, day: '2026-11-25', projected: true },
@@ -32,6 +33,13 @@ describe('RevenueResult', () => {
     expect(screen.getByText('expected on 25/11')).toBeInTheDocument();
   });
 
+  it('gives depreciation its own column between fixed costs and the result', async () => {
+    show(payload());
+    const headers = (await screen.findAllByRole('columnheader')).map((h) => h.textContent);
+    expect(headers.slice(headers.indexOf('Fixed costs'), headers.indexOf('Fixed costs') + 3)).toEqual(['Fixed costs', 'Depreciation', 'Result']);
+    expect(within(screen.getAllByRole('row')[1]).getByText('45.000 FCP')).toBeInTheDocument();
+  });
+
   it('lists every month, newest first', async () => {
     show(payload());
     const rows = (await screen.findAllByRole('row')).slice(1);
@@ -50,9 +58,9 @@ describe('RevenueResult', () => {
 
   it('gives no result for a month before costs were tracked, and says how much of the sales has a known cost', async () => {
     const p = payload();
-    show({ ...p, months: [{ month: '2026-06', ht: 900_000, variable: 10_000, labor: 0, fixed: 120_000, result: 770_000, coverage: 0.1, partial: true }, ...p.months] });
+    show({ ...p, months: [{ month: '2026-06', ht: 900_000, variable: 10_000, labor: 0, fixed: 120_000, depreciation: 0, result: 770_000, coverage: 0.1, partial: true }, ...p.months] });
     const rows = (await screen.findAllByRole('row')).slice(1);
-    expect([...rows[2].children].map((c) => c.textContent)).toEqual(['juin 2026', '900.000 FCP', '—', '—', '120.000 FCP', '—', '—']);
+    expect([...rows[2].children].map((c) => c.textContent)).toEqual(['juin 2026', '900.000 FCP', '—', '—', '120.000 FCP', '—', '—', '—']);
     expect(rows[1].lastElementChild).toHaveTextContent('82 %');
     expect(screen.getByText('Print and labour costs are tracked since 01/07/2026: no result before that.')).toBeInTheDocument();
   });

@@ -27,6 +27,7 @@ describe('RevenueFixedCosts', () => {
     setup();
     await screen.findByDisplayValue('Loyer');
     expect(screen.getByText('120.000 FCP')).toBeInTheDocument();
+    expect(screen.getByText(/^\d,\d FCP\/min$/)).toBeInTheDocument();
   });
 
   it('saves the whole list once a valid row is added', async () => {
