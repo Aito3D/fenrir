@@ -56,6 +56,8 @@ describe('RevenueJournal', () => {
     expect(fetchMock.mock.calls[0][0]).toBe('/api/v1/revenue/items?from=2026-11-24&to=2026-11-24&kind=goods');
     expect(within(totalRow()).getByText('Total')).toBeInTheDocument();
     expect(within(totalRow()).getByText('5')).toBeInTheDocument();
+    // The quantity also leads the meta line, shown where the Units column is hidden (below sm).
+    expect(screen.getByText('× 4 ·')).toHaveClass('sm:hidden');
     const [goods, services] = screen.getAllByRole('rowgroup').filter((g) => g.dataset.slot);
     expect(within(goods).getByText('Goods')).toBeInTheDocument();
     expect(within(services).getByText('Custom print')).toBeInTheDocument();

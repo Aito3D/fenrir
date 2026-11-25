@@ -2,6 +2,7 @@ import { Fragment, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { Panel, Tile } from '../aito/stats/primitives';
+import { useMediaQuery } from '../../hooks/useMediaQuery';
 import { focusRingCls } from '../formStyles';
 import { PICK_CLS } from './RevenueControls';
 import { RevenueSegmented } from './RevenueSegmented';
@@ -16,7 +17,7 @@ const PAD = 'px-2 py-1.5 sm:px-3';
 const NUM = `${PAD} whitespace-nowrap text-right tabular-nums`;
 const WIDE = 'hidden sm:table-cell';
 const LABEL = 'text-[11px] uppercase tracking-wide text-bambu-gray';
-const CHIP = 'shrink-0 rounded-full border border-current px-1.5 text-[10px] leading-4';
+const CHIP = 'max-w-full shrink-0 truncate rounded-full border border-current px-1.5 text-[10px] leading-4';
 const GROUPS = ['kind', 'brand', 'nature'] as const;
 type GroupBy = (typeof GROUPS)[number];
 type SortKey = 'name' | 'quantity' | 'amount' | 'margin' | 'rate';
@@ -118,7 +119,9 @@ export function RevenueJournal({ today, filterParams, version, taxMode, canMargi
 
   // The server strips `cost` without the margin permission.
   const margin = canMargin && !!rows && !rows.some((r) => r.cost === undefined);
-  const cols = margin ? 7 : 3;
+  // Below sm the table is Product | Revenue | Margin: the spans must count the visible columns only, or the fixed layout grows phantom ones.
+  const narrow = useMediaQuery('(max-width: 639px)', () => typeof window !== 'undefined' && window.innerWidth < 640);
+  const cols = narrow ? (margin ? 3 : 2) : margin ? 7 : 3;
   const amt = (x: { ht: number; ttc: number }) => (taxMode === 'ht' ? x.ht : x.ttc);
   const total = journalTotals(rows ?? []);
   const share = (m: number | null) => (m === null || total.margin === null || total.margin <= 0 ? null : m / total.margin);
@@ -174,7 +177,7 @@ export function RevenueJournal({ today, filterParams, version, taxMode, canMargi
       <>
         <td className={`${NUM} ${WIDE} font-normal text-bambu-gray`}>{money(x.cost)}</td>
         <td className={`${NUM} ${rateTone(x.rate)}`}>{money(x.margin)}</td>
-        <td className={`${NUM} ${rateTone(x.rate)}`}>{pct(x.rate)}</td>
+        <td className={`${NUM} ${WIDE} ${rateTone(x.rate)}`}>{pct(x.rate)}</td>
         <td className={`${NUM} ${WIDE}`}>
           {pct(s)}
           {bar && (
@@ -239,13 +242,13 @@ export function RevenueJournal({ today, filterParams, version, taxMode, canMargi
             <thead>
               <tr className="text-[11px] text-bambu-gray">
                 {head('name', t('revenue.chart.stack.item'), `${PAD} text-left`)}
-                {head('quantity', t('revenue.table.units'), `${NUM} w-12 sm:w-16`)}
-                {head('amount', t(`revenue.table.${taxMode}`), `${NUM} w-[4.5rem] sm:w-28`)}
+                {head('quantity', t('revenue.table.units'), `${NUM} ${WIDE} w-16`)}
+                {head('amount', t(`revenue.table.${taxMode}`), `${NUM} w-[5.5rem] sm:w-28`)}
                 {margin && (
                   <>
                     <th scope="col" className={`${NUM} ${WIDE} w-24 font-normal uppercase tracking-wide`}>{t('revenue.journal.cost')}</th>
-                    {head('margin', t('revenue.table.margin'), `${NUM} w-[4.5rem] sm:w-28`)}
-                    {head('rate', t('revenue.journal.rate'), `${NUM} w-14 sm:w-20`)}
+                    {head('margin', t('revenue.table.margin'), `${NUM} w-[5.5rem] sm:w-28`)}
+                    {head('rate', t('revenue.journal.rate'), `${NUM} ${WIDE} w-20`)}
                     <th scope="col" className={`${NUM} ${WIDE} w-20 font-normal uppercase tracking-wide`}>{t('revenue.journal.share')}</th>
                   </>
                 )}
@@ -254,7 +257,7 @@ export function RevenueJournal({ today, filterParams, version, taxMode, canMargi
             {groups.map((g) => (
               <tbody key={g.key} data-slot={by === 'kind' ? `revenue-journal-${g.key}` : 'revenue-journal-group'}>
                 <tr className="border-t border-bambu-dark-tertiary bg-bambu-dark/50 text-xs font-semibold text-bambu-gray-light">
-                  <th scope="rowgroup" colSpan={2} className={`${PAD} truncate text-left`}>
+                  <th scope="rowgroup" colSpan={narrow ? 1 : 2} className={`${PAD} truncate text-left`}>
                     <span>{groupTitle(g.key)}</span> <span className="font-normal text-bambu-gray">· {g.list.length}</span>
                   </th>
                   <td className={NUM}>{formatAmount(amt(g.tot))}</td>
@@ -278,11 +281,15 @@ export function RevenueJournal({ today, filterParams, version, taxMode, canMargi
                                 {margin && r.shared && <span className={`${CHIP} text-bambu-gray`} title={t('revenue.journal.sharedCostHint')}>{t('revenue.journal.sharedCost')}</span>}
                                 {x.margin !== null && x.margin < 0 && margin && <span className={`${CHIP} text-status-error`}>{t('revenue.journal.atLoss')}</span>}
                               </span>
-                              <span className="block truncate text-[11px] text-bambu-gray">{[by === 'nature' ? null : r.nature, by === 'brand' ? null : r.brand, r.sku].filter(Boolean).join(' · ')}</span>
+                              <span className="block truncate text-[11px] text-bambu-gray">
+                                {/* The Units column is hidden below sm: the quantity leads the meta line there. */}
+                                <span className="sm:hidden">{`× ${r.quantity} · `}</span>
+                                {[by === 'nature' ? null : r.nature, by === 'brand' ? null : r.brand, r.sku].filter(Boolean).join(' · ')}
+                              </span>
                             </span>
                           </button>
                         </th>
-                        <td className={NUM}>{r.quantity}</td>
+                        <td className={`${NUM} ${WIDE}`}>{r.quantity}</td>
                         <td className={NUM}>{formatAmount(amt(r))}</td>
                         {marginCells(x, true)}
                       </tr>
@@ -295,7 +302,7 @@ export function RevenueJournal({ today, filterParams, version, taxMode, canMargi
             <tfoot>
               <tr className="border-t border-bambu-dark-tertiary font-bold text-white">
                 <th scope="row" className={`${PAD} py-2 text-left`}>{t('settings.total')}</th>
-                <td className={NUM}>{total.quantity}</td>
+                <td className={`${NUM} ${WIDE}`}>{total.quantity}</td>
                 <td className={NUM}>{formatAmount(amt(total))}</td>
                 {marginCells(total, false)}
               </tr>
