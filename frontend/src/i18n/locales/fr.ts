@@ -13121,6 +13121,8 @@ export default {
       marginRate: 'Taux de marge',
       share: 'Part',
       unknownCost: 'coût inconnu',
+      sharedCost: 'coût réparti',
+      sharedCostHint: 'Coût de production de la période (filament, énergie, usure, main-d\'œuvre, charges fixes), réparti entre les services au prorata du CA',
       atLoss: 'à perte',
       groupBy: 'Grouper par',
       unitPrice: 'Prix unitaire moyen {{tax}}',

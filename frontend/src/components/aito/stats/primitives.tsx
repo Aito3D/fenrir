@@ -70,6 +70,7 @@ export function Tile({
   deltaTitle,
   tone,
   hint,
+  hintWrap,
 }: {
   swatch?: string;
   value: string;
@@ -79,6 +80,8 @@ export function Tile({
   tone?: 'alert';
   /** A muted line under the value: what the figure covers. */
   hint?: string;
+  /** Let the hint wrap instead of cutting it. */
+  hintWrap?: boolean;
 }) {
   return (
     <div className="rounded-lg bg-bambu-dark px-3 py-2.5 min-w-0 animate-rise">
@@ -97,7 +100,7 @@ export function Tile({
         {delta !== undefined && <DeltaBadge delta={delta} title={deltaTitle} />}
       </div>
       {hint && (
-        <p className="mt-0.5 truncate text-[11px] text-bambu-gray" title={hint}>
+        <p className={`mt-0.5 text-[11px] text-bambu-gray ${hintWrap ? '' : 'truncate'}`} title={hint}>
           {hint}
         </p>
       )}

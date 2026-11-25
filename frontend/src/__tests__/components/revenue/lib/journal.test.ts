@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { journalTotals, periodRank, rateTone } from "@/components/revenue/lib/journal";
+import { journalTotals, periodRank, rateTone, withProductionCost } from "@/components/revenue/lib/journal";
 import type { RevenueItemRow } from "@/components/revenue/lib/types";
 
 const day = (d: number, ht: number) => ({ start: `2026-11-${String(d).padStart(2, "0")}`, end: `2026-11-${String(d).padStart(2, "0")}`, ht });
@@ -43,6 +43,51 @@ describe("journalTotals", () => {
   it("has no margin when no cost is known", () => {
     expect(journalTotals([row(6_000, null), row(1_000, undefined)])).toMatchObject({ cost: null, margin: null, rate: null, coverage: 0 });
     expect(journalTotals([])).toMatchObject({ ht: 0, margin: null, rate: null, coverage: 1 });
+  });
+
+  it("uses the costed part of a partly costed item", () => {
+    const t = journalTotals([{ ...row(10_000, 3_000), costedHt: 6_000 }]);
+    expect(t).toMatchObject({ margin: 3_000, rate: 0.5, coverage: 0.6 });
+  });
+});
+
+describe("withProductionCost", () => {
+  const item = (o: Partial<RevenueItemRow>) => ({ itemId: "x", ht: 0, ttc: 0, quantity: 1, kind: "service", cost: null, costedHt: 0, ...o }) as RevenueItemRow;
+  const goods = item({ itemId: "g", kind: "goods", ht: 12_000, cost: 9_000, costedHt: 12_000 });
+  const print = item({ itemId: "p", ht: 8_000 });
+  const model = item({ itemId: "m", ht: 2_000 });
+
+  it("shares the production cost between the services pro rata of their HT", () => {
+    const out = withProductionCost([print, model], { costedHt: 10_000, costParts: { filament: 1_500, energy: 500, labor: 2_000 } });
+    expect(out.map((r) => [r.cost, r.costedHt, r.shared])).toEqual([[3_200, 8_000, true], [800, 2_000, true]]);
+  });
+
+  it("leaves the rows alone without a bucket, without a pool, or under rounding noise", () => {
+    expect(withProductionCost([print, model], null)).toEqual([print, model]);
+    expect(withProductionCost([goods, print], { costedHt: 12_000, costParts: { items: 9_000, filament: 700 } })).toEqual([goods, print]);
+    expect(withProductionCost([goods, print], { costedHt: 12_000.4, costParts: { items: 9_000 } })).toEqual([goods, print]);
+  });
+
+  it("agrees with the bucket on goods with their own cost plus pooled services", () => {
+    const bucket = { costedHt: 22_000, cost: 13_000, costParts: { items: 9_000, filament: 1_500, labor: 2_500 } };
+    const t = journalTotals(withProductionCost([goods, print, model], bucket));
+    expect(t.cost).toBeCloseTo(bucket.cost);
+    expect(t.margin).toBeCloseTo(bucket.costedHt - bucket.cost);
+    expect(t.coverage).toBe(1);
+  });
+
+  it("keeps a service's own Zoho cost, and an uncosted good stays unknown", () => {
+    const scan = item({ itemId: "s", ht: 1_000, cost: 400, costedHt: 1_000 });
+    const spool = item({ itemId: "u", kind: "goods", ht: 3_000 });
+    const out = withProductionCost([scan, spool, print], { costedHt: 9_000, costParts: { items: 400, wear: 1_000 } });
+    expect(out[0]).toEqual(scan);
+    expect(out[1]).toEqual(spool);
+    expect(out[2]).toMatchObject({ cost: 1_000, shared: true });
+  });
+
+  it("does not touch rows stripped of their cost (no margin permission)", () => {
+    const stripped = item({ ht: 5_000, cost: undefined, costedHt: undefined });
+    expect(withProductionCost([stripped], { costedHt: 5_000, costParts: { labor: 100 } })).toEqual([stripped]);
   });
 });
 

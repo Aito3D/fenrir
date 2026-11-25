@@ -13341,6 +13341,8 @@ export default {
       marginRate: 'Stopa marży',
       share: 'Udział',
       unknownCost: 'koszt nieznany',
+      sharedCost: 'koszt rozdzielony',
+      sharedCostHint: 'Koszt produkcji w okresie (filament, energia, zużycie drukarek, praca, koszty stałe), rozdzielony między usługi proporcjonalnie do przychodu',
       atLoss: 'ze stratą',
       groupBy: 'Grupuj według',
       unitPrice: 'Średnia cena jednostkowa {{tax}}',

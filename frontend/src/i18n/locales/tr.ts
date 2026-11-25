@@ -13063,6 +13063,8 @@ export default {
       marginRate: 'Marj oranı',
       share: 'Pay',
       unknownCost: 'maliyet bilinmiyor',
+      sharedCost: 'maliyet paylaştırıldı',
+      sharedCostHint: 'Dönemin üretim maliyeti (filament, enerji, yazıcı aşınması, işçilik, sabit giderler), hizmetler arasında gelire göre paylaştırılır',
       atLoss: 'zararına',
       groupBy: 'Gruplama ölçütü',
       unitPrice: 'Ortalama birim fiyat {{tax}}',

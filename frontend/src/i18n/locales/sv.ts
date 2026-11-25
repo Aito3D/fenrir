@@ -13193,6 +13193,8 @@ errors: {
       marginRate: 'Marginalgrad',
       share: 'Andel',
       unknownCost: 'kostnad okänd',
+      sharedCost: 'kostnad fördelad',
+      sharedCostHint: 'Periodens produktionskostnad (filament, energi, skrivarslitage, arbete, fasta kostnader), fördelad mellan tjänsterna efter intäkt',
       atLoss: 'med förlust',
       groupBy: 'Gruppera efter',
       unitPrice: 'Genomsnittligt styckpris {{tax}}',

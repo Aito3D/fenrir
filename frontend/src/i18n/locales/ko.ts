@@ -12718,6 +12718,8 @@ export default {
       marginRate: '마진율',
       share: '비중',
       unknownCost: '원가 미상',
+      sharedCost: '원가 배분',
+      sharedCostHint: '기간의 생산 원가(필라멘트, 전력, 프린터 마모, 인건비, 고정비)를 매출 비율로 서비스에 배분',
       atLoss: '손실',
       groupBy: '그룹 기준',
       unitPrice: '평균 단가 {{tax}}',

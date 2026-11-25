@@ -13121,6 +13121,8 @@ export default {
       marginRate: 'Taxa de margem',
       share: 'Participação',
       unknownCost: 'custo desconhecido',
+      sharedCost: 'custo rateado',
+      sharedCostHint: 'Custo de produção do período (filamento, energia, desgaste, mão de obra, custos fixos), rateado entre os serviços conforme a receita',
       atLoss: 'com prejuízo',
       groupBy: 'Agrupar por',
       unitPrice: 'Preço unitário médio {{tax}}',

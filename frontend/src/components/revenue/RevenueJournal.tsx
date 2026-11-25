@@ -8,8 +8,8 @@ import { RevenueSegmented } from './RevenueSegmented';
 import { REVENUE_STORAGE_KEYS } from './lib/dashboard';
 import { addDays, dayToUtc, journalStep, journalWindow, type JournalMode } from './lib/dates';
 import { formatAmount } from './lib/format';
-import { journalTotals, periodRank, rateTone, type JournalTotals } from './lib/journal';
-import type { ItemsResponse, RevenueItemRow, RevenueResponse, TaxMode } from './lib/types';
+import { journalTotals, periodRank, rateTone, withProductionCost, type JournalRow, type JournalTotals } from './lib/journal';
+import type { ItemsResponse, RevenueResponse, TaxMode } from './lib/types';
 import { useRevenueResource } from './useRevenueResource';
 
 const PAD = 'px-2 py-1.5 sm:px-3';
@@ -36,7 +36,7 @@ function storedGroup(): GroupBy {
 
 /** One item unfolded: its per-unit figures and its sales over the 30 days ending with the period. Mounted on expand, so fetched then. */
 function Detail({ row, tot, taxMode, margin, to, filterParams, version, cols }: {
-  row: RevenueItemRow; tot: JournalTotals; taxMode: TaxMode; margin: boolean; to: string; filterParams: string; version: unknown; cols: number;
+  row: JournalRow; tot: JournalTotals; taxMode: TaxMode; margin: boolean; to: string; filterParams: string; version: unknown; cols: number;
 }) {
   const { t } = useTranslation();
   // The item stands in for a basket filter: the row already passed it.
@@ -93,14 +93,19 @@ export function RevenueJournal({ today, filterParams, version, taxMode, canMargi
   const { from, to } = journalWindow(mode, day, today);
   const url = `/api/v1/revenue/items?from=${from}&to=${to}${filterParams}`;
   const { data, dataUrl, error } = useRevenueResource<ItemsResponse>(url, version);
-  const rows = dataUrl === url && data ? data.items : null;
+  const items = dataUrl === url && data ? data.items : null;
 
-  // The record badge: the day against the days of its month, the month against the months of its year.
+  // The series around the period: the day among the days of its month, the month among the months of its year.
+  // It ranks the period (record badge) and its bucket carries the production cost the services share.
   const yearEnd = `${day.slice(0, 4)}-12-31`;
   const span = mode === 'day' ? journalWindow('month', day, today) : { from: `${day.slice(0, 4)}-01-01`, to: yearEnd > today ? today : yearEnd };
   const rankUrl = `/api/v1/revenue?granularity=${mode}&from=${span.from}&to=${span.to}${filterParams}`;
   const series = useRevenueResource<RevenueResponse>(rankUrl, version);
-  const rank = rows && rows.length > 0 && series.dataUrl === rankUrl && series.data ? periodRank(series.data.buckets, day, mode === 'day' ? 5 : 3) : null;
+  const periods = series.dataUrl === rankUrl && series.data ? series.data.buckets : null;
+  // Until the series lands (or fails), a service without a cost is not yet known to be uncosted.
+  const costPending = !periods && !series.error;
+  const rows = items && withProductionCost(items, periods?.find((b) => b.start <= day && day <= b.end));
+  const rank = rows && rows.length > 0 && periods ? periodRank(periods, day, mode === 'day' ? 5 : 3) : null;
 
   const label = new Intl.DateTimeFormat(
     i18n.language,
@@ -119,12 +124,12 @@ export function RevenueJournal({ today, filterParams, version, taxMode, canMargi
   const share = (m: number | null) => (m === null || total.margin === null || total.margin <= 0 ? null : m / total.margin);
 
   const active = sort ?? { key: margin ? 'margin' : 'amount', asc: false };
-  const sortValue = (r: RevenueItemRow) =>
+  const sortValue = (r: JournalRow) =>
     active.key === 'quantity' ? r.quantity : active.key === 'amount' ? amt(r) : (journalTotals([r])[active.key === 'rate' ? 'rate' : 'margin'] ?? -Infinity);
-  const ordered = (list: RevenueItemRow[]) =>
+  const ordered = (list: JournalRow[]) =>
     [...list].sort((a, b) => (active.asc ? 1 : -1) * (active.key === 'name' ? a.name.localeCompare(b.name, i18n.language) : cmp(sortValue(a), sortValue(b))));
 
-  const buckets = new Map<string, RevenueItemRow[]>();
+  const buckets = new Map<string, JournalRow[]>();
   for (const r of rows ?? []) {
     const key = by === 'kind' ? r.kind : (r[by] ?? '');
     buckets.set(key, [...(buckets.get(key) ?? []), r]);
@@ -222,7 +227,7 @@ export function RevenueJournal({ today, filterParams, version, taxMode, canMargi
           <div data-slot="revenue-journal-kpis" className="mb-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
             <Tile label={t(`revenue.table.${taxMode}`)} value={formatAmount(amt(total))} />
             {margin && <Tile label={t('revenue.analysis.marginTitle')} value={money(total.margin)} tone={total.margin !== null && total.margin < 0 ? 'alert' : undefined} />}
-            {margin && <Tile label={t('revenue.journal.marginRate')} value={pct(total.rate)} hint={t('revenue.table.coverage', { pct: `${Math.round(total.coverage * 100)} %` })} />}
+            {margin && <Tile label={t('revenue.journal.marginRate')} value={pct(total.rate)} hint={t('revenue.table.coverage', { pct: `${Math.round(total.coverage * 100)} %` })} hintWrap />}
             <Tile label={t('revenue.table.units')} value={String(total.quantity)} hint={`${t('revenue.views.journalReferences')} · ${rows.length}`} />
           </div>
           <div className="mb-2 flex flex-wrap items-center gap-2">
@@ -266,9 +271,11 @@ export function RevenueJournal({ today, filterParams, version, taxMode, canMargi
                           <button type="button" aria-expanded={isOpen} className={`flex w-full min-w-0 items-start gap-1 text-left ${focusRingCls}`}>
                             <ChevronRight aria-hidden className={`mt-0.5 h-3.5 w-3.5 shrink-0 text-bambu-gray transition-transform ${isOpen ? 'rotate-90' : ''}`} />
                             <span className="min-w-0 flex-1">
-                              <span className="flex items-center gap-1.5">
-                                <span className="truncate text-white" title={r.name}>{r.name}</span>
-                                {margin && r.cost == null && <span className={`${CHIP} text-bambu-gray`}>{t('revenue.journal.unknownCost')}</span>}
+                              {/* Below sm the name keeps the whole line and the chips wrap under it. */}
+                              <span className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5 sm:flex-nowrap">
+                                <span className="w-full truncate text-white sm:w-auto" title={r.name}>{r.name}</span>
+                                {margin && r.cost == null && !(costPending && r.kind === 'service') && <span className={`${CHIP} text-bambu-gray`}>{t('revenue.journal.unknownCost')}</span>}
+                                {margin && r.shared && <span className={`${CHIP} text-bambu-gray`} title={t('revenue.journal.sharedCostHint')}>{t('revenue.journal.sharedCost')}</span>}
                                 {x.margin !== null && x.margin < 0 && margin && <span className={`${CHIP} text-status-error`}>{t('revenue.journal.atLoss')}</span>}
                               </span>
                               <span className="block truncate text-[11px] text-bambu-gray">{[by === 'nature' ? null : r.nature, by === 'brand' ? null : r.brand, r.sku].filter(Boolean).join(' · ')}</span>

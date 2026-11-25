@@ -63,6 +63,8 @@ export interface RevenueItemRow {
   ttc: number;
   /** Absent without the margin permission; null when the item has no cost. */
   cost?: number | null;
+  /** The part of `ht` that `cost` covers (an item can be costed on some lines only); same stripping as cost. */
+  costedHt?: number;
   nature: string | null;
   brand: string | null;
   kind: "goods" | "service";

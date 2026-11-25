@@ -13119,6 +13119,8 @@ export default {
       marginRate: '毛利率',
       share: '占比',
       unknownCost: '成本未知',
+      sharedCost: '成本分摊',
+      sharedCostHint: '本期生产成本（耗材、电费、打印机损耗、人工、固定成本）按营收分摊到各项服务',
       atLoss: '亏损',
       groupBy: '分组依据',
       unitPrice: '平均单价 {{tax}}',

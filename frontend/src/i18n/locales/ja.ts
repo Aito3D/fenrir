@@ -13135,6 +13135,8 @@ export default {
       marginRate: '利益率',
       share: '構成比',
       unknownCost: '原価不明',
+      sharedCost: '原価按分',
+      sharedCostHint: '期間の製造原価（フィラメント、電力、プリンターの消耗、人件費、固定費）を売上に応じてサービスに按分',
       atLoss: '赤字',
       groupBy: 'グループ化',
       unitPrice: '平均単価 {{tax}}',

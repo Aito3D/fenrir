@@ -13160,6 +13160,8 @@ export default {
       marginRate: 'Margepercentage',
       share: 'Aandeel',
       unknownCost: 'kosten onbekend',
+      sharedCost: 'kosten verdeeld',
+      sharedCostHint: 'Productiekosten van de periode (filament, energie, slijtage, arbeid, vaste kosten), naar omzet verdeeld over de diensten',
       atLoss: 'met verlies',
       groupBy: 'Groeperen op',
       unitPrice: 'Gemiddelde stukprijs {{tax}}',

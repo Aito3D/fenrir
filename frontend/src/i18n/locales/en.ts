@@ -13192,6 +13192,8 @@ export default {
       marginRate: 'Margin rate',
       share: 'Share',
       unknownCost: 'cost unknown',
+      sharedCost: 'cost shared',
+      sharedCostHint: 'The period\'s production cost (filament, energy, printer wear, labour, fixed costs), shared between services by revenue',
       atLoss: 'at a loss',
       groupBy: 'Group by',
       unitPrice: 'Average unit price {{tax}}',

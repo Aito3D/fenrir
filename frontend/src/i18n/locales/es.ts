@@ -13144,6 +13144,8 @@ export default {
       marginRate: 'Tasa de margen',
       share: 'Cuota',
       unknownCost: 'coste desconocido',
+      sharedCost: 'coste repartido',
+      sharedCostHint: 'Coste de producción del periodo (filamento, energía, desgaste, mano de obra, costes fijos), repartido entre los servicios según sus ingresos',
       atLoss: 'con pérdida',
       groupBy: 'Agrupar por',
       unitPrice: 'Precio unitario medio {{tax}}',

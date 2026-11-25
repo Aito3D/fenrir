@@ -13119,6 +13119,8 @@ export default {
       marginRate: '毛利率',
       share: '占比',
       unknownCost: '成本不明',
+      sharedCost: '成本分攤',
+      sharedCostHint: '本期生產成本（線材、電費、列印機損耗、人工、固定成本）依營收分攤到各項服務',
       atLoss: '虧損',
       groupBy: '分組依據',
       unitPrice: '平均單價 {{tax}}',

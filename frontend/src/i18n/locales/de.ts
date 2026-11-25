@@ -13136,6 +13136,8 @@ export default {
       marginRate: 'Margenquote',
       share: 'Anteil',
       unknownCost: 'Kosten unbekannt',
+      sharedCost: 'Kosten umgelegt',
+      sharedCostHint: 'Produktionskosten des Zeitraums (Filament, Energie, Druckerverschleiß, Arbeit, Fixkosten), nach Umsatz auf die Dienstleistungen umgelegt',
       atLoss: 'mit Verlust',
       groupBy: 'Gruppieren nach',
       unitPrice: 'Durchschnittlicher Stückpreis {{tax}}',

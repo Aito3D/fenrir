@@ -133,6 +133,42 @@ describe('RevenueJournal', () => {
     expect(await screen.findByText(/No\. 2 day of the month/)).toBeInTheDocument();
   });
 
+  it('shares the period production cost between the services without a cost, and agrees with the bucket', async () => {
+    const service = (o: Partial<RevenueItemRow>) => row({ kind: 'service', sku: '', brand: null, nature: null, quantity: 1, cost: null, costedHt: 0, ...o });
+    const items = [
+      row({ cost: 9_000, costedHt: 12_000 }),
+      service({ itemId: '2', name: 'Impression3D', ht: 8_000, ttc: 9_040 }),
+      service({ itemId: '3', name: 'Modelisation3D', ht: 2_000, ttc: 2_260 }),
+      service({ itemId: '4', name: 'Scan3D', ht: 1_000, ttc: 1_130, cost: 400, costedHt: 1_000 }),
+    ];
+    // The server's bucket: 13 000 with an own cost + the 10 000 pool; 9 400 of item costs + 4 000 of production.
+    const bucket = { start: '2026-11-24', end: '2026-11-24', ht: 23_000, costedHt: 23_000, cost: 13_400, costParts: { items: 9_400, filament: 1_500, labor: 2_500 } };
+    let land!: () => void;
+    const landed = new Promise<void>((r) => (land = r));
+    vi.stubGlobal('fetch', vi.fn(async (u: string) => {
+      if (u.startsWith(ITEMS)) return json({ from: '', to: '', items });
+      await landed;
+      return json({ buckets: [bucket] });
+    }));
+    render(<RevenueJournal today="2026-11-24" filterParams="" version={0} taxMode="ht" canMargin />);
+
+    // The series has not landed: no verdict on the services yet.
+    const print = () => within(screen.getByText('Impression3D').closest('tr')!);
+    await screen.findByText('Impression3D');
+    expect(print().getAllByText('—')).toHaveLength(4);
+    expect(screen.queryByText('cost unknown')).toBeNull();
+    expect(screen.queryByText('cost shared')).toBeNull();
+
+    land();
+    expect(await screen.findAllByText('cost shared')).toHaveLength(2);
+    expect(screen.queryByText('cost unknown')).toBeNull();
+    expect(print().getAllByRole('cell').map((c) => c.textContent)).toEqual(['1', '8.000', '3.200', '4.800', '60.0 %', '50.0 %']);
+    expect(within(screen.getByText('Scan3D').closest('tr')!).getByText('400')).toBeInTheDocument(); // its own cost, no chip
+    const total = within(totalRow()).getAllByRole('cell').map((c) => c.textContent);
+    expect(total.slice(2, 4)).toEqual(['13.400', '9.600']); // bucket.cost, bucket.costedHt − bucket.cost
+    expect(screen.getByText('cost known on 100 % of revenue HT')).toBeInTheDocument();
+  });
+
   it('groups by brand with a subtotal each, the best margin first, and remembers the choice', async () => {
     vi.stubGlobal('fetch', mockFetch(() => [...LEDGER, row({ itemId: '4', name: 'PETG white', ht: 5_000, ttc: 5_650, cost: 4_000 })]));
     const { unmount } = render(<RevenueJournal today="2026-11-24" filterParams="" version={0} taxMode="ht" canMargin />);

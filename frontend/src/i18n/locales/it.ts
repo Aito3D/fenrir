@@ -13121,6 +13121,8 @@ export default {
       marginRate: 'Tasso di margine',
       share: 'Quota',
       unknownCost: 'costo sconosciuto',
+      sharedCost: 'costo ripartito',
+      sharedCostHint: 'Costo di produzione del periodo (filamento, energia, usura, manodopera, costi fissi), ripartito tra i servizi in base al fatturato',
       atLoss: 'in perdita',
       groupBy: 'Raggruppa per',
       unitPrice: 'Prezzo unitario medio {{tax}}',
