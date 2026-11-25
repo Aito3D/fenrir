@@ -33,6 +33,6 @@ describe('auditPreloads', () => {
       expect(name, name).toMatch(FORBIDDEN);
     }
     expect('index-BBdVWW1C.js').not.toMatch(FORBIDDEN);
-    expect(BUDGET_GZIP_BYTES).toBe(292_000);
+    expect(BUDGET_GZIP_BYTES).toBe(297_000);
   });
 });

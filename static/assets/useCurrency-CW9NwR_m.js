@@ -1,0 +1,1 @@
+import{t as e}from"./useQuery-BD_KpPiw.js";import{l as t}from"./client-TC8FgO_2.js";function n(){let{data:n}=e({queryKey:[`settings`],queryFn:t.getSettings,staleTime:6e4});return n?.currency||`USD`}export{n as t};
