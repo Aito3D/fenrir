@@ -32,6 +32,7 @@ def test_closed_month_result_takes_every_cost_off_the_revenue():
         "variable": 400_000,
         "labor": 200_000,
         "fixed": 150_000,
+        "depreciation": 0,
         "result": 250_000,
         "coverage": 1.0,
         "partial": False,
@@ -114,3 +115,19 @@ def test_no_charges_gives_no_break_even():
     assert (
         build_result([mb("2026-11", 100_000, items=40_000)], days([10_000] * 10), 0, "2026-11-11")["breakEven"] is None
     )
+
+
+def test_depreciation_is_its_own_charge_not_a_variable_cost():
+    month = mb("2026-10", 1000, items=200, labor=100)
+    month["costParts"] |= {"fixed": 50, "depreciation": 150}
+    row = build_result([month, mb("2026-11", 0)], [], 0, "2026-11-01")["months"][0]
+    assert (row["variable"], row["depreciation"], row["result"]) == (200, 150, 550)
+
+
+def test_break_even_counts_the_months_depreciation():
+    months, day_buckets = [mb("2026-11", 1_000_000, items=400_000)], days([100_000] * 10)
+    args = (months, day_buckets, 30_000, "2026-11-11", 0, "2024-01-01")
+    without = result.build_result(*args)
+    with_dep = result.build_result(*args, month_depreciation=30_000)
+    assert with_dep["breakEven"]["amount"] == 2 * without["breakEven"]["amount"]
+    assert with_dep["charges"] == {"labor": 0, "fixed": 30_000, "depreciation": 30_000}
