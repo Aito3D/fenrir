@@ -11,15 +11,20 @@ from backend.app.models.print_log import RUN_OPEN, PrintLogEntry
 from backend.app.models.printer import Printer
 from backend.app.models.settings import Settings
 from backend.app.services.revenue.production import (
+    COSTS_START,
+    DEPRECIATION_KEY,
     FilamentPrices,
     MachineRate,
     Run,
     costs_by_day,
+    depreciation_by_day,
     labor_by_day,
     machine_rate,
     match_rate,
+    read_depreciation,
     read_production_costs,
     run_cost,
+    selected_assets,
 )
 
 RATE = MachineRate(watts=200, wear_per_hour=100)
@@ -194,3 +199,80 @@ async def test_read_production_costs_prices_each_stored_run_on_its_org_day(engin
     }
     assert out.hours_by_day == {"2026-09-01": 2, "2026-09-02": 0.5}
     assert out.first_day == "2026-09-01"
+
+
+ASSET = {
+    "id": "a1",
+    "number": "IMMO-1",
+    "name": "H2S01",
+    "type": "Machine 3D",
+    "cost": 360000,
+    "start": "2026-09-01",
+    "months": 36,
+    "status": "active",
+}
+
+
+def test_depreciation_is_spread_per_day_with_todays_share():
+    got = depreciation_by_day([ASSET], "2026-09-03", today_share=0.5)
+    assert {d: round(v, 2) for d, v in got.items()} == {
+        "2026-09-01": 333.33,
+        "2026-09-02": 333.33,
+        "2026-09-03": 166.67,
+    }
+
+
+def test_depreciation_stops_at_the_end_of_the_assets_life_and_sums_to_its_cost():
+    one = {**ASSET, "cost": 3100, "start": "2026-07-10", "months": 1}
+    got = depreciation_by_day([one], "2026-12-01")
+    assert min(got) == "2026-07-10" and max(got) == "2026-08-09"
+    assert round(sum(got.values()), 6) == 3100
+
+
+def test_depreciation_starts_no_earlier_than_the_costs_start():
+    old = {**ASSET, "start": "2025-09-30"}
+    assert min(depreciation_by_day([old], "2026-07-05")) == COSTS_START
+
+
+@pytest.mark.parametrize("patch", [{"months": 0}, {"months": None}, {"start": None}, {"cost": None}])
+def test_depreciation_skips_an_asset_it_cannot_compute(patch):
+    assert depreciation_by_day([{**ASSET, **patch}], "2026-09-03") == {}
+
+
+def test_selected_assets_keeps_selected_active_ones_only():
+    dep = {
+        "assets": [ASSET, {**ASSET, "id": "a2"}, {**ASSET, "id": "a3", "status": "sold"}],
+        "selected": ["a1", "a3", "gone"],
+        "readAt": None,
+    }
+    assert [a["id"] for a in selected_assets(dep)] == ["a1"]
+
+
+async def test_selected_depreciation_replaces_wear_and_an_empty_selection_brings_it_back(engine):
+    stored = {"assets": [ASSET], "selected": ["a1"], "readAt": None}
+    async with engine.begin() as conn:
+        await conn.execute(Settings.__table__.insert().values(key=DEPRECIATION_KEY, value=json.dumps(stored)))
+        entry = PrintLogEntry(
+            status="completed", started_at=datetime(2026, 9, 2, 20), duration_seconds=60, wear_cost=50
+        )
+        await conn.run_sync(lambda sync: _save(sync, [entry]))
+    async with engine.connect() as conn:
+        assert await read_depreciation(conn) == stored
+        day = (await read_production_costs(conn, today="2026-09-03")).by_day["2026-09-02"]
+    assert "wear" not in day
+    assert round(day["depreciation"], 2) == 333.33
+    async with engine.begin() as conn:
+        await conn.execute(
+            Settings.__table__.update()
+            .where(Settings.key == DEPRECIATION_KEY)
+            .values(value=json.dumps({**stored, "selected": []}))
+        )
+    async with engine.connect() as conn:
+        day = (await read_production_costs(conn, today="2026-09-03")).by_day["2026-09-02"]
+    assert day["wear"] == 50
+    assert "depreciation" not in day
+
+
+async def test_read_depreciation_without_a_stored_row_is_empty(engine):
+    async with engine.connect() as conn:
+        assert await read_depreciation(conn) == {"assets": [], "selected": [], "readAt": None}

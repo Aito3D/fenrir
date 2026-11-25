@@ -5,7 +5,7 @@ import statistics
 from collections.abc import Iterable
 from dataclasses import dataclass, field
 from datetime import date, datetime, timezone
-from typing import Protocol, cast
+from typing import Protocol, TypeVar, cast
 from zoneinfo import ZoneInfo
 
 from sqlalchemy import select
@@ -16,7 +16,9 @@ from backend.app.models.print_log import RUN_OPEN, PrintLogEntry
 from backend.app.models.printer import Printer
 from backend.app.models.settings import Settings
 from backend.app.services.revenue.config import ORG_TIME_ZONE
-from backend.app.services.revenue.dates import _org_day_of, all_days, days_in_month
+from backend.app.services.revenue.dates import _org_day_of, add_days, all_days, days_in_month
+
+_Json = TypeVar("_Json", list[dict], dict)
 
 # Before July 2026 the print log priced filament at ~25-31 per kg (not XPF), so earlier costs are not usable.
 COSTS_START = "2026-07-01"
@@ -25,6 +27,9 @@ MAX_RUN_SECONDS = 72 * 3600
 # Settings row holding the labour list: [{"name", "hourlyRate", "hoursPerDay", "daysPerWeek", "since"}].
 LABOR_KEY = "revenue_labor"
 FIXED_COSTS_KEY = "revenue_fixed_costs"
+# Settings row: {"assets": [{"id", "number", "name", "type", "cost", "start", "months", "status"}], "selected": [id],
+# "readAt"}: Zoho's fixed assets as last read, and the ones the operator charges to 3D printing.
+DEPRECIATION_KEY = "revenue_depreciation"
 
 
 @dataclass(frozen=True)
@@ -194,12 +199,42 @@ def fixed_by_day(monthly: float, today: str, since: str = COSTS_START, today_sha
     return by_day
 
 
+def _life_end(start: str, months: int) -> str:
+    """The first day after an asset's life: `start` moved `months` calendar months on, the day clamped to the month."""
+    year, month0 = divmod(int(start[:4]) * 12 + int(start[5:7]) - 1 + months, 12)
+    return f"{year:04d}-{month0 + 1:02d}-{min(int(start[8:10]), days_in_month(year, month0 + 1)):02d}"
+
+
+def depreciation_by_day(
+    assets: Iterable[dict], today: str, since: str = COSTS_START, today_share: float = 0.0
+) -> dict[str, float]:
+    """Straight-line depreciation with no residual value: each asset costs `cost / months` a month over its life,
+    spread over the month's days like the fixed charges, today counting for `today_share`."""
+    by_day: dict[str, float] = {}
+    for a in assets:
+        if not (a.get("cost") and a.get("months") and a.get("start")):
+            continue
+        monthly = a["cost"] / a["months"]
+        first, last = max(since, a["start"]), min(today, add_days(_life_end(a["start"], a["months"]), -1))
+        for day in all_days(first, last) if first <= last else []:
+            cost = monthly / days_in_month(int(day[:4]), int(day[5:7])) * (today_share if day == today else 1.0)
+            if cost:
+                by_day[day] = by_day.get(day, 0.0) + cost
+    return by_day
+
+
+def selected_assets(dep: dict) -> list[dict]:
+    """The assets the operator switched on, as long as Zoho still calls them active."""
+    chosen = set(dep["selected"])
+    return [a for a in dep["assets"] if a["id"] in chosen and a["status"] == "active"]
+
+
 async def _read_json(conn: AsyncConnection, key: str) -> list[dict]:
     raw = (await conn.execute(select(Settings.value).where(Settings.key == key))).scalar_one_or_none()
     return json.loads(raw) if raw else []
 
 
-async def _save_json(db, key: str, rows: list[dict]) -> list[dict]:
+async def _save_json(db, key: str, rows: _Json) -> _Json:
     row = (await db.execute(select(Settings).where(Settings.key == key))).scalar_one_or_none()
     value = json.dumps(rows)
     if row is None:
@@ -225,6 +260,15 @@ async def read_fixed_costs(conn: AsyncConnection) -> list[dict]:
 
 async def save_fixed_costs(db, costs: list[dict]) -> list[dict]:
     return await _save_json(db, FIXED_COSTS_KEY, costs)
+
+
+async def read_depreciation(conn: AsyncConnection) -> dict:
+    raw = (await conn.execute(select(Settings.value).where(Settings.key == DEPRECIATION_KEY))).scalar_one_or_none()
+    return json.loads(raw) if raw else {"assets": [], "selected": [], "readAt": None}
+
+
+async def save_depreciation(db, value: dict) -> dict:
+    return await _save_json(db, DEPRECIATION_KEY, value)
 
 
 def fixed_monthly(costs: Iterable[dict]) -> float:
@@ -281,4 +325,11 @@ async def read_production_costs(conn: AsyncConnection, today: str, now: datetime
     fixed = fixed_monthly(await read_fixed_costs(conn))
     for day, cost in fixed_by_day(fixed, today, today_share=day_share).items():
         _add(by_day, day, {"fixed": cost})
+    assets = selected_assets(await read_depreciation(conn))
+    if assets:
+        # The books' depreciation replaces the calculator's usage wear: counting both would charge the machines twice.
+        for parts in by_day.values():
+            parts.pop("wear", None)
+        for day, cost in depreciation_by_day(assets, today, today_share=day_share).items():
+            _add(by_day, day, {"depreciation": cost})
     return ProductionCosts(by_day=by_day, first_day=min(by_day, default=None), hours_by_day=costs.hours_by_day)
