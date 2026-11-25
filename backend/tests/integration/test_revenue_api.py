@@ -941,3 +941,38 @@ async def test_result_etag_moves_when_the_depreciation_selection_changes(async_c
     again = await async_client.get(url, headers={**tokens["labor"], "If-None-Match": etag})
     assert again.status_code == 200 and again.json()["charges"]["depreciation"] == 300
     assert again.json()["months"][-1]["depreciation"] > 0
+
+
+@pytest.mark.asyncio
+async def test_series_etag_moves_when_the_depreciation_selection_changes(async_client, revenue_db, tokens, monkeypatch):
+    two = [{**ZOHO_ASSET, "total_life": 1200}, {**ZOHO_ASSET, "fixed_asset_id": "a2", "total_life": 1200}]
+    _zoho_assets(monkeypatch, two)
+    await async_client.post(f"{URL}/depreciation/refresh", headers=tokens["labor"])
+    # One asset already on: the by-the-minute stamp is there before and after, it cannot be what moves the ETag.
+    await async_client.put(f"{URL}/depreciation", json={"selected": ["a1"]}, headers=tokens["labor"])
+    etag = (await async_client.get(URL, params=MONTH, headers=tokens["labor"])).headers["etag"]
+    put = await async_client.put(f"{URL}/depreciation", json={"selected": ["a1", "a2"]}, headers=tokens["labor"])
+    assert put.status_code == 200
+    again = await async_client.get(URL, params=MONTH, headers={**tokens["labor"], "If-None-Match": etag})
+    assert again.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_refresh_stores_numbers_and_iso_days_whatever_zoho_sends(async_client, revenue_db, tokens, monkeypatch):
+    rows = [
+        {**ZOHO_ASSET, "asset_cost": "360000.00", "total_life": "36"},
+        {**ZOHO_ASSET, "fixed_asset_id": "a2", "total_life": 36.0, "depreciation_start_date": "01/09/2026"},
+        {**ZOHO_ASSET, "fixed_asset_id": "a3", "asset_cost": "n/a", "total_life": "three years"},
+    ]
+    _zoho_assets(monkeypatch, rows)
+    got = (await async_client.post(f"{URL}/depreciation/refresh", headers=tokens["labor"])).json()["assets"]
+    assert [(a["cost"], a["months"], a["start"]) for a in got] == [
+        (360000.0, 36, "2026-09-01"),
+        (360000.0, 36, None),
+        (None, None, "2026-09-01"),
+    ]
+    assert all(type(a["months"]) is int for a in got[:2])
+    # Selected all the same, none of them can break a margin read.
+    ids = {"selected": ["a1", "a2", "a3"]}
+    assert (await async_client.put(f"{URL}/depreciation", json=ids, headers=tokens["labor"])).status_code == 200
+    assert (await async_client.get(f"{URL}/result", headers=tokens["labor"])).status_code == 200

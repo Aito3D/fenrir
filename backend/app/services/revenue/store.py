@@ -3,6 +3,7 @@
 Reads take a connection from `snapshot()` (one point in time); writes take the caller's AsyncSession and commit.
 """
 
+import zlib
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from datetime import datetime
@@ -439,6 +440,8 @@ async def revenue_data_stamp(conn: AsyncConnection) -> str:
     for key in ("revenue_labor", "revenue_fixed_costs"):
         at = (await conn.execute(select(Settings.updated_at).where(Settings.key == key))).scalar()
         parts.append(f"{key}@{at or ''}")
+    # The selected Zoho assets feed it too. Its value, not its timestamp: two saves can share a second.
+    parts.append(f"dep@{zlib.crc32((await get_setting(conn, 'revenue_depreciation') or '').encode())}")
     return "|".join(parts)
 
 

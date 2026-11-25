@@ -3,6 +3,7 @@ fixed-asset refresh the operator asks for."""
 
 import asyncio
 import logging
+import math
 import re
 import time
 from collections.abc import Awaitable, Callable
@@ -844,6 +845,15 @@ async def get_depreciation(
         return await production.read_depreciation(conn)
 
 
+def _number(value: Any) -> float | None:
+    """A Zoho figure as a finite number, or None: the stored list is computed on at every margin read."""
+    try:
+        n = float(value)
+    except (TypeError, ValueError):
+        return None
+    return n if math.isfinite(n) else None
+
+
 # Same rights as the fixed costs: charges are margin data.
 _MANAGE_CHARGES = (Permission.REVENUE_VIEW_MARGIN, Permission.REVENUE_MANAGE_TARGETS)
 
@@ -866,9 +876,11 @@ async def refresh_depreciation(user: User | None = RequirePermissionIfAuthEnable
                 "number": r.get("asset_number") or "",
                 "name": r.get("asset_name") or "",
                 "type": r.get("fixed_asset_type_name") or "",
-                "cost": r.get("asset_cost"),
-                "start": r.get("depreciation_start_date") or None,
-                "months": r.get("total_life"),
+                "cost": _number(r.get("asset_cost")),
+                "start": start
+                if isinstance(start := r.get("depreciation_start_date"), str) and is_valid_day(start)
+                else None,
+                "months": None if (life := _number(r.get("total_life"))) is None else int(life),
                 "status": r.get("status") or "",
             }
             for r in rows
