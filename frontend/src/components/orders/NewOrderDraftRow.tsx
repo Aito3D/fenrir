@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Check, Loader2, Plus, RotateCcw, X } from 'lucide-react';
@@ -121,6 +121,14 @@ export function NewOrderDraftRow({ currency, open, finished, mode = 'order', quo
       else if (!busy) close();
     },
   });
+  // The board behind stays put while the dialog is open (same lock as PreviewModalShell).
+  useEffect(() => {
+    const previous = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.body.style.overflow = previous;
+    };
+  }, []);
   const title = quote ? t('orders.newQuote.editTitle') : isQuote ? t('orders.newQuote.title') : t('orders.newOrder.title');
   // Quotes wear violet, orders the board's green: the two documents never look alike.
   const tone = isQuote
@@ -133,7 +141,7 @@ export function NewOrderDraftRow({ currency, open, finished, mode = 'order', quo
 
   return (
     <div
-      className={`fixed inset-0 z-[110] flex items-start justify-center overflow-y-auto bg-black/50 p-4 backdrop-blur-sm sm:pt-[8vh] ${
+      className={`fixed inset-0 z-[110] flex items-start justify-center overflow-y-auto overscroll-contain bg-black/50 p-4 backdrop-blur-sm sm:pt-[8vh] ${
         closing ? 'animate-overlay-out pointer-events-none' : 'animate-overlay-in'
       }`}
       onClick={busy ? undefined : requestClose}
