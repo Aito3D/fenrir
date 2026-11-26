@@ -90,3 +90,40 @@ Backend (deux petits ajouts) :
 ## Laissé au constructeur
 
 Découpage des composants, noms, animation de la barre, textes exacts des erreurs.
+
+## As built (2026-11-25)
+
+Conforme au design, avec ces précisions et écarts :
+
+- **Écran final** : trois boutons pleine largeur (« Nouvelle vente », « Imprimer la facture » avec sa flèche, « Ouvrir la
+  commande »). Le menu de la facture s'ouvre vers le bas.
+- **Non repris du mock-up** : la ligne grise sous chaque étape, la phrase d'aide sous « Payer », la ligne « Retrait en
+  boutique » sous le client.
+- **Fermeture** : Échap, la croix et un clic hors du modal font la même chose. Rien pendant une écriture ou tant qu'une
+  fenêtre de paiement est ouverte ; sinon le modal se ferme et, dès que la commande existe, elle s'ouvre sur le tableau
+  (à toute étape, y compris terminé et erreur).
+- **Carte (TPE)** : la vente continue seule quand le paiement est encaissé ET enregistré dans Books, même si la fenêtre
+  du TPE a été fermée ; « Carte » sur un paiement déjà passé ne propose pas un second encaissement.
+- **Paiement partiel** : l'écran final affiche le montant encore dû au lieu de « acquittée ».
+- **Facture sans le paiement** : le serveur signale `failed_step: "credit"`, `error: "credit_unconfirmed"` ; l'étape
+  s'arrête sur « paiement pas encore attribué » et « Réessayer » n'applique que le crédit (pas de seconde facture).
+- **Réponse perdue** : après un délai dépassé, « Réessayer » reprend la facture ou le prélèvement que Books a déjà créés.
+- **Espèces ou chèque** : la fenêtre de paiement manuel s'ouvre sur « Espèces » (`ManualPaymentModal initialMode`).
+- **Serveur** : `POST …/invoice` accepte `credit_cap` ; `POST …/picklists` accepte `force` (ids de lignes) ; l'historique
+  note les lignes forcées. Aucune nouvelle route.
+- **Correctif hors périmètre demandé en cours de route** : une ligne sans chiffre de stock (service) n'affiche plus
+  « [object Object] disponibles » dans le panier.
+- Fichiers : `counterPay.ts` (règles), `useCounterPay.ts` (chaîne), `CounterPayFlow.tsx`, `SplitButton.tsx`,
+  `NewOrderDraftRow.tsx`.
+
+## Still owed
+
+- **Première vente réelle surveillée** (jamais lancé contre le vrai Zoho ni le vrai TPE) : Books accepte-t-il un
+  prélèvement / colis sur une ligne à stock 0 ; un acompte appliqué en partie ; le tableau compte-t-il un paiement TPE
+  avant l'étape Facture ; l'impression et l'envoi par mail de la facture.
+- Vu seulement en navigateur sans serveur (requêtes simulées) : paiement partiel, échec de remise, appui long sur
+  « Payer » non parcourus.
+- Sur téléphone, le menu « Envoyer par mail » de l'écran final dépasse le bas de l'écran de quelques pixels.
+- Cas restant bloquant (repli : « Ouvrir la commande ») : colis créé par Books mais réponse perdue ; facture restée en
+  brouillon après un échec de « marquer envoyée ».
+- Le câblage de la fenêtre TPE est copié de la fiche commande (`OrderPaymentBlock`) : à factoriser si l'un des deux change.
