@@ -100,7 +100,7 @@ export function OrderContactBlock({
 
   return (
     <Card className="p-3 text-xs">
-      <div className="flex items-center gap-2">
+      <div className="flex flex-wrap items-center gap-x-2 gap-y-1.5">
         <UserRound aria-hidden="true" className="h-3.5 w-3.5 text-bambu-gray" />
         <span className="font-semibold uppercase tracking-wide text-white">{t('orders.contact.title')}</span>
         <ClientRatingPill rating={rating.data} align="start" />
