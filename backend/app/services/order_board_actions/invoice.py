@@ -211,6 +211,7 @@ async def _finish(
     deliver: str | None,
     apply_credit: bool,
     scope: InvoiceScope = "shipped",
+    credit_cap: float | None = None,
     by: str | None = None,
 ) -> dict:
     """Steps 2 to 6 of a hand-over (``deliver`` is the shipment to mark delivered). Never raises: a failure stops
@@ -253,7 +254,7 @@ async def _finish(
         elif apply_credit and advance > 0:
             step = "credit"
             balance = invoice.get("balance") if invoice.get("balance") is not None else invoice.get("total")
-            cap = min(_num(balance), advance)
+            cap = min(_num(balance), advance, float("inf") if credit_cap is None else credit_cap)
             outcome["credit_applied"] = await _credit(
                 db, salesorder_id, number, invoice, fresh.get("customer_id") or "", cap
             )
@@ -280,16 +281,33 @@ async def _finish(
 
 
 async def invoice_shipped(
-    db: AsyncSession, salesorder_id: str, *, apply_credit: bool, scope: InvoiceScope = "shipped", by: str | None = None
+    db: AsyncSession,
+    salesorder_id: str,
+    *,
+    apply_credit: bool,
+    scope: InvoiceScope = "shipped",
+    credit_cap: float | None = None,
+    by: str | None = None,
 ) -> dict:
     """Invoice what is not invoiced yet, for any stored order (a finished one has no board row): what is shipped,
     also what is packed (before the hand-over, which then invoices nothing more), or the whole order."""
     with writing(salesorder_id):
         doc = await confirm_stored_copy(db, salesorder_id)
-        row = await sync.find_board_row(db, salesorder_id)
         number = doc.header.get("salesorder_number") or ""
+        if credit_cap is not None:  # a payment taken seconds ago must be on the row the credit is read from
+            await _best_effort_refresh(db, salesorder_id, number)
+        row = await sync.find_board_row(db, salesorder_id)
         return await _finish(
-            db, salesorder_id, number, _outcome(), row=row, deliver=None, apply_credit=apply_credit, scope=scope, by=by
+            db,
+            salesorder_id,
+            number,
+            _outcome(),
+            row=row,
+            deliver=None,
+            apply_credit=apply_credit,
+            scope=scope,
+            credit_cap=credit_cap,
+            by=by,
         )
 
 

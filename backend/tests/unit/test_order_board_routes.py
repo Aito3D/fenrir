@@ -340,8 +340,8 @@ async def test_handover_and_invoice_return_board_and_outcome(async_client, token
         calls.append(("hand", so, pkg, mode, apply_credit))
         return {"invoice": "created"}
 
-    async def fake_inv(db, so, *, apply_credit, scope, by=None):
-        calls.append(("inv", so, apply_credit, scope))
+    async def fake_inv(db, so, *, apply_credit, scope, credit_cap=None, by=None):
+        calls.append(("inv", so, apply_credit, scope, credit_cap))
         return {"invoice": "none"}
 
     async def fake_preview(db, so, pkg):
@@ -355,13 +355,15 @@ async def test_handover_and_invoice_return_board_and_outcome(async_client, token
     assert r.json()["outcome"] == {"invoice": "created"} and "rows" in r.json()["board"]
     r = await async_client.post(f"{BASE}/orders/so1/invoice", headers=h, json=INVOICE)
     assert r.json()["outcome"] == {"invoice": "none"} and "rows" in r.json()["board"]
-    r = await async_client.post(f"{BASE}/orders/so1/invoice", headers=h, json={**INVOICE, "scope": "packed"})
+    r = await async_client.post(
+        f"{BASE}/orders/so1/invoice", headers=h, json={**INVOICE, "scope": "packed", "credit_cap": 4000}
+    )
     r = await async_client.get(f"{BASE}/orders/so1/packages/p1/handover", headers=tokens["read"])
     assert r.json() == {"package": "p1"}
     assert calls == [
         ("hand", "so1", "p1", "pickup", False),
-        ("inv", "so1", True, "shipped"),
-        ("inv", "so1", True, "packed"),
+        ("inv", "so1", True, "shipped", None),
+        ("inv", "so1", True, "packed", 4000),
     ]
 
 
@@ -382,6 +384,8 @@ async def test_handover_and_invoice_return_board_and_outcome(async_client, token
         ("orders/so1/packages/p1/handover", {"mode": "pickup"}),
         ("orders/so1/invoice", {}),
         ("orders/so1/invoice", {"apply_credit": True, "scope": "everything"}),
+        ("orders/so1/invoice", {"apply_credit": True, "scope": "whole", "credit_cap": -1}),
+        ("orders/so1/invoice", {"apply_credit": True, "scope": "whole", "credit_cap": "nan"}),
     ],
 )
 async def test_bodies_are_validated(async_client, tokens, url, body):

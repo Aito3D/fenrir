@@ -111,6 +111,7 @@ class HandoverBody(BaseModel):
 class InvoiceBody(BaseModel):
     apply_credit: bool
     scope: Literal["shipped", "packed", "whole"] = "shipped"
+    credit_cap: float | None = Field(default=None, ge=0, allow_inf_nan=False)
 
 
 class InvoiceEmailBody(BaseModel):
@@ -299,7 +300,12 @@ async def invoice_order(
 ) -> dict:
     outcome = await _run(
         order_board_actions.invoice_shipped(
-            db, salesorder_id, apply_credit=body.apply_credit, scope=body.scope, by=_by(user)
+            db,
+            salesorder_id,
+            apply_credit=body.apply_credit,
+            scope=body.scope,
+            credit_cap=body.credit_cap,
+            by=_by(user),
         )
     )
     _logged(user, salesorder_id, "invoice")
