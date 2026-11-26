@@ -1,4 +1,5 @@
 import { useIsMutating, useMutation, useQueryClient } from '@tanstack/react-query';
+import type { QueryClient } from '@tanstack/react-query';
 import { api } from '../../api/client';
 import type { OrderActionResult, OrderBoardResponse, OrderBoardRow, OrderDocumentKind, OrderEditLine, OrderInvoiceScope } from '../../api/client';
 import { useAuth } from '../../contexts/AuthContext';
@@ -9,6 +10,17 @@ const BOARD_KEY = ['order-board'] as const;
 type Callbacks<R, V> = { onSuccess?: (result: R, variables: V) => void; onError?: (error: unknown) => void };
 type HandOverVars = { id: string; packageId: string; mode: 'pickup' | 'delivery'; applyCredit: boolean };
 type InvoiceVars = { id: string; applyCredit: boolean; scope?: OrderInvoiceScope };
+
+/** An answer's board replaces the live list; the finished lists and the history refetch. */
+export async function takeBoard(queryClient: QueryClient, board: OrderBoardResponse) {
+  // A poll already in flight would land after this answer and put the old board back.
+  await queryClient.cancelQueries({ queryKey: BOARD_KEY, exact: true });
+  queryClient.setQueryData(BOARD_KEY, board);
+  void queryClient.invalidateQueries({ queryKey: [...BOARD_KEY, 'finished'], exact: true });
+  void queryClient.invalidateQueries({ queryKey: ['order-board-finished-order'] });
+  // Every write here records a history line: an open Activité tab shows it (an emailed invoice names no order).
+  void queryClient.invalidateQueries({ queryKey: ['order-events'] });
+}
 
 const HANDOVER_KEY = ['order-hand-over'] as const;
 
@@ -33,15 +45,7 @@ export function useOrderActions(callbacks?: {
   const queryClient = useQueryClient();
   const { hasPermission } = useAuth();
 
-  const take = async (board: OrderBoardResponse) => {
-    // A poll already in flight would land after this answer and put the old board back.
-    await queryClient.cancelQueries({ queryKey: BOARD_KEY, exact: true });
-    queryClient.setQueryData(BOARD_KEY, board);
-    void queryClient.invalidateQueries({ queryKey: [...BOARD_KEY, 'finished'], exact: true });
-    void queryClient.invalidateQueries({ queryKey: ['order-board-finished-order'] });
-    // Every write here records a history line: an open Activité tab shows it (an emailed invoice names no order).
-    void queryClient.invalidateQueries({ queryKey: ['order-events'] });
-  };
+  const take = (board: OrderBoardResponse) => takeBoard(queryClient, board);
 
   // What a hand-over preview showed is stale once the order was written, or refused because it moved.
   const dropPreviews = (id: string) => {

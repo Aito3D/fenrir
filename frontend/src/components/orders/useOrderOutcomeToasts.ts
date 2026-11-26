@@ -1,6 +1,6 @@
 import { useTranslation } from 'react-i18next';
 import { ApiError } from '../../api/client';
-import { errorReason, isRefused } from './orderErrors';
+import { errorReason, failedStepText, isRefused } from './orderErrors';
 import type { OrderHandoverOutcome } from '../../api/client';
 import { useToast } from '../../contexts/ToastContext';
 
@@ -17,14 +17,8 @@ export function useOrderOutcomeToasts() {
     },
     /** An answered outcome; `mode` is set for a hand-over, absent for an invoice on its own. */
     outcome: (o: OrderHandoverOutcome, mode?: 'pickup' | 'delivery') => {
-      const reason = o.error ?? '';
       if (o.failed_step) {
-        const text =
-          o.failed_step === 'credit' && o.error === 'credit_off_board' ? t('orders.handover.creditOffBoard')
-          : o.failed_step === 'invoice' && o.error === 'prefill_refused' ? t('orders.handover.prefillRefused')
-          : o.failed_step === 'invoice' || o.failed_step === 'sent' ? t('orders.handover.invoiceFailed', { reason })
-          : t('orders.handover.failed', { reason });
-        showToast(text, 'warning');
+        showToast(failedStepText(t, o), 'warning');
       } else if (o.invoice === 'manual') {
         showToast(o.manual_reason === 'draft' ? t('orders.handover.manualDraft', { number: o.invoice_number ?? '' }) : t('orders.handover.manual'), 'warning');
       }

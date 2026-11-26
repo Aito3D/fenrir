@@ -5,9 +5,8 @@ import { api } from '../../api/client';
 import type { CounterOrderLine, OrderBoardLine, OrderBoardResponse, OrderBoardRow, OrderInvoice, OrderPickLines } from '../../api/client';
 import { attributed, invoiceOf, pickLines, rowOf, shortLines } from './counterPay';
 import type { PayStep } from './counterPay';
-import { errorReason } from './orderErrors';
-
-const BOARD_KEY = ['order-board'] as const;
+import { errorReason, failedStepText } from './orderErrors';
+import { takeBoard } from './useOrderActions';
 
 export type PayWait = 'payment' | 'stock' | 'handover' | null;
 export interface CounterPayState {
@@ -40,15 +39,12 @@ export function useCounterPay(opts?: { onCreateError?: (e: unknown) => void }) {
   const running = useRef(false);
   const m = useRef({
     orderId: '', row: null as OrderBoardRow | null, paid: 0, invoiceNumber: null as string | null, invoiceId: '',
-    queue: [] as OrderBoardLine[], have: new Set<string>(), lines: null as OrderPickLines['lines'] | null, force: [] as string[],
+    queue: [] as OrderBoardLine[], have: new Set<string>(), lines: null as OrderPickLines['lines'] | null, force: [] as string[], picklistPosted: false,
     picklistId: '', packageNumber: '', packageId: '', stage: 'invoice' as Stage,
   });
 
-  // Same as useOrderActions.take: a poll in flight would put the old board back.
   const take = async (board: OrderBoardResponse): Promise<OrderBoardRow | null> => {
-    await queryClient.cancelQueries({ queryKey: BOARD_KEY, exact: true });
-    queryClient.setQueryData(BOARD_KEY, board);
-    void queryClient.invalidateQueries({ queryKey: ['order-events'] });
+    await takeBoard(queryClient, board);
     const row = rowOf(board, m.current.orderId) ?? null;
     if (row) {
       m.current.row = row;
@@ -59,7 +55,8 @@ export function useCounterPay(opts?: { onCreateError?: (e: unknown) => void }) {
 
   const fail = (stage: Stage, step: PayStep, message: string) => {
     m.current.stage = stage;
-    patch({ step, error: message });
+    // An empty error would leave retry() disabled and the operator with nothing on screen.
+    patch({ step, error: message || t('orders.handover.failed', { reason: '' }) });
   };
 
   // The one guard against two clicks: a step is started only when none is running.
@@ -95,7 +92,9 @@ export function useCounterPay(opts?: { onCreateError?: (e: unknown) => void }) {
     const { orderId, packageId } = m.current;
     const r = await api.handOverOrderParcel(orderId, packageId, { mode: 'pickup', apply_credit: false });
     await take(r.board);
-    patch({ step: 'done', wait: null });
+    // The server answers 200 when only a later step (delivered) failed: Books has no "Livré" yet.
+    if (r.outcome.failed_step) fail('handover', 'handover', failedStepText(t, r.outcome));
+    else patch({ step: 'done', wait: null });
   });
 
   const runParcel = guarded('parcel', 'parcel', async () => {
@@ -111,7 +110,11 @@ export function useCounterPay(opts?: { onCreateError?: (e: unknown) => void }) {
         patch({ step: 'done', wait: null });
         return;
       }
+      // A picklist posted before a lost answer is still open on the board: the server refuses a second one.
+      if (!c.picklistId && c.picklistPosted) await take(await api.getOrderBoard());
+      if (!c.picklistId) c.picklistId = c.row?.picklists?.find((p) => p.status !== 'completed')?.id ?? '';
       if (!c.picklistId) {
+        c.picklistPosted = true;
         const pl = await api.createOrderPicklist(c.orderId, c.lines, c.force);
         c.picklistId = pl.picklist.id;
         await take(pl.board);
@@ -120,7 +123,11 @@ export function useCounterPay(opts?: { onCreateError?: (e: unknown) => void }) {
       c.packageNumber = parcel.package_number;
       await take(parcel.board);
     }
-    const pkg = c.row?.packages.find((p) => p.number === c.packageNumber);
+    let pkg = c.row?.packages.find((p) => p.number === c.packageNumber);
+    if (!pkg) {
+      await take(await api.getOrderBoard());
+      pkg = c.row?.packages.find((p) => p.number === c.packageNumber);
+    }
     if (!pkg) throw new Error(t('orders.parcel.stale'));
     c.packageId = pkg.id;
     patch({ step: 'handover', wait: 'handover' });
@@ -145,14 +152,23 @@ export function useCounterPay(opts?: { onCreateError?: (e: unknown) => void }) {
       const r = await api.createOrderInvoice(c.orderId, c.paid > 0 ? { apply_credit: true, scope: 'whole', credit_cap: c.paid } : { apply_credit: false, scope: 'whole' });
       const row = await take(r.board);
       const o = r.outcome;
-      if (o.invoice !== 'created' || !o.invoice_number) {
-        const message = o.invoice === 'manual' || o.invoice === 'draft'
-          ? t(o.manual_reason === 'draft' ? 'orders.handover.manualDraft' : 'orders.handover.manual', { number: o.invoice_number ?? '' })
-          : o.error ?? '';
-        fail('invoice', 'invoice', message);
+      if (o.invoice === 'created' && o.invoice_number) c.invoiceNumber = o.invoice_number;
+      else if (o.invoice === 'manual' || o.invoice === 'draft') {
+        fail('invoice', 'invoice', t(o.manual_reason === 'draft' ? 'orders.handover.manualDraft' : 'orders.handover.manual', { number: o.invoice_number ?? '' }));
         return;
+      } else if (o.failed_step || o.invoice === 'failed') {
+        fail('invoice', 'invoice', failedStepText(t, { ...o, failed_step: o.failed_step ?? 'invoice' }));
+        return;
+      } else {
+        // 'none' after a lost answer: the invoice may already be on the order, so adopt the newest live one.
+        const live = (row?.payment?.invoices ?? []).filter((i) => i.status !== 'void' && i.status !== 'draft');
+        const newest = live.reduce<OrderInvoice | undefined>((a, i) => (!a || i.date >= a.date ? i : a), undefined);
+        if (!newest) {
+          fail('invoice', 'invoice', t('orders.counterPay.noInvoice'));
+          return;
+        }
+        c.invoiceNumber = newest.number;
       }
-      c.invoiceNumber = o.invoice_number;
       if (!checkInvoice(row)) return;
       if (o.failed_step === 'credit') {
         fail('invoice', 'invoice', t('orders.counterPay.notAttributed'));
@@ -167,7 +183,7 @@ export function useCounterPay(opts?: { onCreateError?: (e: unknown) => void }) {
   });
 
   const startChain = (body: { customer_id: string; client_ref: string; lines: CounterOrderLine[] }) =>
-    run(async () => {
+    state.active ? Promise.resolve() : run(async () => {
       patch({ ...INITIAL, active: true, busy: true });
       let res;
       try {
@@ -177,7 +193,7 @@ export function useCounterPay(opts?: { onCreateError?: (e: unknown) => void }) {
         opts?.onCreateError?.(e);
         return;
       }
-      m.current = { ...m.current, orderId: res.salesorder_id, row: null, paid: 0, invoiceNumber: null, invoiceId: '', queue: [], have: new Set(), lines: null, force: [], picklistId: '', packageNumber: '', packageId: '', stage: 'invoice' };
+      m.current = { ...m.current, orderId: res.salesorder_id, row: null, paid: 0, invoiceNumber: null, invoiceId: '', queue: [], have: new Set(), lines: null, force: [], picklistPosted: false, picklistId: '', packageNumber: '', packageId: '', stage: 'invoice' };
       const row = (await take(res.board)) ?? res.row;
       patch({ step: 'payment', wait: 'payment', row });
     });

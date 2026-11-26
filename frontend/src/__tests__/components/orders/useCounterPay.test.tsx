@@ -13,7 +13,7 @@ vi.mock('../../../api/client', async (orig) => {
     ...mod,
     api: {
       createCounterOrder: fn(), createOrderInvoice: fn(), applyOrderCredit: fn(), getOrderPicklistPreview: fn(),
-      createOrderPicklist: fn(), createOrderParcel: fn(), handOverOrderParcel: fn(),
+      createOrderPicklist: fn(), createOrderParcel: fn(), handOverOrderParcel: fn(), getOrderBoard: fn(),
     },
   };
 });
@@ -66,6 +66,7 @@ describe('useCounterPay', () => {
     await act(async () => r.result.current.start(body));
     expect(onCreateError).toHaveBeenCalledTimes(1);
     expect(r.result.current).toMatchObject({ active: false, error: null, busy: false });
+    expect(r.result.current.step).toBe('order');
   });
 
   it('a full payment invoices the whole order with the cap', async () => {
@@ -94,6 +95,7 @@ describe('useCounterPay', () => {
     await toPayment(r);
     await act(async () => r.result.current.settle(12400));
     await waitFor(() => expect(r.result.current.error).toBe('orders.counterPay.notAttributed'));
+    expect(r.result.current.error?.length).toBeGreaterThan(0);
     expect(r.result.current.step).toBe('invoice');
     await act(async () => r.result.current.retry());
     await waitFor(() => expect(r.result.current.step).toBe('handover'));
@@ -203,5 +205,117 @@ describe('useCounterPay', () => {
     expect(r.result.current).toMatchObject({ active: false, wait: null });
     expect(r.result.current.row?.id).toBe('so1');
     expect(m.createOrderInvoice).not.toHaveBeenCalled();
+  });
+
+  it('an invoice outcome none with an invoice on the row adopts it', async () => {
+    arrange(mkRow(), 0);
+    m.createOrderInvoice.mockResolvedValue({ board: boardOf(mkRow({}, 0)), outcome: { ...created, invoice: 'none', invoice_number: null } } as never);
+    const r = setup();
+    await toPayment(r);
+    await act(async () => r.result.current.settle(12400));
+    await waitFor(() => expect(r.result.current.step).toBe('handover'));
+    expect(r.result.current.error).toBeNull();
+    expect(r.result.current.invoice?.id).toBe('inv1');
+    expect(m.createOrderInvoice).toHaveBeenCalledTimes(1);
+  });
+
+  it('an adopted invoice the payment did not reach asks only for the credit', async () => {
+    arrange(mkRow(), 12400);
+    m.createOrderInvoice.mockResolvedValue({ board: boardOf(mkRow({}, 12400)), outcome: { ...created, invoice: 'none', invoice_number: null } } as never);
+    const r = setup();
+    await toPayment(r);
+    await act(async () => r.result.current.settle(12400));
+    await waitFor(() => expect(r.result.current.error).toBe('orders.counterPay.notAttributed'));
+    expect(m.applyOrderCredit).not.toHaveBeenCalled();
+  });
+
+  it('an invoice outcome none with no invoice on the row is a worded error and retry posts again', async () => {
+    arrange(mkRow());
+    m.createOrderInvoice.mockResolvedValue({ board: boardOf(mkRow({ payment: { invoices: [] } })), outcome: { ...created, invoice: 'none', invoice_number: null } } as never);
+    const r = setup();
+    await toPayment(r);
+    await act(async () => r.result.current.settle(12400));
+    await waitFor(() => expect(r.result.current.error).toBe('orders.counterPay.noInvoice'));
+    expect(r.result.current.step).toBe('invoice');
+    await act(async () => r.result.current.retry());
+    await waitFor(() => expect(m.createOrderInvoice).toHaveBeenCalledTimes(2));
+  });
+
+  it('a failed invoice outcome is worded, never empty', async () => {
+    arrange(mkRow());
+    m.createOrderInvoice.mockResolvedValue({ board: boardOf(mkRow()), outcome: { ...created, invoice: 'failed', invoice_number: null, failed_step: 'invoice', error: 'zoho 500' } } as never);
+    const r = setup();
+    await toPayment(r);
+    await act(async () => r.result.current.settle(12400));
+    await waitFor(() => expect(r.result.current.error).toBe('orders.handover.invoiceFailed'));
+  });
+
+  it('a hand-over answer with a failed step is an error, and retry reaches done', async () => {
+    arrange(mkRow());
+    m.handOverOrderParcel.mockResolvedValueOnce({ board: boardOf(mkRow({}, 0)), outcome: { ...created, failed_step: 'delivered', error: 'x' } } as never);
+    const r = setup();
+    await toPayment(r);
+    await act(async () => r.result.current.settle(12400));
+    await waitFor(() => expect(r.result.current.step).toBe('handover'));
+    await act(async () => r.result.current.handOver());
+    await waitFor(() => expect(r.result.current.error?.length).toBeGreaterThan(0));
+    expect(r.result.current.step).toBe('handover');
+    await act(async () => r.result.current.retry());
+    await waitFor(() => expect(r.result.current.step).toBe('done'));
+    expect(m.handOverOrderParcel).toHaveBeenCalledTimes(2);
+  });
+
+  it('board answers invalidate the finished list and the events', async () => {
+    arrange(mkRow());
+    const r = setup();
+    const spy = vi.spyOn(r.client, 'invalidateQueries');
+    await toPayment(r);
+    const keys = spy.mock.calls.map((c) => JSON.stringify(c[0]?.queryKey));
+    expect(keys).toContain(JSON.stringify(['order-board', 'finished']));
+    expect(keys).toContain(JSON.stringify(['order-events']));
+  });
+
+  it('start while active creates only one order', async () => {
+    arrange(mkRow());
+    const r = setup();
+    await toPayment(r);
+    await act(async () => r.result.current.start(body));
+    expect(m.createCounterOrder).toHaveBeenCalledTimes(1);
+  });
+
+  it('a parcel retry adopts the open picklist the lost answer left', async () => {
+    arrange(mkRow());
+    m.createOrderPicklist.mockRejectedValueOnce(new Error('timeout'));
+    const r = setup();
+    await toPayment(r);
+    await act(async () => r.result.current.settle(12400));
+    await waitFor(() => expect(r.result.current.error).toBe('timeout'));
+    m.getOrderBoard.mockResolvedValue(boardOf(mkRow({ picklists: [{ id: 'plX', number: 'PL-9', status: 'open' }] }, 0)));
+    await act(async () => r.result.current.retry());
+    await waitFor(() => expect(r.result.current.step).toBe('handover'));
+    expect(m.createOrderPicklist).toHaveBeenCalledTimes(1);
+    expect(m.createOrderParcel).toHaveBeenCalledWith('so1', 'plX', [{ line_id: 'l1', quantity: 2 }]);
+  });
+
+  it('a package missing from the row refetches the board once', async () => {
+    arrange(mkRow());
+    m.createOrderParcel.mockResolvedValue({ board: boardOf(mkRow({ packages: [] }, 0)), package_number: 'PKG-1' } as never);
+    m.getOrderBoard.mockResolvedValue(boardOf(mkRow({}, 0)));
+    const r = setup();
+    await toPayment(r);
+    await act(async () => r.result.current.settle(12400));
+    await waitFor(() => expect(r.result.current.step).toBe('handover'));
+    expect(m.getOrderBoard).toHaveBeenCalledTimes(1);
+  });
+
+  it('a fractional quantity flows into the picklist and parcel unchanged', async () => {
+    arrange(mkRow());
+    m.getOrderPicklistPreview.mockResolvedValue({ lines: [{ line_id: 'l1', quantity: 2.5 }] } as never);
+    const r = setup();
+    await toPayment(r);
+    await act(async () => r.result.current.settle(12400));
+    await waitFor(() => expect(r.result.current.step).toBe('handover'));
+    expect(m.createOrderPicklist).toHaveBeenCalledWith('so1', [{ line_id: 'l1', quantity: 2.5 }], []);
+    expect(m.createOrderParcel).toHaveBeenCalledWith('so1', 'pl1', [{ line_id: 'l1', quantity: 2.5 }]);
   });
 });

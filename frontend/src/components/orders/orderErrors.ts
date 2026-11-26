@@ -1,5 +1,6 @@
 import type { TFunction } from 'i18next';
 import { ApiError } from '../../api/client';
+import type { OrderHandoverOutcome } from '../../api/client';
 
 /** The order moved under the operator (changed, gone from the board, or being written): its screen is out of date. */
 export const isRefused = (e: unknown): boolean => e instanceof ApiError && (e.status === 400 || e.status === 404 || e.status === 409);
@@ -23,3 +24,12 @@ export const errorReason = (t: TFunction, e: unknown, scope = 'orders.err'): str
     ? t(`${scope}.${reasonCode(e)}`, { defaultValue: t(`orders.err.${reasonCode(e)}`, { defaultValue: t('orders.parcel.stale') }) })
   : isRefused(e) ? t('orders.parcel.stale')
   : e instanceof Error ? e.message : '';
+
+/** The words of a step an answered hand-over or invoice call failed on (`outcome.failed_step` is set). */
+export const failedStepText = (t: TFunction, o: OrderHandoverOutcome): string => {
+  const reason = o.error ?? '';
+  return o.failed_step === 'credit' && o.error === 'credit_off_board' ? t('orders.handover.creditOffBoard')
+    : o.failed_step === 'invoice' && o.error === 'prefill_refused' ? t('orders.handover.prefillRefused')
+    : o.failed_step === 'invoice' || o.failed_step === 'sent' ? t('orders.handover.invoiceFailed', { reason })
+    : t('orders.handover.failed', { reason });
+};
