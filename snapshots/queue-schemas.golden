@@ -149,7 +149,7 @@ class PrintQueueItemCreate(BaseModel)
     preheat_override: typing.Literal['inherit', 'on', 'off']  default='inherit'  metadata=[]
     preheat_chamber_target_override: int | None  default=None  metadata=[Ge(ge=0), Le(le=65)]
     gcode_injection: <class 'bool'>  default=False  metadata=[]
-    quantity: <class 'int'>  default=1  metadata=[]
+    quantity: <class 'int'>  default=1  metadata=[Le(le=999)]
     batch_id: int | None  default=None  metadata=[]
     project_id: int | None  default=None  metadata=[]
     aito_task_id: int | None  default=None  metadata=[]
@@ -239,7 +239,6 @@ class PrintQueueItemUpdate(IgnoresNullForRequiredColumns)
     target_model: str | None  default=None  metadata=[]
     target_location: str | None  default=None  metadata=[]
     filament_overrides: list[dict] | None  default=None  metadata=[]
-    position: int | None  default=None  metadata=[]
     scheduled_time: datetime.datetime | None  default=None  metadata=[AfterValidator(func=<function _naive_utc>)]
     require_previous_success: bool | None  default=None  metadata=[]
     auto_off_after: bool | None  default=None  metadata=[]
@@ -2837,6 +2836,7 @@ class QueueVariantSummary(BaseModel)
    },
    "quantity": {
     "default": 1,
+    "maximum": 999,
     "title": "Quantity",
     "type": "integer"
    },
@@ -4024,18 +4024,6 @@ class QueueVariantSummary(BaseModel)
     "default": null,
     "title": "Plate Id"
    },
-   "position": {
-    "anyOf": [
-     {
-      "type": "integer"
-     },
-     {
-      "type": "null"
-     }
-    ],
-    "default": null,
-    "title": "Position"
-   },
    "preheat_chamber_target_override": {
     "anyOf": [
      {
@@ -4381,7 +4369,7 @@ class QueueVariantSummary(BaseModel)
 {"errors": [{"loc": ["preheat_chamber_target_override"], "msg": "Input should be greater than or equal to 0", "type": "greater_than_equal"}], "input": {"preheat_chamber_target_override": -1}, "model": "PrintQueueItemCreate"}
 {"errors": [{"loc": ["preheat_chamber_target_override"], "msg": "Input should be less than or equal to 65", "type": "less_than_equal"}], "input": {"preheat_chamber_target_override": 1000}, "model": "PrintQueueItemCreate"}
 {"fields_set": ["quantity"], "input": {"quantity": 0}, "model": "PrintQueueItemCreate", "ok": {"quantity": 0}}
-{"fields_set": ["quantity"], "input": {"quantity": 5000}, "model": "PrintQueueItemCreate", "ok": {"quantity": 5000}}
+{"errors": [{"loc": ["quantity"], "msg": "Input should be less than or equal to 999", "type": "less_than_equal"}], "input": {"quantity": 5000}, "model": "PrintQueueItemCreate"}
 {"fields_set": ["quantity"], "input": {"quantity": "3"}, "model": "PrintQueueItemCreate", "ok": {"quantity": 3}}
 {"fields_set": ["ams_mapping", "filament_overrides", "nozzle_rack_choice"], "input": {"ams_mapping": [0, -1, 3], "filament_overrides": [{"slot_id": 1, "type": "PLA"}], "nozzle_rack_choice": {"1": 2}}, "model": "PrintQueueItemCreate", "ok": {"ams_mapping": [0, -1, 3], "filament_overrides": [{"slot_id": 1, "type": "PLA"}], "nozzle_rack_choice": {"1": 2}}}
 {"errors": [{"loc": ["ams_mapping"], "msg": "Input should be a valid list", "type": "list_type"}], "input": {"ams_mapping": "0,1"}, "model": "PrintQueueItemCreate"}
@@ -4390,7 +4378,7 @@ class QueueVariantSummary(BaseModel)
 {"fields_set": ["printer_id"], "input": {"printer_id": "7", "unknown_field": 1}, "model": "PrintQueueItemCreate", "ok": {"printer_id": 7}}
 {"fields_set": [], "input": {}, "model": "PrintQueueItemUpdate", "ok": {}}
 {"fields_set": ["printer_id", "scheduled_time"], "input": {"bed_levelling": null, "manual_start": null, "printer_id": null, "scheduled_time": null, "timelapse": null}, "model": "PrintQueueItemUpdate", "ok": {"printer_id": null, "scheduled_time": null}}
-{"fields_set": ["bed_levelling", "position", "use_ams"], "input": {"bed_levelling": true, "position": 3, "use_ams": false}, "model": "PrintQueueItemUpdate", "ok": {"bed_levelling": "on", "position": 3, "use_ams": false}}
+{"fields_set": ["bed_levelling", "use_ams"], "input": {"bed_levelling": true, "position": 3, "use_ams": false}, "model": "PrintQueueItemUpdate", "ok": {"bed_levelling": "on", "use_ams": false}}
 {"fields_set": ["add_copies"], "input": {"add_copies": 998}, "model": "PrintQueueItemUpdate", "ok": {"add_copies": 998}}
 {"errors": [{"loc": ["add_copies"], "msg": "Input should be less than or equal to 998", "type": "less_than_equal"}], "input": {"add_copies": 999}, "model": "PrintQueueItemUpdate"}
 {"errors": [{"loc": ["add_copies"], "msg": "Input should be greater than or equal to 0", "type": "greater_than_equal"}], "input": {"add_copies": -1}, "model": "PrintQueueItemUpdate"}

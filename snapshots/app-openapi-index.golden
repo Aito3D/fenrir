@@ -24308,7 +24308,6 @@
     "nozzle_offset_cali": "anyOf(string,null)",
     "nozzle_rack_choice": "anyOf(object,null)",
     "plate_id": "anyOf(integer,null)",
-    "position": "anyOf(integer,null)",
     "preheat_chamber_target_override": "anyOf(integer,null)",
     "preheat_override": "anyOf(string,null)",
     "printer_id": "anyOf(integer,null)",

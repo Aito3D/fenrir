@@ -1516,7 +1516,6 @@ async def add_to_queue(
             existing_batch.status = "active"
         if (
             actor is not None
-            and existing_batch.created_by_id is not None
             and existing_batch.created_by_id != actor.id
             and not actor.has_permission(Permission.QUEUE_UPDATE_ALL.value)
         ):
@@ -1974,7 +1973,6 @@ async def _load_batch_for_write(
         raise HTTPException(404, "Batch not found")
     if (
         current_user is not None
-        and batch.created_by_id is not None
         and batch.created_by_id != current_user.id
         and not current_user.has_permission(permission.value)
     ):

@@ -3006,6 +3006,7 @@
     },
     "quantity": {
      "default": 1,
+     "maximum": 999.0,
      "title": "Quantity",
      "type": "integer"
     },
@@ -4059,17 +4060,6 @@
       }
      ],
      "title": "Plate Id"
-    },
-    "position": {
-     "anyOf": [
-      {
-       "type": "integer"
-      },
-      {
-       "type": "null"
-      }
-     ],
-     "title": "Position"
     },
     "preheat_chamber_target_override": {
      "anyOf": [
