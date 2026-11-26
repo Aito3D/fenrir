@@ -283,8 +283,9 @@ async def test_picklist_routes_pass_the_choice_through(async_client, tokens, mon
 
     seen = {}
 
-    async def fake_create(db, salesorder_id, quantities, by=None):
+    async def fake_create(db, salesorder_id, quantities, force=frozenset(), by=None):
         seen["q"] = quantities
+        seen["force"] = force
         return {"id": "pl1", "number": "PL-00013"}
 
     async def fake_preview(db, salesorder_id):
@@ -299,7 +300,9 @@ async def test_picklist_routes_pass_the_choice_through(async_client, tokens, mon
     r = await async_client.post(f"{BASE}/orders/so1/picklists", headers=tokens["both"], json=PICK)
     assert r.status_code == 200
     assert r.json()["picklist"] == {"id": "pl1", "number": "PL-00013"} and "rows" in r.json()["board"]
-    assert seen["q"] == {"l1": 2}
+    assert seen["q"] == {"l1": 2} and seen["force"] == frozenset()
+    r = await async_client.post(f"{BASE}/orders/so1/picklists", headers=tokens["both"], json={**PICK, "force": ["l1"]})
+    assert r.status_code == 200 and seen["force"] == frozenset({"l1"})
     r = await async_client.get(f"{BASE}/orders/so1/picklist", headers=tokens["read"])
     assert r.json() == {"lines": [{"line_id": "l1", "quantity": 3}]}
     r = await async_client.get(f"{BASE}/orders/so1/picklists/pl1", headers=tokens["read"])

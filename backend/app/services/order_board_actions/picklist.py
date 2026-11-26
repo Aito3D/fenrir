@@ -25,10 +25,12 @@ from backend.app.services.order_board_payment import _r
 from backend.app.services.zoho import ZohoUpstreamError, zoho_service
 
 
-async def _pickable(db: AsyncSession, salesorder_id: str, row: dict, order: dict) -> tuple[dict, dict[str, float]]:
+async def _pickable(
+    db: AsyncSession, salesorder_id: str, row: dict, order: dict, force: frozenset[str] = frozenset()
+) -> tuple[dict, dict[str, float]]:
     """Books' own picklist draft for the order and, per line, what a new picklist may hold: what Books still
     offers (units already on a picklist are not), never above what the shelf covers once the units picked and
-    not boxed yet are set aside."""
+    not boxed yet are set aside. A forced line ignores the shelf (Books' stock figure can be wrong)."""
     with sync._busy_on_rate_limit(salesorder_id):
         prefill = await zoho_service.picklist_prefill(db, salesorder_id) or {}
     shelf = {line["id"]: line["packable"] for line in row["lines"]}
@@ -39,7 +41,8 @@ async def _pickable(db: AsyncSession, salesorder_id: str, row: dict, order: dict
             line_id = line["so_line_item_id"]
             books[line_id] = books.get(line_id, 0.0) + _num(line.get("quantity_to_be_picked"))
     offered = {
-        line_id: _r(min(units, shelf.get(line_id, 0.0) - held.get(line_id, 0.0))) for line_id, units in books.items()
+        line_id: _r(units if line_id in force else min(units, shelf.get(line_id, 0.0) - held.get(line_id, 0.0)))
+        for line_id, units in books.items()
     }
     return prefill, {line_id: units for line_id, units in offered.items() if units > 0}
 
@@ -56,7 +59,12 @@ async def picklist_preview(db: AsyncSession, salesorder_id: str) -> dict:
 
 
 async def create_picklist(
-    db: AsyncSession, salesorder_id: str, quantities: dict[str, float], *, by: str | None = None
+    db: AsyncSession,
+    salesorder_id: str,
+    quantities: dict[str, float],
+    *,
+    force: frozenset[str] = frozenset(),
+    by: str | None = None,
 ) -> dict:
     """Create a picklist in Books for the given line quantities; returns its ``id`` and ``number``."""
     with writing(salesorder_id):
@@ -67,7 +75,7 @@ async def create_picklist(
         # One at a time: what an open picklist holds is not on the stored order, so the shelf could not be shared.
         if _open_picklists(doc.detail or {}):
             raise OrderActionRefused("picklist_open")
-        prefill, offered = await _pickable(db, salesorder_id, row, doc.detail or {})
+        prefill, offered = await _pickable(db, salesorder_id, row, doc.detail or {}, force)
         _within(wanted, offered, {line["id"] for line in row["lines"]})
         body = {
             "date": date.today().isoformat(),
@@ -96,6 +104,7 @@ async def create_picklist(
             by,
             picklist=picklist.get("picklist_number") or "",
             units=_r(sum(wanted.values())),
+            **({"forced": sorted(force & wanted.keys())} if force & wanted.keys() else {}),
         )
         await _best_effort_refresh(db, salesorder_id, number)
     return {"id": picklist.get("picklist_id") or "", "number": picklist.get("picklist_number") or ""}

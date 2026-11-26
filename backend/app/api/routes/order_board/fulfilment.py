@@ -49,6 +49,10 @@ class ParcelBody(BaseModel):
     _no_duplicates = field_validator("lines")(_no_duplicate_line_ids)
 
 
+class PicklistBody(ParcelBody):
+    force: list[str] = Field(default_factory=list, max_length=200)  # line ids that may ignore the stock figure
+
+
 class PackBody(ParcelBody):
     picklist_id: str = Field(min_length=1, max_length=64)
 
@@ -131,13 +135,17 @@ async def get_picklist_preview(
 @router.post("/orders/{salesorder_id}/picklists")
 async def create_picklist(
     salesorder_id: str,
-    body: ParcelBody,
+    body: PicklistBody,
     db: AsyncSession = Depends(get_db, scope="function"),
     user: User | None = RequirePermissionIfAuthEnabled(Permission.ORDERS_UPDATE),
 ) -> dict:
     picklist = await _run(
         order_board_actions.create_picklist(
-            db, salesorder_id, {line.line_id: line.quantity for line in body.lines}, by=_by(user)
+            db,
+            salesorder_id,
+            {line.line_id: line.quantity for line in body.lines},
+            force=frozenset(body.force),
+            by=_by(user),
         )
     )
     _logged(user, salesorder_id, "create_picklist")

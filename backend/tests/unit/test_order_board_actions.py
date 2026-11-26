@@ -386,6 +386,37 @@ async def test_create_picklist_sends_the_chosen_units_and_shows_on_the_row(db_se
 
 
 @pytest.mark.asyncio
+async def test_a_forced_line_ignores_the_shelf(db_session, parcels):
+    parcels.stock["A"] = 0
+    await _board(db_session, parcels, order(1, qty=2))
+    picklist = await actions.create_picklist(db_session, "so1", {"l1": 2}, force=frozenset({"l1"}))
+    assert picklist["id"]
+    assert parcels.bodies["create_picklist"]["line_items"][0]["quantity_to_be_picked"] == 2
+    events = await events_of(db_session, "so1")
+    assert events[0].detail == {"picklist": "PL-00001", "units": 2, "forced": ["l1"]}
+
+
+@pytest.mark.asyncio
+async def test_without_force_a_stockless_line_is_still_refused(db_session, parcels):
+    parcels.stock["A"] = 0
+    await _board(db_session, parcels, order(1, qty=2))
+    with pytest.raises(actions.OrderActionRefused) as e:
+        await actions.create_picklist(db_session, "so1", {"l1": 2})
+    assert e.value.args[0] == "too_many"
+    assert parcels.writes == []
+
+
+@pytest.mark.asyncio
+async def test_force_never_exceeds_what_books_offers(db_session, parcels):
+    parcels.stock["A"] = 0
+    await _board(db_session, parcels, order(1, qty=2))
+    with pytest.raises(actions.OrderActionRefused) as e:
+        await actions.create_picklist(db_session, "so1", {"l1": 3}, force=frozenset({"l1"}))
+    assert e.value.args[0] == "too_many"
+    assert parcels.writes == []
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize(
     ("asked", "code"),
     [
