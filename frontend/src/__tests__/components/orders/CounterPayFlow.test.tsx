@@ -82,6 +82,19 @@ describe('CounterPayFlow', () => {
     expect(pay.payLater).not.toHaveBeenCalled();
   });
 
+  it('an open card charge blocks cash and pay later, and says why', async () => {
+    currentCharge(charge('pending', null));
+    const pay = mkPay();
+    flow(pay, { isDefaultClient: false });
+    const later = screen.getByRole('button', { name: /^Pay later/ });
+    await vi.waitFor(() => expect(later).toHaveAttribute('aria-disabled', 'true'));
+    await userEvent.click(later);
+    expect(screen.getByRole('alert')).toHaveTextContent('already in progress');
+    await userEvent.click(screen.getByRole('button', { name: 'Cash or cheque' }));
+    expect(pay.payLater).not.toHaveBeenCalled();
+    expect(screen.queryByRole('radio', { name: 'Cash' })).not.toBeInTheDocument();
+  });
+
   it('pay later runs for a real client', async () => {
     const pay = mkPay();
     flow(pay, { isDefaultClient: false });
@@ -111,9 +124,9 @@ describe('CounterPayFlow', () => {
   });
 
   it('asks the stock question and answers it', async () => {
-    const pay = mkPay({ wait: 'stock', step: 'parcel', question: { id: 'l1', name: 'PETG HF Noir', remaining: 1, packed_waiting: 0 } });
+    const pay = mkPay({ wait: 'stock', step: 'parcel', question: { id: 'l1', name: 'PETG HF Noir', remaining: 3, packed_waiting: 0, stock_available: 1 } });
     flow(pay);
-    expect(screen.getByText(/PETG HF Noir ×1: Zoho shows 0 in stock/)).toBeInTheDocument();
+    expect(screen.getByText(/PETG HF Noir ×3: Zoho shows 1 in stock/)).toBeInTheDocument();
     await userEvent.click(screen.getByRole('button', { name: 'Yes, it leaves with the customer' }));
     expect(pay.answer).toHaveBeenLastCalledWith(true);
     await userEvent.click(screen.getByRole('button', { name: 'No, hand it over later' }));

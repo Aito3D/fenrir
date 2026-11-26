@@ -12630,7 +12630,7 @@ errors: {
       later: 'Betala senare · faktura med utestående belopp',
       laterNeedsClient: 'Välj en kund för att betala senare',
       cancelPay: 'Avbryt · ordern förblir obetald',
-      stockAsk: '{{name}} ×{{n}}: Zoho visar saldo 0. Har du den ändå till hands?',
+      stockAsk: '{{name}} ×{{n}}: Zoho visar saldo {{stock}}. Har du den ändå till hands?',
       stockYes: 'Ja, den följer med kunden',
       stockNo: 'Nej, lämna över senare',
       give: 'Ge artiklarna till kunden',

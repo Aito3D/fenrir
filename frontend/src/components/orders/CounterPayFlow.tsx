@@ -14,6 +14,7 @@ import type { PaymentDocument } from '../aito/payment/paymentDocument';
 import { usePrintBlob } from '../aito/usePrintBlob';
 import { focusRingCls } from '../formStyles';
 import { PAY_STEPS } from './counterPay';
+import { formatQty } from './orderBoard';
 import { OrderInvoiceEmailModal } from './OrderInvoiceEmailModal';
 import { SplitButton } from './SplitButton';
 import type { useCounterPay } from './useCounterPay';
@@ -102,7 +103,7 @@ export function CounterPayFlow({ pay, currency, total, email, isDefaultClient, o
         <PaymentPanel pay={pay} orderId={pay.row.id} currency={currency} total={total} isDefaultClient={isDefaultClient} onOpenOrder={onOpenOrder} onDialog={onDialog} />
       ) : pay.wait === 'stock' && pay.question ? (
         <div className={PANEL}>
-          <p>{t('orders.counterPay.stockAsk', { name: pay.question.name, n: pay.question.remaining - pay.question.packed_waiting })}</p>
+          <p>{t('orders.counterPay.stockAsk', { name: pay.question.name, n: pay.question.remaining - pay.question.packed_waiting, stock: formatQty(pay.question.stock_available ?? 0) })}</p>
           <div className="flex gap-2">
             <button type="button" onClick={() => pay.answer(true)} className={PRIMARY}>{t('orders.counterPay.stockYes')}</button>
             <button type="button" onClick={() => pay.answer(false)} className={GHOST}>{t('orders.counterPay.stockNo')}</button>
@@ -163,6 +164,11 @@ function PaymentPanel({ pay, orderId, currency, total, isDefaultClient, onOpenOr
     if (paidAndBooked(p)) latest.current(p.amount_confirmed ?? p.amount);
   }, [charge.data]);
   // The same document `Collect` builds on the order card: the server picks what the charge lands on.
+  // A card still open on the terminal: cash or pay later now would leave the customer's tap unapplied.
+  const locked = isTerminalOpen(charge.data);
+  const blocked = () => {
+    setWhy(t('aito.payment.err.terminal_in_progress'));
+  };
   const open = async (kind: 'terminal' | 'manual') => {
     setOpening(true);
     try {
@@ -189,13 +195,13 @@ function PaymentPanel({ pay, orderId, currency, total, isDefaultClient, onOpenOr
       <p>{t('orders.counterPay.howPay', { amount: formatMoney(total, currency) })}</p>
       <div className="flex gap-2">
         <button type="button" disabled={opening} onClick={() => void open('terminal')} className={PRIMARY}>{t('orders.counterPay.card')}</button>
-        <button type="button" disabled={opening} onClick={() => void open('manual')} className={GHOST}>{t('orders.counterPay.cash')}</button>
+        <button type="button" disabled={opening} aria-disabled={locked || undefined} onClick={() => (locked ? blocked() : void open('manual'))} className={`${GHOST} ${locked ? 'opacity-45' : ''}`}>{t('orders.counterPay.cash')}</button>
       </div>
       <button
         type="button"
-        aria-disabled={isDefaultClient}
-        onClick={() => (isDefaultClient ? setWhy(t('orders.counterPay.laterNeedsClient')) : pay.payLater())}
-        className={`${GHOST} ${isDefaultClient ? 'opacity-45' : ''}`}
+        aria-disabled={isDefaultClient || locked || undefined}
+        onClick={() => (locked ? blocked() : isDefaultClient ? setWhy(t('orders.counterPay.laterNeedsClient')) : pay.payLater())}
+        className={`${GHOST} ${isDefaultClient || locked ? 'opacity-45' : ''}`}
       >
         {t('orders.counterPay.later')}
       </button>

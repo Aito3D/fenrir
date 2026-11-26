@@ -91,6 +91,7 @@ describe('useCounterPay', () => {
   it('an invoice the payment did not reach is an error, and retry only applies the credit', async () => {
     arrange(mkRow(), 12400);
     m.applyOrderCredit.mockResolvedValue({ applied: 12400, board: boardOf(mkRow({}, 0)) } as never);
+    m.getOrderBoard.mockResolvedValue(boardOf(mkRow({}, 12400)));
     const r = setup();
     await toPayment(r);
     await act(async () => r.result.current.settle(12400));
@@ -102,6 +103,82 @@ describe('useCounterPay', () => {
     expect(m.createOrderInvoice).toHaveBeenCalledTimes(1);
     expect(m.applyOrderCredit).toHaveBeenCalledTimes(1);
     expect(m.applyOrderCredit).toHaveBeenCalledWith('so1', 'inv1');
+  });
+
+  describe('invoice retry re-reads the board first', () => {
+    // The created answer's board lacks the invoice: the hook holds its number but no id.
+    const lacking = () => {
+      arrange(mkRow(), 0);
+      m.createOrderInvoice.mockResolvedValue({ board: boardOf(mkRow({ payment: { invoices: [] } })), outcome: created } as never);
+    };
+    const toError = async (r: ReturnType<typeof setup>) => {
+      await toPayment(r);
+      await act(async () => r.result.current.settle(12400));
+      await waitFor(() => expect(r.result.current.error).toBe('orders.counterPay.notAttributed'));
+    };
+
+    it('an invoice missing from the answer but paid on the re-read goes on without apply-credit', async () => {
+      lacking();
+      m.getOrderBoard.mockResolvedValue(boardOf(mkRow({}, 0)));
+      const r = setup();
+      await toError(r);
+      await act(async () => r.result.current.retry());
+      await waitFor(() => expect(r.result.current.step).toBe('handover'));
+      expect(m.applyOrderCredit).not.toHaveBeenCalled();
+      expect(m.createOrderInvoice).toHaveBeenCalledTimes(1);
+    });
+
+    it('an unpaid invoice on the re-read gets the credit with its real id', async () => {
+      lacking();
+      m.getOrderBoard.mockResolvedValue(boardOf(mkRow({}, 12400)));
+      m.applyOrderCredit.mockResolvedValue({ applied: 12400, board: boardOf(mkRow({}, 0)) } as never);
+      const r = setup();
+      await toError(r);
+      await act(async () => r.result.current.retry());
+      await waitFor(() => expect(r.result.current.step).toBe('handover'));
+      expect(m.applyOrderCredit).toHaveBeenCalledTimes(1);
+      expect(m.applyOrderCredit).toHaveBeenCalledWith('so1', 'inv1');
+    });
+
+    it('an invoice still missing on the re-read stays an error and never calls the API with an empty id', async () => {
+      lacking();
+      m.getOrderBoard.mockResolvedValue(boardOf(mkRow({ payment: { invoices: [] } })));
+      const r = setup();
+      await toError(r);
+      await act(async () => r.result.current.retry());
+      await waitFor(() => expect(m.getOrderBoard).toHaveBeenCalledTimes(1));
+      await waitFor(() => expect(r.result.current.busy).toBe(false));
+      expect(r.result.current.error).toBe('orders.counterPay.notAttributed');
+      expect(m.applyOrderCredit).not.toHaveBeenCalled();
+    });
+
+    it('a lost apply-credit answer: the next retry sees the invoice paid and does not apply again', async () => {
+      arrange(mkRow(), 12400);
+      m.applyOrderCredit.mockRejectedValueOnce(new Error('network'));
+      m.getOrderBoard.mockResolvedValueOnce(boardOf(mkRow({}, 12400))).mockResolvedValue(boardOf(mkRow({}, 0)));
+      const r = setup();
+      await toError(r);
+      await act(async () => r.result.current.retry());
+      await waitFor(() => expect(r.result.current.error).toBe('network'));
+      await act(async () => r.result.current.retry());
+      await waitFor(() => expect(r.result.current.step).toBe('handover'));
+      expect(m.applyOrderCredit).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  it('two synchronous answers on one short line list its name once', async () => {
+    arrange(mkRow({ lines: [line({ id: 'a', name: 'A', stock_available: 0, shortfall: 2 })] }));
+    m.getOrderPicklistPreview.mockResolvedValue({ lines: [] } as never);
+    const r = setup();
+    await toPayment(r);
+    await act(async () => r.result.current.settle(12400));
+    await waitFor(() => expect(r.result.current.question?.id).toBe('a'));
+    await act(async () => {
+      r.result.current.answer(true);
+      r.result.current.answer(true);
+    });
+    await waitFor(() => expect(r.result.current.step).toBe('handover'));
+    expect(r.result.current.forced).toEqual(['A']);
   });
 
   it('a server credit_unconfirmed outcome is not attributed even if the balance looks paid', async () => {

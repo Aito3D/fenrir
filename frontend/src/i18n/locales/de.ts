@@ -12573,7 +12573,7 @@ export default {
       later: 'Später zahlen · Rechnung mit offenem Betrag',
       laterNeedsClient: 'Wähle einen Kunden für eine spätere Zahlung',
       cancelPay: 'Abbrechen · die Bestellung bleibt unbezahlt',
-      stockAsk: '{{name}} ×{{n}}: Zoho zeigt Bestand 0. Hast du den Artikel trotzdem zur Hand?',
+      stockAsk: '{{name}} ×{{n}}: Zoho zeigt Bestand {{stock}}. Hast du den Artikel trotzdem zur Hand?',
       stockYes: 'Ja, er geht mit dem Kunden mit',
       stockNo: 'Nein, später übergeben',
       give: 'Gib dem Kunden die Artikel',

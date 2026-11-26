@@ -12558,7 +12558,7 @@ export default {
       later: 'Paga più tardi · fattura con importo dovuto',
       laterNeedsClient: 'Scegli un cliente per pagare più tardi',
       cancelPay: 'Annulla · l\'ordine resta non pagato',
-      stockAsk: '{{name}} ×{{n}}: Zoho indica giacenza 0. Ce l\'hai comunque a portata di mano?',
+      stockAsk: '{{name}} ×{{n}}: Zoho indica giacenza {{stock}}. Ce l\'hai comunque a portata di mano?',
       stockYes: 'Sì, parte con il cliente',
       stockNo: 'No, da consegnare più tardi',
       give: 'Consegna gli articoli al cliente',

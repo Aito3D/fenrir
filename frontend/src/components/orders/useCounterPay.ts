@@ -41,6 +41,7 @@ export function useCounterPay(opts?: { onCreateError?: (e: unknown) => void }) {
     orderId: '', row: null as OrderBoardRow | null, paid: 0, invoiceNumber: null as string | null, invoiceId: '',
     queue: [] as OrderBoardLine[], have: new Set<string>(), lines: null as OrderPickLines['lines'] | null, force: [] as string[], picklistPosted: false,
     picklistId: '', packageNumber: '', packageId: '', stage: 'invoice' as Stage,
+    asked: null as OrderBoardLine | null, forcedNames: [] as string[], lateNames: [] as string[],
   });
   const m = useRef(fresh());
 
@@ -139,6 +140,7 @@ export function useCounterPay(opts?: { onCreateError?: (e: unknown) => void }) {
     const shorts = c.row ? shortLines(c.row) : [];
     if (shorts.length) {
       c.queue = shorts;
+      c.asked = shorts[0];
       patch({ step: 'parcel', wait: 'stock', question: shorts[0] });
       return;
     }
@@ -176,9 +178,11 @@ export function useCounterPay(opts?: { onCreateError?: (e: unknown) => void }) {
         return;
       }
     } else {
-      // Created earlier but the payment was not on it: apply the credit once, then re-check.
-      const r = await api.applyOrderCredit(c.orderId, c.invoiceId);
-      if (!checkInvoice(await take(r.board))) return;
+      // Created earlier: re-read first, the invoice may be paid already (lost answer) or missing from the answered board.
+      let row = await take(await api.getOrderBoard());
+      const invoice = invoiceOf(row ?? undefined, c.invoiceNumber);
+      if (invoice && !attributed(invoice, c.paid)) row = await take((await api.applyOrderCredit(c.orderId, invoice.id)).board);
+      if (!checkInvoice(row)) return;
     }
     await toParcel();
   });
@@ -207,13 +211,17 @@ export function useCounterPay(opts?: { onCreateError?: (e: unknown) => void }) {
   };
 
   const answer = (have: boolean) => {
-    const q = state.question;
     const c = m.current;
+    // The ref moves on before any state update: a second click cannot answer the same line.
+    const q = c.asked;
     if (!q || running.current) return;
-    if (have) c.have.add(q.id);
-    const patchNames = have ? { forced: [...state.forced, q.name] } : { handedLate: [...state.handedLate, q.name] };
     const next = c.queue[c.queue.indexOf(q) + 1] ?? null;
-    patch({ ...patchNames, question: next, wait: next ? 'stock' : null });
+    c.asked = next;
+    if (have) {
+      c.have.add(q.id);
+      c.forcedNames.push(q.name);
+    } else c.lateNames.push(q.name);
+    patch({ forced: [...c.forcedNames], handedLate: [...c.lateNames], question: next, wait: next ? 'stock' : null });
     if (!next) void run(runParcel);
   };
 

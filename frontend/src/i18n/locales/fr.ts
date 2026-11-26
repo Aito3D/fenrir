@@ -12558,7 +12558,7 @@ export default {
       later: 'Paiement plus tard · facture avec montant dû',
       laterNeedsClient: 'Choisis un client pour un paiement plus tard',
       cancelPay: 'Annuler · la commande reste impayée',
-      stockAsk: '{{name}} ×{{n}} : Zoho indique stock 0. Tu l\'as quand même sous la main ?',
+      stockAsk: '{{name}} ×{{n}} : Zoho indique stock {{stock}}. Tu l\'as quand même sous la main ?',
       stockYes: 'Oui, il repart avec',
       stockNo: 'Non, à remettre plus tard',
       give: 'Donne les articles au client',

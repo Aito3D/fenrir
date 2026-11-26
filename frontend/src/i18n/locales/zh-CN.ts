@@ -12556,7 +12556,7 @@ export default {
       later: '稍后付款 · 带应付金额的发票',
       laterNeedsClient: '请选择客户以便稍后付款',
       cancelPay: '取消 · 订单保持未付款',
-      stockAsk: '{{name}} ×{{n}}:Zoho 显示库存为 0。你手头还有吗?',
+      stockAsk: '{{name}} ×{{n}}:Zoho 显示库存为 {{stock}}。你手头还有吗?',
       stockYes: '有,随客户带走',
       stockNo: '没有,稍后交付',
       give: '把商品交给客户',

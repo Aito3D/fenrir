@@ -12597,7 +12597,7 @@ export default {
       later: 'Later betalen · factuur met openstaand bedrag',
       laterNeedsClient: 'Kies een klant om later te betalen',
       cancelPay: 'Annuleren · de bestelling blijft onbetaald',
-      stockAsk: '{{name}} ×{{n}}: Zoho toont voorraad 0. Heb je het toch bij de hand?',
+      stockAsk: '{{name}} ×{{n}}: Zoho toont voorraad {{stock}}. Heb je het toch bij de hand?',
       stockYes: 'Ja, het gaat mee met de klant',
       stockNo: 'Nee, later overhandigen',
       give: 'Geef de artikelen aan de klant',

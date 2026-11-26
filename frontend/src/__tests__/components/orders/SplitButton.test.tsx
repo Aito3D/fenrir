@@ -12,6 +12,19 @@ const item = (o = {}) => ({ key: 'a', label: 'Create the order', onSelect: vi.fn
 afterEach(() => vi.useRealTimers());
 
 describe('SplitButton', () => {
+  it('scrolls the menu into view when it opens', async () => {
+    const scroll = vi.fn();
+    Element.prototype.scrollIntoView = scroll;
+    try {
+      setup([item()]);
+      await userEvent.click(screen.getByRole('button', { name: 'Other options' }));
+      expect(scroll).toHaveBeenCalledWith({ block: 'nearest' });
+    } finally {
+      // @ts-expect-error jsdom has none: restore that
+      delete Element.prototype.scrollIntoView;
+    }
+  });
+
   it('the arrow opens the menu and an item runs', async () => {
     const user = userEvent.setup();
     const a = item();

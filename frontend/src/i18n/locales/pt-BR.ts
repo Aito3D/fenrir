@@ -12558,7 +12558,7 @@ export default {
       later: 'Pagar depois · fatura com valor devido',
       laterNeedsClient: 'Escolha um cliente para pagar depois',
       cancelPay: 'Cancelar · o pedido continua sem pagamento',
-      stockAsk: '{{name}} ×{{n}}: o Zoho indica estoque 0. Você tem o item em mãos mesmo assim?',
+      stockAsk: '{{name}} ×{{n}}: o Zoho indica estoque {{stock}}. Você tem o item em mãos mesmo assim?',
       stockYes: 'Sim, ele sai com o cliente',
       stockNo: 'Não, entregar depois',
       give: 'Entregue os itens ao cliente',

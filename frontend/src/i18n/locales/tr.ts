@@ -12500,7 +12500,7 @@ export default {
       later: 'Sonra öde · bakiyeli fatura',
       laterNeedsClient: 'Sonra ödemek için bir müşteri seç',
       cancelPay: 'İptal · sipariş ödenmemiş kalır',
-      stockAsk: '{{name}} ×{{n}}: Zoho stok 0 gösteriyor. Yine de elinde mi?',
+      stockAsk: '{{name}} ×{{n}}: Zoho stok {{stock}} gösteriyor. Yine de elinde mi?',
       stockYes: 'Evet, müşteriyle gidiyor',
       stockNo: 'Hayır, sonra teslim edilecek',
       give: 'Ürünleri müşteriye ver',

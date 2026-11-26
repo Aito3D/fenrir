@@ -12629,7 +12629,7 @@ export default {
       later: 'Pay later · invoice with amount due',
       laterNeedsClient: 'Pick a customer to pay later',
       cancelPay: 'Cancel · the order stays unpaid',
-      stockAsk: '{{name}} ×{{n}}: Zoho shows 0 in stock. Do you have it at hand?',
+      stockAsk: '{{name}} ×{{n}}: Zoho shows {{stock}} in stock. Do you have it at hand?',
       stockYes: 'Yes, it leaves with the customer',
       stockNo: 'No, hand it over later',
       give: 'Give the items to the customer',

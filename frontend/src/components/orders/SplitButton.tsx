@@ -33,6 +33,7 @@ export function SplitButton({ label, onClick, ariaDisabled, busy, className = ''
   const timer = useRef<number | undefined>(undefined);
   // True once a press became a long press: the click that follows its release must not run the main action.
   const held = useRef(false);
+  const menu = useRef<HTMLDivElement>(null);
   const close = () => {
     setOpen(false);
     setReason(null);
@@ -47,6 +48,10 @@ export function SplitButton({ label, onClick, ariaDisabled, busy, className = ''
     return () => document.removeEventListener('pointerdown', away);
   }, [open]);
   useEffect(() => () => window.clearTimeout(timer.current), []);
+  // On a phone a menu opening downward at the bottom of the screen ends below the viewport.
+  useEffect(() => {
+    if (open) menu.current?.scrollIntoView?.({ block: 'nearest' });
+  }, [open]);
 
   const cancelPress = () => window.clearTimeout(timer.current);
   const select = (item: SplitItem) => {
@@ -110,7 +115,7 @@ export function SplitButton({ label, onClick, ariaDisabled, busy, className = ''
         {label}
       </button>
       {open && (
-        <div role="menu" className={`absolute left-0 right-0 z-20 rounded-lg border border-bambu-dark-tertiary bg-bambu-dark-secondary p-1.5 shadow-xl ${menuBelow ? 'top-full mt-2' : 'bottom-full mb-2'}`}>
+        <div ref={menu} role="menu" className={`absolute left-0 right-0 z-20 rounded-lg border border-bambu-dark-tertiary bg-bambu-dark-secondary p-1.5 shadow-xl ${menuBelow ? 'top-full mt-2' : 'bottom-full mb-2'}`}>
           {items.map(item => (
             <button
               key={item.key}

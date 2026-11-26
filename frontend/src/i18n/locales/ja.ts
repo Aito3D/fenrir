@@ -12572,7 +12572,7 @@ export default {
       later: '後払い · 未払い額付きの請求書',
       laterNeedsClient: '後払いにするにはお客様を選択してください',
       cancelPay: 'キャンセル · 注文は未払いのままです',
-      stockAsk: '{{name}} ×{{n}}: Zoho の在庫は0です。手元にありますか?',
+      stockAsk: '{{name}} ×{{n}}: Zoho の在庫は{{stock}}です。手元にありますか?',
       stockYes: 'はい、そのまま持ち帰ります',
       stockNo: 'いいえ、後で渡します',
       give: '商品をお客様に渡してください',

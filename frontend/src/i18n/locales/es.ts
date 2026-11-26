@@ -12581,7 +12581,7 @@ export default {
       later: 'Pagar más tarde · factura con importe pendiente',
       laterNeedsClient: 'Elige un cliente para pagar más tarde',
       cancelPay: 'Cancelar · el pedido queda sin pagar',
-      stockAsk: '{{name}} ×{{n}}: Zoho indica stock 0. ¿Lo tienes a mano de todos modos?',
+      stockAsk: '{{name}} ×{{n}}: Zoho indica stock {{stock}}. ¿Lo tienes a mano de todos modos?',
       stockYes: 'Sí, se lo lleva',
       stockNo: 'No, entregar más tarde',
       give: 'Entrega los artículos al cliente',

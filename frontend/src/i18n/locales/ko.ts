@@ -12155,7 +12155,7 @@ export default {
       later: '나중에 결제 · 미수금이 있는 청구서',
       laterNeedsClient: '나중에 결제하려면 고객을 선택하세요',
       cancelPay: '취소 · 주문은 미결제 상태로 남습니다',
-      stockAsk: '{{name}} ×{{n}}: Zoho 재고가 0입니다. 그래도 가지고 계신가요?',
+      stockAsk: '{{name}} ×{{n}}: Zoho 재고가 {{stock}}입니다. 그래도 가지고 계신가요?',
       stockYes: '예, 고객이 가져갑니다',
       stockNo: '아니요, 나중에 전달',
       give: '고객에게 물품을 전달하세요',

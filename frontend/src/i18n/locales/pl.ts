@@ -12778,7 +12778,7 @@ export default {
       later: 'Zapłać później · faktura z kwotą do zapłaty',
       laterNeedsClient: 'Wybierz klienta, aby zapłacić później',
       cancelPay: 'Anuluj · zamówienie pozostaje nieopłacone',
-      stockAsk: '{{name}} ×{{n}}: Zoho pokazuje stan 0. Masz go jednak pod ręką?',
+      stockAsk: '{{name}} ×{{n}}: Zoho pokazuje stan {{stock}}. Masz go jednak pod ręką?',
       stockYes: 'Tak, wychodzi z klientem',
       stockNo: 'Nie, wydać później',
       give: 'Daj artykuły klientowi',
