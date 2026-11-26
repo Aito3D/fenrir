@@ -19,7 +19,7 @@ const NONE = new Set<string>();
 // Matches .order-line-out in index.css: the row folds away, then leaves the draft.
 const LEAVE_MS = 200;
 // One template for the header and every row, so the columns line up (md and up).
-const COLS = 'grid-cols-[1.5rem_minmax(0,1fr)_auto_auto] md:grid-cols-[1.5rem_minmax(0,1fr)_7.5rem_6.5rem_7.5rem_2rem]';
+const COLS = 'grid-cols-[1.5rem_minmax(0,1fr)_auto_auto] md:grid-cols-[1.5rem_minmax(0,1fr)_8.5rem_6.5rem_7.5rem_2rem]';
 
 /** The counter order's lines, scanner first: a large search on top whose results take the place of the lines while
  *  something is typed, then one row per product with its quantity, discount, total and what can be sold. */
@@ -97,6 +97,7 @@ export function NewOrderLines({ lines, currency, disabled, onChange }: { lines: 
                   value={l.quantity}
                   checkbox={false}
                   positive
+                  large
                   disabled={disabled}
                   onChange={q => patch(i, { quantity: q })}
                 />
