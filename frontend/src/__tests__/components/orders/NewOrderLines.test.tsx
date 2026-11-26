@@ -25,6 +25,12 @@ function Host() {
 afterEach(() => vi.useRealTimers());
 
 describe('NewOrderLines', () => {
+  it('shows no stock label on a line without a stock figure (a service)', () => {
+    const service = { ...hit('S'), stock_on_hand: null, product_type: 'service' };
+    render(<NewOrderLines lines={[{ item: hit('A'), quantity: 1, discount: '' }, { item: service, quantity: 1, discount: '' }]} currency="XPF" disabled={false} onChange={() => {}} />);
+    expect(screen.getAllByText('orders.edit.availableN')).toHaveLength(1);
+  });
+
   it('keeps a line added during the leave window when the removed line goes', () => {
     vi.useFakeTimers();
     render(<Host />);

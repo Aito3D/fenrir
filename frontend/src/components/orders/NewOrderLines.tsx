@@ -83,10 +83,13 @@ export function NewOrderLines({ lines, currency, disabled, onChange }: { lines: 
                   <div className="mt-0.5 flex flex-wrap items-center gap-x-2.5 gap-y-0.5 text-xs text-bambu-gray">
                     {l.item.sku && <span className="font-mono text-bambu-gray-dark">{l.item.sku}</span>}
                     <span className="tabular-nums">{formatMoney(l.item.rate, currency)}</span>
-                    <span className={`inline-flex items-center gap-1.5 tabular-nums ${short > 0 ? TONE.warning.text : ''}`}>
-                      <span aria-hidden="true" className={`h-1.5 w-1.5 rounded-full ${short > 0 ? 'bg-current' : 'bg-bambu-green'}`} />
-                      {t('orders.edit.availableN', { n: stock === null ? dash : formatQty(stock) })}
-                    </span>
+                    {/* A service line has no stock figure: no label rather than an empty one. */}
+                    {stock !== null && (
+                      <span className={`inline-flex items-center gap-1.5 tabular-nums ${short > 0 ? TONE.warning.text : ''}`}>
+                        <span aria-hidden="true" className={`h-1.5 w-1.5 rounded-full ${short > 0 ? 'bg-current' : 'bg-bambu-green'}`} />
+                        {t('orders.edit.availableN', { n: formatQty(stock) })}
+                      </span>
+                    )}
                     {short > 0 && <span className={TONE.warning.text}>{t('orders.newOrder.toOrder', { n: formatQty(short) })}</span>}
                   </div>
                 </div>
