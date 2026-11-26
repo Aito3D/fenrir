@@ -43,7 +43,7 @@ from backend.app.services.order_board_sync._finished import (
 )
 from backend.app.services.order_board_sync._quotes import reconcile_quotes, store_quote
 from backend.app.services.order_board_sync._recompute import recompute
-from backend.app.services.order_board_sync._retainers import _retainers
+from backend.app.services.order_board_sync._retainers import _kept_quote_number, _retainers
 from backend.app.services.zoho import (
     ZohoAmbiguous,
     ZohoNotConfiguredError,
@@ -193,7 +193,7 @@ async def _fetch_pending_details(db: AsyncSession, stored: dict[tuple[str, str],
         else:
             previous = doc.detail
             retainers = await _retainers(db, fetched, previous, payments) if doc.kind == "salesorder" else {}
-            doc.detail = {**fetched, "_fetched_at": _now(), **retainers}
+            doc.detail = {**fetched, **_kept_quote_number(fetched, previous), "_fetched_at": _now(), **retainers}
             doc.pending = False
             if doc.kind == "salesorder":
                 await _observe(db, doc.zoho_id, _record_fetch_events, doc.zoho_id, previous, fetched)

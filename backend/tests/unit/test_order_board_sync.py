@@ -1414,6 +1414,20 @@ def _pos_orders():
 
 
 @pytest.mark.asyncio
+async def test_a_refetched_order_keeps_its_quote_number(db_session, zoho):
+    """Books leaves the quote's number off the sales order: a re-read after a write here must not drop the stored one."""
+    await _synced(db_session, zoho, *_pos_orders())
+    calls = zoho.calls["estimate"]
+    await sync.refresh_order(db_session, "so1")
+    assert (await _doc(db_session, "so1")).detail["estimate_number"] == "DEV26-e1"
+    rows = {r["id"]: r["facts"] for r in (await sync.read_board(db_session))["rows"]}
+    assert rows["so1"]["quote_number"] == "DEV26-e1"
+    await sync.run_pass(db_session)
+    assert (await _doc(db_session, "so1")).detail["estimate_number"] == "DEV26-e1"
+    assert zoho.calls["estimate"] == calls  # nothing to read again
+
+
+@pytest.mark.asyncio
 async def test_a_deleted_quote_does_not_stop_the_pass_and_is_not_retried(db_session, zoho, monkeypatch):
     from backend.app.services.zoho import ZohoNotFound
 

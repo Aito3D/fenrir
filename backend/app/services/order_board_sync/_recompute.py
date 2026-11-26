@@ -27,7 +27,7 @@ from backend.app.services.order_board_sync._common import (
     load_settings,
 )
 from backend.app.services.order_board_sync._events import _observe, _record_board_events
-from backend.app.services.order_board_sync._retainers import _retainers
+from backend.app.services.order_board_sync._retainers import _kept_quote_number, _retainers
 from backend.app.services.zoho import zoho_service
 
 
@@ -59,7 +59,12 @@ async def refresh_order(db: AsyncSession, salesorder_id: str) -> None:
     fetched = await zoho_service.get_salesorder(db, salesorder_id)
     _written_at[salesorder_id] = time.monotonic()
     # Fresh retainers: a write here (hand-over, invoice) may just have spent one; a stale unused amount would count twice.
-    doc.detail = {**fetched, "_fetched_at": _now(), **await _retainers(db, fetched, doc.detail, {})}
+    doc.detail = {
+        **fetched,
+        **_kept_quote_number(fetched, doc.detail),
+        "_fetched_at": _now(),
+        **await _retainers(db, fetched, doc.detail, {}),
+    }
     doc.pending = True  # the next pass re-reads it once the list row has caught up
     # A write here only moves credit onto an invoice: the refreshed row is the next pass's baseline, not a payment.
     changed = await recompute(db, quiet={salesorder_id})

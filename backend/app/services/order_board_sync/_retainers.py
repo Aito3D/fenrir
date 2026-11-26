@@ -20,6 +20,19 @@ def _kept_retainers(detail: dict | None) -> dict:
     return {"_retainers": detail["_retainers"]} if detail and "_retainers" in detail else {}
 
 
+def _kept_quote_number(fetched: dict, previous: dict | None) -> dict:
+    """The quote number read earlier (``_store_quote_number``) stays with the order: Books does not put it on the
+    sales order, so a re-fetched body alone would show the quote's id until a later pass reads the quote again."""
+    if (
+        previous
+        and "estimate_number" in previous
+        and "estimate_number" not in fetched
+        and previous.get("estimate_id") == fetched.get("estimate_id")
+    ):
+        return {"estimate_number": previous["estimate_number"]}
+    return {}
+
+
 async def _retainers(db: AsyncSession, detail: dict, previous: dict | None, payments: dict[str, list[dict]]) -> dict:
     """``{"_retainers": [...]}``: the retainers of the order's quote or, for an order without a quote, the
     customer's retainers whose reference is the order number (what Heimdall writes on a sales-order payment), each

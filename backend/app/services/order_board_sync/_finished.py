@@ -25,7 +25,7 @@ from backend.app.services.order_board_sync._common import (
     load_settings,
     open_rate_limit_window,
 )
-from backend.app.services.order_board_sync._retainers import _retainers
+from backend.app.services.order_board_sync._retainers import _kept_quote_number, _retainers
 from backend.app.services.zoho import (
     ZohoNotConfiguredError,
     ZohoNotFound,
@@ -232,7 +232,13 @@ async def _fetch_finished_detail(db: AsyncSession, doc: OrderBoardDoc) -> None:
     # No pass lock here (a pass can run long): if a pass wrote this row meanwhile, its mark or newer detail
     # must not be lost, so the fetched copy goes in marked stale and the next open fetches again.
     await db.refresh(doc)
-    detail = {**fetched, "_fetched_at": _now(), **retainers, **({"_stale": True} if _snapshot(doc) != before else {})}
+    detail = {
+        **fetched,
+        **_kept_quote_number(fetched, doc.detail),
+        "_fetched_at": _now(),
+        **retainers,
+        **({"_stale": True} if _snapshot(doc) != before else {}),
+    }
     doc.detail = detail
     doc.pending = False
     await db.commit()
