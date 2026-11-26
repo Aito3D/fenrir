@@ -1,0 +1,168 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Payer au comptoir</title>
+<style>
+:root{--bg:#0c131b;--card:#141c26;--card2:#1a2430;--line:#253142;--txt:#e8edf2;--mut:#8b96a5;--acc:#1fbfa5;--red:#f05252;--amber:#fbbf24}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:#05080c;color:var(--txt);font:14px/1.4 -apple-system,BlinkMacSystemFont,"Inter",system-ui,sans-serif;padding:24px 16px 60px}
+button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
+h1{font-size:20px;margin-bottom:4px}
+.intro{max-width:1100px;margin:0 auto 16px;color:var(--mut)}.intro b{color:var(--txt)}
+.switch{display:flex;gap:8px;flex-wrap:wrap;margin:10px 0;align-items:center}
+.switch span{color:var(--mut);width:90px}
+.switch button{border:1px solid var(--line);border-radius:999px;padding:7px 14px;background:var(--card)}
+.switch button[aria-pressed=true]{border-color:var(--acc);background:#1fbfa522}
+.modal{max-width:1100px;margin:0 auto;background:var(--card);border:1px solid var(--line);border-radius:14px;display:flex;min-height:560px;overflow:hidden;box-shadow:0 30px 80px #000a;position:relative}
+.cart{flex:1;padding:20px;min-width:0}
+.cart h2{font-size:16px;margin-bottom:14px}
+.search{border:1px solid var(--line);background:var(--bg);border-radius:10px;padding:10px 12px;color:var(--mut);margin-bottom:12px}
+.l{display:flex;gap:12px;align-items:center;padding:10px 0;border-top:1px solid var(--line)}
+.sw{width:34px;height:34px;border-radius:8px;flex:none}
+.l .n{flex:1;min-width:0}.l .n small{display:block;color:var(--mut);font-size:12px}
+.l .q{color:var(--mut);width:40px;text-align:right}.l .p{width:90px;text-align:right;font-variant-numeric:tabular-nums}
+.tag{font-size:11px;border:1px solid;border-radius:999px;padding:1px 7px;margin-left:6px}
+.tag.out{color:var(--amber)}.tag.ok{color:var(--acc)}
+.side{width:360px;flex:none;background:var(--card2);border-left:1px solid var(--line);padding:20px;display:flex;flex-direction:column;gap:14px}
+.client{border:1px solid var(--line);border-radius:10px;padding:10px 12px}.client small{color:var(--mut);display:block;font-size:12px}
+.tot{margin-top:auto;border-top:1px dashed var(--line);padding-top:12px;display:flex;justify-content:space-between;align-items:baseline;color:var(--mut)}
+.tot b{font-size:24px;color:#fff;font-variant-numeric:tabular-nums}
+.btns{display:flex;gap:8px;position:relative}
+.reset{width:48px;height:48px;border:1px solid var(--line);border-radius:10px;color:var(--mut)}
+.split{flex:1;display:flex;height:48px;border-radius:10px;overflow:hidden;box-shadow:0 8px 24px #1fbfa533}
+.split button{background:var(--acc);color:#04241f;font-weight:700}
+.split .arrow{width:44px;border-right:1px solid #0006;font-size:16px}
+.split .pay{flex:1;font-size:15px}
+.split button:hover{filter:brightness(1.1)}
+.menu{position:absolute;bottom:56px;left:56px;right:0;background:var(--card);border:1px solid var(--line);border-radius:10px;padding:6px;box-shadow:0 12px 30px #000a;display:none}
+.menu.on{display:block}
+.menu button{display:block;width:100%;text-align:left;padding:10px 12px;border-radius:7px}.menu button:hover{background:var(--card2)}
+.menu small{display:block;color:var(--mut);font-size:12px}
+.hint{font-size:12px;color:var(--mut);text-align:center}
+/* guided flow */
+.flow{display:none;flex-direction:column;gap:14px;flex:1}
+.bar{height:6px;border-radius:6px;background:var(--line);overflow:hidden}.bar i{display:block;height:100%;background:var(--acc);width:0;transition:width .5s}
+.bar.err i{background:var(--red)}
+.steps{list-style:none;display:flex;flex-direction:column;gap:2px}
+.steps li{display:flex;gap:10px;align-items:flex-start;padding:7px 0;color:var(--mut)}
+.steps li .ic{width:22px;height:22px;border-radius:50%;border:2px solid var(--line);flex:none;display:grid;place-items:center;font-size:12px}
+.steps li.done{color:var(--txt)}.steps li.done .ic{background:var(--acc);border-color:var(--acc);color:#04241f}
+.steps li.now{color:#fff;font-weight:600}.steps li.now .ic{border-color:var(--acc);border-top-color:transparent;animation:spin .8s linear infinite}
+.steps li.wait .ic{animation:none;border-color:var(--amber)}
+.steps li.err{color:var(--red)}.steps li.err .ic{border-color:var(--red);animation:none}
+.steps small{display:block;font-weight:400;color:var(--mut);font-size:12px}
+@keyframes spin{to{transform:rotate(360deg)}}
+.act{border:1px solid var(--line);border-radius:10px;padding:12px;background:var(--card)}
+.act p{margin-bottom:10px}.act .row{display:flex;gap:8px}
+.big{flex:1;height:44px;border-radius:9px;background:var(--acc);color:#04241f;font-weight:700}
+.ghost{flex:1;height:44px;border-radius:9px;border:1px solid var(--line)}
+.isplit{flex:1.4;display:flex}.isplit .ghost:first-child{border-radius:9px 0 0 9px;border-right:0}.isplit .ghost:last-child{border-radius:0 9px 9px 0}
+.menu button[aria-disabled=true]{opacity:.45;cursor:not-allowed}
+.done-box{text-align:center;padding:10px 0}.done-box .ok{font-size:40px;color:var(--acc)}
+.warn{color:var(--amber);font-size:12.5px}
+/* variant B: whole modal */
+body.B .modal.flowing .cart{display:none}
+body.B .modal.flowing .side{width:auto;flex:1;border:0;padding:32px 15%}
+body.B .modal.flowing .steps{flex-direction:row;gap:0}
+body.B .modal.flowing .steps li{flex:1;flex-direction:column;align-items:center;text-align:center;font-size:12.5px}
+body.B .modal.flowing .steps small{display:none}
+body.B .modal.flowing .recap{display:block}
+.recap{display:none;color:var(--mut);text-align:center}.recap b{color:#fff;font-size:22px;display:block}
+.idle{display:contents}.modal.flowing .idle{display:none}.modal.flowing .flow{display:flex}
+</style>
+</head>
+<body>
+<div class="intro">
+  <h1>Nouvelle commande · bouton « Payer »</h1>
+  <p>Clique sur <b>Payer</b>, ou sur la flèche (ou reste appuyé sur Payer) pour les autres options. Les étapes automatiques défilent seules ; seules les étapes orange attendent l'opérateur.</p>
+  <div class="switch"><span>Affichage</span>
+    <button data-v="A" aria-pressed="true">A · étapes dans la colonne, panier visible</button>
+    <button data-v="B">B · écran guidé plein modal</button></div>
+  <div class="switch"><span>Scénario</span>
+    <button data-s="ok" aria-pressed="true">Tout en stock</button>
+    <button data-s="out">Un article manquant</button>
+    <button data-s="err">Zoho échoue à la facture</button></div>
+  <div class="switch"><span>Remise</span>
+    <button data-h="auto">Automatique après paiement</button>
+    <button data-h="confirm" aria-pressed="true">L'opérateur confirme « Remis au client »</button></div>
+  <div class="switch"><span>Client</span>
+    <button data-c="pass" aria-pressed="true">Client de passage (sans mail)</button>
+    <button data-c="mail">Marie Teriitahi (avec mail)</button></div>
+</div>
+
+<div class="modal" id="modal">
+  <div class="cart">
+    <h2>Nouvelle commande</h2>
+    <div class="search">Scanner ou chercher un article…</div>
+    <div class="l"><div class="sw" style="background:#e11d48"></div><div class="n">PLA Basic Rouge 1 kg<small>Bambu Lab · 10100</small></div><div class="q">×2</div><div class="p">5 800 F</div></div>
+    <div class="l"><div class="sw" style="background:#111;border:1px solid #333"></div><div class="n">PETG HF Noir 1 kg <span class="tag out" id="outtag" hidden>stock 0</span><small>Bambu Lab · 33102</small></div><div class="q">×1</div><div class="p">3 200 F</div></div>
+    <div class="l"><div class="sw" style="background:#475569"></div><div class="n">Buse acier trempé 0,4 mm<small>Bambu Lab · FAH010</small></div><div class="q">×1</div><div class="p">2 400 F</div></div>
+    <div class="l"><div class="sw" style="background:#7c3aed"></div><div class="n">Impression 3D à la demande <span class="tag ok">service</span><small>facturé, pas de colis</small></div><div class="q">×1</div><div class="p">1 000 F</div></div>
+  </div>
+  <aside class="side">
+    <div class="client"><b>Client de passage</b><small>Retrait en boutique</small></div>
+    <div class="recap"><b>12 400 F</b>4 articles · Client de passage</div>
+
+    <div class="idle">
+      <div class="tot"><span>Total</span><b>12 400 F</b></div>
+      <div class="btns">
+        <button class="reset" title="Maintenir pour vider">↺</button>
+        <div class="split"><button class="arrow" id="arrow" aria-label="Autres options">▾</button><button class="pay" id="pay">Payer 12 400 F</button></div>
+        <div class="menu" id="menu">
+          <button data-m="create">Créer la commande<small>À préparer et encaisser plus tard</small></button>
+          <button data-m="link">Créer et envoyer un lien de paiement<small>Proposition, à garder ou non</small></button>
+        </div>
+      </div>
+      <p class="hint">Payer = commande, encaissement, facture, colis et remise, d'une traite</p>
+    </div>
+
+    <div class="flow">
+      <div class="bar" id="bar"><i></i></div>
+      <ol class="steps" id="steps"></ol>
+      <div id="panel"></div>
+    </div>
+  </aside>
+</div>
+
+<script>
+const $=s=>document.querySelector(s), modal=$('#modal'), panel=$('#panel');
+const st={v:'A',s:'ok',h:'confirm',c:'pass'};
+const STEPS=[['Commande','Créée et confirmée dans Zoho'],['Paiement','TPE ou paiement manuel'],['Facture','Paiement attribué, facture acquittée'],['Colis','Prélèvement + colis'],['Remise','Retrait en boutique, livré'],['Terminé','']];
+let i=0,timer;
+document.querySelectorAll('.switch button').forEach(b=>b.onclick=()=>{
+  const k=Object.keys(b.dataset)[0]; st[k]=b.dataset[k];
+  b.parentNode.querySelectorAll('button').forEach(x=>x.setAttribute('aria-pressed',x===b));
+  document.body.className=st.v; $('#outtag').hidden=st.s!=='out'; $('.client b').textContent=st.c==='pass'?'Client de passage':'Marie Teriitahi'; reset();
+});
+function reset(){clearTimeout(timer);modal.classList.remove('flowing');$('#menu').classList.remove('on');$('#bar').classList.remove('err')}
+function draw(state){ // state: '' | 'wait' | 'err'
+  const S=STEPS.map(x=>[...x]);if(st.later){S[1][1]='Plus tard, non encaissé';S[2][1]='Toute la commande, montant dû'}
+  $('#steps').innerHTML=S.map(([t,d],k)=>`<li class="${k<i?'done':k===i?('now '+state):''}"><span class="ic">${k<i?'✓':k===i&&state==='err'?'!':''}</span><span>${t}<small>${d}</small></span></li>`).join('');
+  $('#bar i').style.width=(i/(STEPS.length-1)*100)+'%';
+}
+function auto(){panel.innerHTML='';draw('');timer=setTimeout(next,900)}
+function next(){i++;run()}
+function run(){
+  if(i===1){draw('wait');panel.innerHTML=`<div class="act"><p>Comment le client paie-t-il <b>12 400 F</b> ?</p><div class="row"><button class="big" onclick="tpe()">Carte (TPE)</button><button class="ghost" onclick="next()">Espèces / chèque</button></div><div class="row" style="margin-top:8px"><button class="ghost" aria-disabled="${st.c==='pass'}" style="${st.c==='pass'?'opacity:.45;cursor:not-allowed':''}" onclick="if(st.c==='pass'){document.getElementById('why').textContent='Choisis un client pour un paiement plus tard'}else{st.later=true;next()}">Paiement plus tard · facture avec montant dû</button></div><p class="warn" id="why" style="margin:6px 0 0"></p><div class="row" style="margin-top:8px"><button class="ghost" onclick="reset()" style="color:var(--mut)">Annuler · la commande reste impayée</button></div></div>`;return}
+  if(i===2&&st.s==='err'){draw('err');$('#bar').classList.add('err');panel.innerHTML=`<div class="act"><p><b style="color:var(--red)">La facture n'a pas pu être créée.</b><br><span style="color:var(--mut)">Le paiement est bien encaissé. Rien n'est perdu : on reprend ici.</span></p><div class="row"><button class="big" onclick="st.s='ok';$('#bar').classList.remove('err');auto()">Réessayer</button><button class="ghost" onclick="reset()">Ouvrir la commande</button></div></div>`;return}
+  if(i===3&&st.s==='out'&&st.have===undefined){draw('wait');panel.innerHTML=`<div class="act"><p><b>PETG HF Noir ×1</b> : Zoho indique <span class="warn">stock 0</span>.<br>Tu l'as quand même sous la main ?</p><div class="row"><button class="big" onclick="st.have=true;auto()">Oui, il repart avec</button><button class="ghost" onclick="st.have=false;auto()">Non, à remettre plus tard</button></div></div>`;return}
+  if(i===4&&st.h==='confirm'){draw('wait');panel.innerHTML=`<div class="act"><p>Donne les articles au client${st.s==='out'&&!st.have?' <span class="warn">(sauf PETG HF Noir, en attente)</span>':''}.</p><div class="row"><button class="big" onclick="next()">Remis au client</button></div></div>`;return}
+  if(i===5){draw('');$('#steps').lastChild.className='done';$('#steps').lastChild.firstChild.textContent='✓';
+    const later=st.s==='out'&&!st.have;
+    panel.innerHTML=`<div class="done-box"><div class="ok">✓</div><b>${st.later?'Commande remise, à payer':later?'Vente encaissée, 1 article à remettre plus tard':'Vente terminée'}</b><p style="color:var(--mut);margin:4px 0 12px">SO-00512 · FAC-00398 · ${st.later?'<span class="warn">montant dû 12 400 F</span>':'<span style="color:var(--acc)">acquittée</span> 12 400 F'}</p>${later?'<p class="warn" style="margin-bottom:12px">PETG HF Noir ×1 reste « À préparer », déjà facturé.</p>':st.s==='out'?'<p class="warn" style="margin-bottom:12px">PETG HF Noir remis malgré un stock à 0 : stock Zoho à corriger.</p>':''}<div class="row" style="display:flex;gap:8px;margin-bottom:8px"><button class="big" onclick="reset()">Nouvelle vente</button></div><div class="row" style="display:flex;gap:8px;position:relative"><button class="ghost" onclick="reset()">Ouvrir la commande</button><div class="isplit"><button class="ghost" style="flex:none;width:40px" aria-label="Autres options" onclick="$('#imenu').classList.toggle('on')">▾</button><button class="ghost" onclick="say('→ Facture envoyée à l\\'imprimante')">Imprimer la facture</button></div><div class="menu" id="imenu" style="left:auto;width:230px"><button aria-disabled="${st.c==='pass'}" onclick="say(st.c==='pass'?'Pas d\\'adresse mail pour ce client':'→ Fenêtre d\\'envoi du mail (celle des factures)')">Envoyer par mail<small>${st.c==='pass'?'Aucune adresse mail':'marie.t@example.com'}</small></button></div></div><p class="hint" id="said" style="margin-top:8px;min-height:18px"></p></div>`;return}
+  auto();
+}
+function tpe(){draw('wait');panel.innerHTML=`<div class="act"><p>En attente du TPE… <span style="color:var(--mut)">le client présente sa carte</span></p><div class="row"><button class="ghost" onclick="run()">Annuler</button></div></div>`;timer=setTimeout(next,1800)}
+function say(t){$('#imenu').classList.remove('on');const s=$('#said');s.textContent=t;s.className='hint'+(t[0]==='P'?' warn':'')}
+function start(){i=0;st.have=undefined;st.later=false;modal.classList.add('flowing');$('#menu').classList.remove('on');auto()}
+$('#arrow').onclick=()=>$('#menu').classList.toggle('on');
+let hold,held;
+$('#pay').onpointerdown=()=>{held=false;hold=setTimeout(()=>{held=true;$('#menu').classList.add('on')},500)};
+$('#pay').onpointerup=()=>{clearTimeout(hold);if(!held)start()};
+$('#menu').onclick=e=>{$('#menu').classList.remove('on');alertless(e.target.closest('button').dataset.m)};
+function alertless(m){$('.hint').textContent=m==='create'?'→ Commande créée, comme aujourd\'hui (le modal se ferme, la commande s\'ouvre)':'→ Commande créée + lien de paiement envoyé'}
+</script>
+</body>
+</html>
