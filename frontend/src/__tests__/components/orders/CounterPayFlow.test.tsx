@@ -8,6 +8,7 @@ import { render } from '../../utils';
 const print = vi.fn();
 // The props the flow hands the card dialog, captured so a test can drive them like the real dialog would.
 const dialogProps = vi.hoisted(() => ({ current: null as null | {
+  document: { id: string; due: number | null };
   onStart: (amount: number) => Promise<unknown>;
   recover: (e: unknown) => null | { message: string; label: string; start: (amount: number) => Promise<unknown> };
   fetchPayment: () => Promise<unknown>;
@@ -295,6 +296,50 @@ describe('CounterPayFlow', () => {
     expect(onDialog).toHaveBeenLastCalledWith(true);
     await user.click(screen.getByRole('button', { name: 'close-dialog' }));
     expect(onDialog).toHaveBeenLastCalledWith(false);
+  });
+
+  describe('the payment target', () => {
+    const targetOf = (o: Record<string, unknown>) => server.use(http.get('/api/v1/order-board/orders/so1/payment-target', () =>
+      HttpResponse.json({ kind: 'salesorder', document_id: 'so1', number: 'SO-9', max_amount: 12400, left: 12400, link: null, ...o })));
+
+    it.each([
+      ['kind', { kind: null }],
+      ['document_id', { document_id: null }],
+      ['max_amount', { max_amount: null }],
+    ])('a target without %s shows the error toast and opens no dialog', async (_name, o) => {
+      const user = userEvent.setup();
+      targetOf(o);
+      flow(mkPay());
+      await user.click(screen.getByRole('button', { name: 'Card (terminal)' }));
+      expect(await screen.findByText('Error loading data')).toBeInTheDocument();
+      expect(screen.queryByTestId('terminal-dialog')).not.toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Card (terminal)' })).toBeEnabled();
+    });
+
+    it('a rejected target read shows the error toast and re-enables both buttons', async () => {
+      const user = userEvent.setup();
+      server.use(http.get('/api/v1/order-board/orders/so1/payment-target', () => HttpResponse.json({ detail: 'boom' }, { status: 500 })));
+      flow(mkPay());
+      await user.click(screen.getByRole('button', { name: 'Cash or cheque' }));
+      expect(await screen.findByText('Error loading data')).toBeInTheDocument();
+      expect(screen.queryByRole('radio', { name: 'Cash' })).not.toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Card (terminal)' })).toBeEnabled();
+      expect(screen.getByRole('button', { name: 'Cash or cheque' })).toBeEnabled();
+    });
+
+    it.each([
+      ['more left than max_amount is clamped to max_amount', { left: 12.6, max_amount: 10 }, 10],
+      ['a fractional left is rounded', { left: 12.6, max_amount: 100 }, 13],
+      ['nothing left leaves no due', { left: 0 }, null],
+      ['a negative left leaves no due', { left: -5 }, null],
+    ])('%s', async (_name, o, due) => {
+      const user = userEvent.setup();
+      targetOf(o);
+      flow(mkPay());
+      await user.click(screen.getByRole('button', { name: 'Card (terminal)' }));
+      await screen.findByTestId('terminal-dialog');
+      expect(dialogProps.current!.document.due).toBe(due);
+    });
   });
 
   describe('the card dialog wiring', () => {

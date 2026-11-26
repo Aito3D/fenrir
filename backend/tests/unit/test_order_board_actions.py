@@ -417,6 +417,64 @@ async def test_force_never_exceeds_what_books_offers(db_session, parcels):
 
 
 @pytest.mark.asyncio
+async def test_a_forced_line_does_not_free_an_unforced_stockless_one(db_session, parcels):
+    parcels.stock["A"] = 0
+    parcels.stock["B"] = 0
+    await _board(db_session, parcels, _two_lines(qty=2))
+    with pytest.raises(actions.OrderActionRefused) as e:
+        await actions.create_picklist(db_session, "so1", {"l1": 2, "lb": 1}, force=frozenset({"l1"}))
+    assert e.value.args[0] == "too_many"
+    assert parcels.writes == []
+    await actions.create_picklist(db_session, "so1", {"l1": 2}, force=frozenset({"l1"}))
+    assert [line["so_line_item_id"] for line in parcels.bodies["create_picklist"]["line_items"]] == ["l1"]
+    assert (await events_of(db_session, "so1"))[0].detail == {"picklist": "PL-00001", "units": 2, "forced": ["l1"]}
+
+
+@pytest.mark.asyncio
+async def test_forcing_one_line_logs_only_the_forced_line_of_two(db_session, parcels):
+    parcels.stock["A"] = 0
+    parcels.stock["B"] = 3
+    await _board(db_session, parcels, _two_lines(qty=2))
+    await actions.create_picklist(db_session, "so1", {"l1": 2, "lb": 2}, force=frozenset({"l1"}))
+    assert (await events_of(db_session, "so1"))[0].detail == {"picklist": "PL-00001", "units": 4, "forced": ["l1"]}
+
+
+@pytest.mark.asyncio
+async def test_a_forced_id_not_on_the_order_changes_nothing_and_is_not_logged(db_session, parcels):
+    parcels.stock["A"] = 0
+    await _board(db_session, parcels, order(1, qty=2))
+    with pytest.raises(actions.OrderActionRefused) as e:
+        await actions.create_picklist(db_session, "so1", {"l1": 2}, force=frozenset({"ghost"}))
+    assert e.value.args[0] == "too_many"
+    assert parcels.writes == []
+    parcels.stock["A"] = 2
+    await sync.run_pass(db_session)
+    await actions.create_picklist(db_session, "so1", {"l1": 2}, force=frozenset({"ghost"}))
+    assert (await events_of(db_session, "so1"))[0].detail == {"picklist": "PL-00001", "units": 2}
+
+
+@pytest.mark.asyncio
+async def test_a_forced_line_also_picked_and_not_boxed_ignores_the_set_aside_units(db_session, parcels):
+    doc = order(1, qty=5)
+    doc["line_items"][0]["quantity_picked"] = 2
+    parcels.stock["A"] = 4
+    await _board(db_session, parcels, doc)
+    assert await actions.picklist_preview(db_session, "so1") == {"lines": [{"line_id": "l1", "quantity": 2}]}
+    with pytest.raises(actions.OrderActionRefused):
+        await actions.create_picklist(db_session, "so1", {"l1": 5})
+    await actions.create_picklist(db_session, "so1", {"l1": 5}, force=frozenset({"l1"}))
+    assert parcels.bodies["create_picklist"]["line_items"][0]["quantity_to_be_picked"] == 5
+
+
+@pytest.mark.asyncio
+async def test_a_forced_fractional_quantity_is_rounded_in_the_event(db_session, parcels):
+    parcels.stock["A"] = 0
+    await _board(db_session, parcels, order(1, qty=0.3))
+    await actions.create_picklist(db_session, "so1", {"l1": 0.1 + 0.2}, force=frozenset({"l1"}))
+    assert (await events_of(db_session, "so1"))[0].detail == {"picklist": "PL-00001", "units": 0.3, "forced": ["l1"]}
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize(
     ("asked", "code"),
     [
