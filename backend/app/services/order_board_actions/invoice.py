@@ -249,15 +249,19 @@ async def _finish(
             raise ZohoUpstreamError("Books returned no invoice id")
         await _write(salesorder_id, number, step, zoho_service.mark_invoice_sent(db, invoice["invoice_id"]))
         outcome["invoice"] = "created"
+        balance = invoice.get("balance") if invoice.get("balance") is not None else invoice.get("total")
         if apply_credit and row is None:  # no board row, no advance to cap the credit by
             outcome.update(failed_step="credit", error="credit_off_board")
         elif apply_credit and advance > 0:
             step = "credit"
-            balance = invoice.get("balance") if invoice.get("balance") is not None else invoice.get("total")
             cap = min(_num(balance), advance, float("inf") if credit_cap is None else credit_cap)
             outcome["credit_applied"] = await _credit(
                 db, salesorder_id, number, invoice, fresh.get("customer_id") or "", cap
             )
+        # A stale row (failed re-read) shows no credit; the invoice stays, the caller retries the credit.
+        if apply_credit and credit_cap and not outcome["failed_step"]:
+            if outcome["credit_applied"] < min(_num(balance), credit_cap) - 0.01:
+                outcome.update(failed_step="credit", error="credit_unconfirmed")
     except Exception as e:  # after a write nothing may raise: the operator needs to see what was done
         if isinstance(e, ZohoRateLimited):
             sync.open_rate_limit_window(e)

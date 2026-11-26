@@ -1728,6 +1728,7 @@ async def test_invoice_credit_is_capped_by_credit_cap(db_session, books, monkeyp
     outcome = await actions.invoice_shipped(db_session, "so1", apply_credit=True, scope="whole", credit_cap=400)
     assert outcome["invoice"] == "created"
     assert outcome["credit_applied"] == 400
+    assert outcome["failed_step"] is None
 
 
 @pytest.mark.asyncio
@@ -1748,6 +1749,31 @@ async def test_capped_invoice_rereads_the_order_before_reading_its_credit(db_ses
     _settling_credits(books, monkeypatch)
     outcome = await actions.invoice_shipped(db_session, "so1", apply_credit=True, scope="whole", credit_cap=600)
     assert outcome["credit_applied"] == 600
+
+
+@pytest.mark.asyncio
+async def test_capped_invoice_flags_credit_when_the_reread_fails(db_session, books, monkeypatch):
+    await _ready(db_session, books)
+    books.orders["so1"]["total"] = 1500.0
+    books.orders["so1"]["contact"] = {"unused_customer_credits": 600}
+    books.unused = [{"payment_id": "p1", "date": "2026-09-01", "unused_amount": 600}]
+
+    async def boom(db, salesorder_id):
+        raise ZohoUpstreamError("boom")
+
+    monkeypatch.setattr(sync, "refresh_order", boom)
+    outcome = await actions.invoice_shipped(db_session, "so1", apply_credit=True, scope="whole", credit_cap=600)
+    assert (outcome["invoice"], outcome["credit_applied"]) == ("created", 0)
+    assert (outcome["failed_step"], outcome["error"]) == ("credit", "credit_unconfirmed")
+
+
+@pytest.mark.asyncio
+async def test_capped_invoice_flags_credit_when_nothing_is_on_account(db_session, books):
+    await _ready(db_session, books)
+    books.unused = [{"payment_id": "p1", "date": "2026-09-01", "unused_amount": 600}]
+    outcome = await actions.invoice_shipped(db_session, "so1", apply_credit=True, scope="whole", credit_cap=600)
+    assert (outcome["invoice"], outcome["credit_applied"]) == ("created", 0)
+    assert (outcome["failed_step"], outcome["error"]) == ("credit", "credit_unconfirmed")
 
 
 @pytest.mark.asyncio
