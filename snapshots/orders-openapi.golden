@@ -2815,7 +2815,7 @@
     "content": {
      "application/json": {
       "schema": {
-       "$ref": "#/components/schemas/ParcelBody"
+       "$ref": "#/components/schemas/PicklistBody"
       }
      }
     },
@@ -4597,6 +4597,18 @@
      "title": "Apply Credit",
      "type": "boolean"
     },
+    "credit_cap": {
+     "anyOf": [
+      {
+       "minimum": 0.0,
+       "type": "number"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Credit Cap"
+    },
     "scope": {
      "default": "shipped",
      "enum": [
@@ -5281,24 +5293,6 @@
    "title": "PackBody",
    "type": "object"
   },
-  "ParcelBody": {
-   "properties": {
-    "lines": {
-     "items": {
-      "$ref": "#/components/schemas/ParcelLine"
-     },
-     "maxItems": 200,
-     "minItems": 1,
-     "title": "Lines",
-     "type": "array"
-    }
-   },
-   "required": [
-    "lines"
-   ],
-   "title": "ParcelBody",
-   "type": "object"
-  },
   "ParcelEditBody": {
    "properties": {
     "lines": {
@@ -5372,6 +5366,32 @@
     "quantity"
    ],
    "title": "ParcelQty",
+   "type": "object"
+  },
+  "PicklistBody": {
+   "properties": {
+    "force": {
+     "items": {
+      "type": "string"
+     },
+     "maxItems": 200,
+     "title": "Force",
+     "type": "array"
+    },
+    "lines": {
+     "items": {
+      "$ref": "#/components/schemas/ParcelLine"
+     },
+     "maxItems": 200,
+     "minItems": 1,
+     "title": "Lines",
+     "type": "array"
+    }
+   },
+   "required": [
+    "lines"
+   ],
+   "title": "PicklistBody",
    "type": "object"
   },
   "PrepSheetBatchBody": {
