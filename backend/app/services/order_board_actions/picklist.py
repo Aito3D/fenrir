@@ -1,6 +1,7 @@
 """A new picklist in Books for an order on the board."""
 
 from datetime import date
+from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -97,6 +98,7 @@ async def create_picklist(
         except ZohoUpstreamError:
             await _best_effort_refresh(db, salesorder_id, number)  # a timeout can mean Books did create it
             raise
+        forced: dict[str, Any] = {"forced": sorted(force & wanted.keys())} if force & wanted.keys() else {}
         await _log(
             db,
             salesorder_id,
@@ -104,7 +106,7 @@ async def create_picklist(
             by,
             picklist=picklist.get("picklist_number") or "",
             units=_r(sum(wanted.values())),
-            **({"forced": sorted(force & wanted.keys())} if force & wanted.keys() else {}),
+            **forced,
         )
         await _best_effort_refresh(db, salesorder_id, number)
     return {"id": picklist.get("picklist_id") or "", "number": picklist.get("picklist_number") or ""}
