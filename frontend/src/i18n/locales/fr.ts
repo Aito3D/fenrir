@@ -3184,6 +3184,7 @@ export default {
       bulkUpdatedSome: "{{updated}} tâche(s) mise(s) à jour ; {{skipped}} n'ont pas pu être modifiées",
       bulkUpdatedNone: 'Aucune tâche mise à jour',
       bulkCancelled: '{{count}} éléments annulés',
+      bulkCancelledSome: '{{cancelled}} tâche(s) annulée(s) ; {{failed}} n\'ont pas pu être annulées',
       bulkCancelFailed: 'Échec annulation',
       duplicated: '{{count}} tâche(s) ajoutée(s) à la fin de la file',
       duplicateFailed: 'Échec de la duplication des éléments',

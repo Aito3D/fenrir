@@ -3184,6 +3184,7 @@ export default {
       bulkUpdatedSome: '{{updated}} Auftrag/Aufträge aktualisiert; {{skipped}} konnten nicht geändert werden',
       bulkUpdatedNone: 'Keine Aufträge aktualisiert',
       bulkCancelled: '{{count}} Element(e) abgebrochen',
+      bulkCancelledSome: '{{cancelled}} Auftrag/Aufträge abgebrochen; {{failed}} konnten nicht abgebrochen werden',
       bulkCancelFailed: 'Elemente konnten nicht abgebrochen werden',
       duplicated: '{{count}} Auftrag/Aufträge am Ende der Warteschlange hinzugefügt',
       duplicateFailed: 'Duplizieren fehlgeschlagen',

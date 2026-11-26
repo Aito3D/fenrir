@@ -2206,15 +2206,25 @@ export function QueuePage() {
 
   const bulkCancelMutation = useMutation({
     mutationFn: async (ids: number[]) => {
+      let cancelled = 0;
+      let failed = 0;
+      // One at a time, in order: the backend takes a queue lock per cancel.
       for (const id of ids) {
-        await api.cancelQueueItem(id);
+        try {
+          await api.cancelQueueItem(id);
+          cancelled += 1;
+        } catch {
+          failed += 1;
+        }
       }
-      return ids.length;
+      if (failed > 0 && cancelled === 0) throw new Error('bulk cancel failed');
+      return { cancelled, failed };
     },
-    onSuccess: (count) => {
+    onSuccess: ({ cancelled, failed }) => {
       queryClient.invalidateQueries({ queryKey: ['queue'] });
       setSelectedItems([]);
-      showToast(t('queue.toast.bulkCancelled', { count }));
+      if (failed > 0) showToast(t('queue.toast.bulkCancelledSome', { cancelled, failed }), 'error');
+      else showToast(t('queue.toast.bulkCancelled', { count: cancelled }));
     },
     onError: () => showToast(t('queue.toast.bulkCancelFailed'), 'error'),
   });

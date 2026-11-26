@@ -3127,6 +3127,7 @@ export default {
       bulkUpdatedSome: 'Оновлено завдань: {{updated}}; {{skipped}} змінити не вдалося',
       bulkUpdatedNone: 'Жодне завдання не оновлено',
       bulkCancelled: "Скасовано елементів: {{count}}",
+      bulkCancelledSome: 'Скасовано завдань: {{cancelled}}; не вдалося скасувати: {{failed}}',
       bulkCancelFailed: "Не вдалося скасувати елементи",
       duplicated: 'Додано завдань у кінець черги: {{count}}',
       duplicateFailed: 'Не вдалося дублювати елементи',

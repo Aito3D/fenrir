@@ -2722,3 +2722,66 @@ describe('QueuePage duplicate', () => {
     expect(await screen.findByTitle('None of the selected jobs can be duplicated')).toBeDisabled();
   });
 });
+
+describe('QueuePage bulk cancel', () => {
+  let cancelled: number[];
+  let rejected: Set<number>;
+  let queueGets: number;
+  const jobs = [11, 12, 13].map((id) => ({ ...mockQueueItems[0], id, archive_id: id, archive_name: `Job ${id}` }));
+
+  beforeEach(() => {
+    vi.mocked(localStorage.getItem).mockImplementation((key: string) => {
+      if (key === 'queue.historyCollapsed') return 'false';
+      if (key === 'queue.viewMode') return 'list';
+      return null;
+    });
+    cancelled = [];
+    rejected = new Set();
+    queueGets = 0;
+    server.use(
+      http.get('/api/v1/queue/', () => { queueGets += 1; }),
+      ...serveQueue(jobs),
+      http.get('/api/v1/printers/', () => HttpResponse.json(mockPrinters)),
+      http.post('/api/v1/queue/:id/cancel', ({ params }) => {
+        const id = Number(params.id);
+        cancelled.push(id);
+        if (rejected.has(id)) return HttpResponse.json({ detail: 'Cannot cancel item with status printing' }, { status: 400 });
+        return HttpResponse.json({ message: 'ok' });
+      })
+    );
+  });
+
+  const cancelAll = async () => {
+    const user = userEvent.setup();
+    render(<QueuePage />);
+    await screen.findByText('Job 13');
+    await user.click(screen.getByText('Select All'));
+    const gets = queueGets;
+    await user.click(await screen.findByTitle('Cancel Selected'));
+    return gets;
+  };
+
+  it('cancels every job and says how many', async () => {
+    const gets = await cancelAll();
+    expect(await screen.findByText('Cancelled 3 item(s)')).toBeInTheDocument();
+    expect(cancelled).toEqual([11, 12, 13]);
+    await waitFor(() => expect(queueGets).toBeGreaterThan(gets));
+    expect(screen.queryByText('3 selected')).not.toBeInTheDocument();
+  });
+
+  it('still cancels the rest when one job can no longer be cancelled, and reports both counts', async () => {
+    rejected = new Set([12]);
+    const gets = await cancelAll();
+    expect(await screen.findByText('Cancelled 2 job(s); 1 could not be cancelled')).toBeInTheDocument();
+    expect(cancelled).toEqual([11, 12, 13]);
+    await waitFor(() => expect(queueGets).toBeGreaterThan(gets));
+    expect(screen.queryByText('3 selected')).not.toBeInTheDocument();
+  });
+
+  it('shows the plain failure toast when no job could be cancelled', async () => {
+    rejected = new Set([11, 12, 13]);
+    await cancelAll();
+    expect(await screen.findByText('Failed to cancel items')).toBeInTheDocument();
+    expect(cancelled).toEqual([11, 12, 13]);
+  });
+});

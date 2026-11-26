@@ -1921,6 +1921,7 @@ export default {
       bulkUpdatedSome: 'Zaktualizowane zadania: {{updated}}; nie udało się zmienić: {{skipped}}',
       bulkUpdatedNone: 'Nie zaktualizowano żadnych zadań',
       bulkCancelled: 'Anulowane elementy: {{count}}',
+      bulkCancelledSome: 'Anulowano zadania: {{cancelled}}; nie udało się anulować: {{failed}}',
       bulkCancelFailed: 'Nie udało się anulować elementów',
       duplicated: 'Dodano zadania na koniec kolejki: {{count}}',
       duplicateFailed: 'Nie udało się zduplikować elementów',

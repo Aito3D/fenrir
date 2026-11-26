@@ -3095,6 +3095,7 @@ export default {
       bulkUpdatedSome: '작업 {{updated}}개를 업데이트했습니다. {{skipped}}개는 변경할 수 없었습니다',
       bulkUpdatedNone: '업데이트된 작업이 없습니다',
       bulkCancelled: '{{count}}개 항목이 취소되었습니다',
+      bulkCancelledSome: '작업 {{cancelled}}개를 취소했습니다. {{failed}}개는 취소할 수 없었습니다',
       bulkCancelFailed: '항목 취소 실패',
       duplicated: '대기열 끝에 작업 {{count}}개를 추가했습니다',
       duplicateFailed: '항목을 복제하지 못했습니다',

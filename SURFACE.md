@@ -779,6 +779,7 @@ queue.toast.batchUngroupFailed
 queue.toast.batchUngrouped
 queue.toast.bulkCancelFailed
 queue.toast.bulkCancelled
+queue.toast.bulkCancelledSome
 queue.toast.bulkUpdated
 queue.toast.bulkUpdatedNone
 queue.toast.bulkUpdatedSome

@@ -1,7 +1,7 @@
 ### exit: 0
 ### stdout:
 locale files (16): de.ts en.ts es.ts fr.ts it.ts ja.ts ko.ts nl.ts pl.ts pt-BR.ts ru.ts sv.ts tr.ts uk.ts zh-CN.ts zh-TW.ts
---- en keys (318)
+--- en keys (319)
 queue.actions.duplicate
 queue.actions.requeue
 queue.actions.startPrint
@@ -291,6 +291,7 @@ queue.toast.batchUngroupFailed
 queue.toast.batchUngrouped
 queue.toast.bulkCancelFailed
 queue.toast.bulkCancelled
+queue.toast.bulkCancelledSome
 queue.toast.bulkUpdated
 queue.toast.bulkUpdatedNone
 queue.toast.bulkUpdatedSome
@@ -321,22 +322,22 @@ queue.waiting.hasPriority
 queue.waiting.noMatch
 queue.waiting.priorityIn
 --- per locale
-de.ts keys=318 values-sha256=bbaa7c82211d2a92 missing=[] extra=[]
-en.ts keys=318 values-sha256=cdf39c5e0d9d7a70 missing=[] extra=[]
-es.ts keys=318 values-sha256=fe0766c42d907a24 missing=[] extra=[]
-fr.ts keys=318 values-sha256=955545a5709f1626 missing=[] extra=[]
-it.ts keys=318 values-sha256=cba93cfefeadaac3 missing=[] extra=[]
-ja.ts keys=318 values-sha256=44fd62230d47d263 missing=[] extra=[]
-ko.ts keys=318 values-sha256=349ed62970cfd0a4 missing=[] extra=[]
-nl.ts keys=318 values-sha256=b8a80474d552b424 missing=[] extra=[]
-pl.ts keys=318 values-sha256=3888363daf4a3333 missing=[] extra=[]
-pt-BR.ts keys=318 values-sha256=71e17e8997ce05d3 missing=[] extra=[]
-ru.ts keys=318 values-sha256=0f9addfdfde873af missing=[] extra=[]
-sv.ts keys=318 values-sha256=9c3af9a51b1db5d4 missing=[] extra=[]
-tr.ts keys=318 values-sha256=0366d3368e4613c2 missing=[] extra=[]
-uk.ts keys=318 values-sha256=f4bf5bfb5ac4d753 missing=[] extra=[]
-zh-CN.ts keys=318 values-sha256=c1c4bfbe3b1d9566 missing=[] extra=[]
-zh-TW.ts keys=318 values-sha256=35680cb1ec3065bb missing=[] extra=[]
+de.ts keys=319 values-sha256=6207fcfff3f592c4 missing=[] extra=[]
+en.ts keys=319 values-sha256=20ea166c062ce966 missing=[] extra=[]
+es.ts keys=319 values-sha256=67ea8df91b9d7106 missing=[] extra=[]
+fr.ts keys=319 values-sha256=e91587b96a0d08af missing=[] extra=[]
+it.ts keys=319 values-sha256=9b61f423e3cf361a missing=[] extra=[]
+ja.ts keys=319 values-sha256=b8d9069e035be07e missing=[] extra=[]
+ko.ts keys=319 values-sha256=97c6ee27366b6bae missing=[] extra=[]
+nl.ts keys=319 values-sha256=65e359bc5f6436a7 missing=[] extra=[]
+pl.ts keys=319 values-sha256=501f510203f8b2d6 missing=[] extra=[]
+pt-BR.ts keys=319 values-sha256=e6bf778a937b440e missing=[] extra=[]
+ru.ts keys=319 values-sha256=f663decacd89fa78 missing=[] extra=[]
+sv.ts keys=319 values-sha256=798fbcedd2543fe2 missing=[] extra=[]
+tr.ts keys=319 values-sha256=ed297ff4299d98bc missing=[] extra=[]
+uk.ts keys=319 values-sha256=0906ff77ecbdae23 missing=[] extra=[]
+zh-CN.ts keys=319 values-sha256=ea9225a8ddc76852 missing=[] extra=[]
+zh-TW.ts keys=319 values-sha256=ef7a8db30748f039 missing=[] extra=[]
 
 ### stderr:
 

@@ -3184,6 +3184,7 @@ export default {
       bulkUpdatedSome: '{{updated}} trabalho(s) atualizado(s); {{skipped}} não puderam ser alterados',
       bulkUpdatedNone: 'Nenhum trabalho atualizado',
       bulkCancelled: 'Cancelado {{count}} item(s)',
+      bulkCancelledSome: '{{cancelled}} trabalho(s) cancelado(s); {{failed}} não puderam ser cancelados',
       bulkCancelFailed: 'Falha ao cancelar itens',
       duplicated: '{{count}} trabalho(s) adicionado(s) ao fim da fila',
       duplicateFailed: 'Falha ao duplicar os itens',

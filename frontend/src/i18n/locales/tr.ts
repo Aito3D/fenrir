@@ -3184,6 +3184,7 @@ export default {
       bulkUpdatedSome: '{{updated}} iş güncellendi; {{skipped}} tanesi değiştirilemedi',
       bulkUpdatedNone: 'Hiçbir iş güncellenmedi',
       bulkCancelled: '{{count}} öğe iptal edildi',
+      bulkCancelledSome: '{{cancelled}} iş iptal edildi; {{failed}} iş iptal edilemedi',
       bulkCancelFailed: 'Öğeler iptal edilemedi',
       duplicated: 'Kuyruğun sonuna {{count}} iş eklendi',
       duplicateFailed: 'Öğeler çoğaltılamadı',
