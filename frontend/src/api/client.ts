@@ -10748,10 +10748,10 @@ export const api = {
   getOrderTerminalPayment: (id: string) =>
     request<AitoTerminalPayment | null>(`/order-board/orders/${encodeURIComponent(id)}/terminal-payment`),
   getOrderPicklistPreview: (id: string) => request<OrderPickLines>(`/order-board/orders/${encodeURIComponent(id)}/picklist`),
-  createOrderPicklist: (id: string, lines: OrderPickLines['lines']) =>
+  createOrderPicklist: (id: string, lines: OrderPickLines['lines'], force?: string[]) =>
     request<{ board: OrderBoardResponse; picklist: { id: string; number: string } }>(`/order-board/orders/${encodeURIComponent(id)}/picklists`, {
       method: 'POST',
-      body: JSON.stringify({ lines }),
+      body: JSON.stringify(force?.length ? { lines, force } : { lines }),
     }),
   getOrderPicklist: (id: string, picklistId: string) =>
     request<OrderPickLines & { id: string; number: string; status: string }>(`/order-board/orders/${encodeURIComponent(id)}/picklists/${encodeURIComponent(picklistId)}`),
@@ -10777,7 +10777,7 @@ export const api = {
       body: JSON.stringify(body),
     }),
   getOrderInvoicePreview: (id: string) => request<OrderInvoicePreview>(`/order-board/orders/${encodeURIComponent(id)}/invoice`),
-  createOrderInvoice: (id: string, body: { apply_credit: boolean; scope?: OrderInvoiceScope }) =>
+  createOrderInvoice: (id: string, body: { apply_credit: boolean; scope?: OrderInvoiceScope; credit_cap?: number }) =>
     request<OrderActionResult>(`/order-board/orders/${encodeURIComponent(id)}/invoice`, { method: 'POST', body: JSON.stringify(body) }),
   cancelOrder: (id: string) => request<{ board: OrderBoardResponse }>(`/order-board/orders/${encodeURIComponent(id)}/cancel`, { method: 'POST' }),
   getOrderInvoicePdf: (invoiceId: string): Promise<Blob> => orderBoardBlob(`/order-board/invoices/${encodeURIComponent(invoiceId)}/pdf`),
