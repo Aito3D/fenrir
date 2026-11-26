@@ -318,4 +318,34 @@ describe('useCounterPay', () => {
     expect(m.createOrderPicklist).toHaveBeenCalledWith('so1', [{ line_id: 'l1', quantity: 2.5 }], []);
     expect(m.createOrderParcel).toHaveBeenCalledWith('so1', 'pl1', [{ line_id: 'l1', quantity: 2.5 }]);
   });
+
+  it('reset after a finished sale lets the next one create an order and post a new picklist', async () => {
+    arrange(mkRow());
+    const r = setup();
+    const sale = async () => {
+      await toPayment(r);
+      await act(async () => r.result.current.settle(12400));
+      await waitFor(() => expect(r.result.current.step).toBe('handover'));
+      await act(async () => r.result.current.handOver());
+      await waitFor(() => expect(r.result.current.step).toBe('done'));
+    };
+    await sale();
+    act(() => r.result.current.reset());
+    expect(r.result.current).toMatchObject({ active: false, step: 'order', paid: 0, invoice: null, row: null });
+    await sale();
+    expect(m.createCounterOrder).toHaveBeenCalledTimes(2);
+    expect(m.createOrderPicklist).toHaveBeenCalledTimes(2);
+    expect(m.createOrderInvoice).toHaveBeenCalledTimes(2);
+  });
+
+  it('reset while a step runs does nothing', async () => {
+    arrange(mkRow());
+    m.createOrderInvoice.mockReturnValue(new Promise(() => {}) as never);
+    const r = setup();
+    await toPayment(r);
+    act(() => r.result.current.settle(12400));
+    await waitFor(() => expect(r.result.current.busy).toBe(true));
+    act(() => r.result.current.reset());
+    expect(r.result.current).toMatchObject({ active: true, step: 'invoice', busy: true });
+  });
 });

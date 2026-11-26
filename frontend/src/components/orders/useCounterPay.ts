@@ -37,11 +37,12 @@ export function useCounterPay(opts?: { onCreateError?: (e: unknown) => void }) {
   const queryClient = useQueryClient();
   const [state, patch] = useReducer((s: CounterPayState, p: Partial<CounterPayState>) => ({ ...s, ...p }), INITIAL);
   const running = useRef(false);
-  const m = useRef({
+  const fresh = () => ({
     orderId: '', row: null as OrderBoardRow | null, paid: 0, invoiceNumber: null as string | null, invoiceId: '',
     queue: [] as OrderBoardLine[], have: new Set<string>(), lines: null as OrderPickLines['lines'] | null, force: [] as string[], picklistPosted: false,
     picklistId: '', packageNumber: '', packageId: '', stage: 'invoice' as Stage,
   });
+  const m = useRef(fresh());
 
   const take = async (board: OrderBoardResponse): Promise<OrderBoardRow | null> => {
     await takeBoard(queryClient, board);
@@ -193,7 +194,7 @@ export function useCounterPay(opts?: { onCreateError?: (e: unknown) => void }) {
         opts?.onCreateError?.(e);
         return;
       }
-      m.current = { ...m.current, orderId: res.salesorder_id, row: null, paid: 0, invoiceNumber: null, invoiceId: '', queue: [], have: new Set(), lines: null, force: [], picklistPosted: false, picklistId: '', packageNumber: '', packageId: '', stage: 'invoice' };
+      m.current = { ...fresh(), orderId: res.salesorder_id };
       const row = (await take(res.board)) ?? res.row;
       patch({ step: 'payment', wait: 'payment', row });
     });
@@ -235,5 +236,11 @@ export function useCounterPay(opts?: { onCreateError?: (e: unknown) => void }) {
       if (state.step === 'handover' && !state.error && !running.current) void run(runHandOver);
     },
     retry,
+    /** Back to a clean slate for the next sale; ignored while a write is running. */
+    reset: () => {
+      if (running.current) return;
+      m.current = fresh();
+      patch(INITIAL);
+    },
   };
 }
