@@ -108,6 +108,8 @@ Conforme au design, avec ces précisions et écarts :
 - **Facture sans le paiement** : le serveur signale `failed_step: "credit"`, `error: "credit_unconfirmed"` ; l'étape
   s'arrête sur « paiement pas encore attribué » et « Réessayer » n'applique que le crédit (pas de seconde facture).
 - **Réponse perdue** : après un délai dépassé, « Réessayer » reprend la facture ou le prélèvement que Books a déjà créés.
+- **TPE en cours** : « Paiement plus tard » et « Espèces ou chèque » sont inactifs tant qu'un paiement carte est ouvert.
+- **Question du stock** : affiche le chiffre réel de Zoho (pas toujours 0).
 - **Espèces ou chèque** : la fenêtre de paiement manuel s'ouvre sur « Espèces » (`ManualPaymentModal initialMode`).
 - **Serveur** : `POST …/invoice` accepte `credit_cap` ; `POST …/picklists` accepte `force` (ids de lignes) ; l'historique
   note les lignes forcées. Aucune nouvelle route.
@@ -123,7 +125,8 @@ Conforme au design, avec ces précisions et écarts :
   avant l'étape Facture ; l'impression et l'envoi par mail de la facture.
 - Vu seulement en navigateur sans serveur (requêtes simulées) : paiement partiel, échec de remise, appui long sur
   « Payer » non parcourus.
-- Sur téléphone, le menu « Envoyer par mail » de l'écran final dépasse le bas de l'écran de quelques pixels.
+- Au « Réessayer » de l'étape Facture, le crédit est appliqué sans le plafond de la vente (route existante) : sans effet
+  pour un paiement complet ; pour un paiement partiel d'un client ayant un autre acompte, la facture pourrait le consommer.
 - Cas restant bloquant (repli : « Ouvrir la commande ») : colis créé par Books mais réponse perdue ; facture restée en
   brouillon après un échec de « marquer envoyée ».
 - Le câblage de la fenêtre TPE est copié de la fiche commande (`OrderPaymentBlock`) : à factoriser si l'un des deux change.
