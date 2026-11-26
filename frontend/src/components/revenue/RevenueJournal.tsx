@@ -196,13 +196,7 @@ export function RevenueJournal({ today, filterParams, version, taxMode, canMargi
         options={[{ id: 'day', label: t('revenue.controls.day') }, { id: 'month', label: t('revenue.controls.month') }]} />}
       action={
         <div className="flex flex-wrap items-center justify-end gap-1.5">
-          <button type="button" className={nav} aria-label={t('revenue.controls.prev')} title={t('revenue.controls.prev')} disabled={!prev} onClick={() => prev && setDay(prev)}>
-            <ChevronLeft aria-hidden className="h-4 w-4" />
-          </button>
-          <span aria-live="polite" data-slot="revenue-journal-period" className="min-w-40 text-center text-sm font-semibold text-white first-letter:uppercase">{label}</span>
-          <button type="button" className={nav} aria-label={t('revenue.controls.next')} title={t('revenue.controls.next')} disabled={!next} onClick={() => next && setDay(next)}>
-            <ChevronRight aria-hidden className="h-4 w-4" />
-          </button>
+          {/* Badge and shortcut sit before the arrows, and the label has a fixed width: the arrows never move under the pointer. */}
           {rank !== null && (
             <span data-slot="revenue-journal-record" className="rounded-full bg-status-warning/15 px-2 py-0.5 text-[11px] font-semibold text-status-warning">
               {'★ '}
@@ -216,6 +210,13 @@ export function RevenueJournal({ today, filterParams, version, taxMode, canMargi
               {mode === 'day' ? t('settings.today') : t('revenue.pace.thisMonth')}
             </button>
           )}
+          <button type="button" className={nav} aria-label={t('revenue.controls.prev')} title={t('revenue.controls.prev')} disabled={!prev} onClick={() => prev && setDay(prev)}>
+            <ChevronLeft aria-hidden className="h-4 w-4" />
+          </button>
+          <span aria-live="polite" data-slot="revenue-journal-period" className={`${mode === 'day' ? 'w-60' : 'w-40'} text-center text-sm font-semibold text-white first-letter:uppercase`}>{label}</span>
+          <button type="button" className={nav} aria-label={t('revenue.controls.next')} title={t('revenue.controls.next')} disabled={!next} onClick={() => next && setDay(next)}>
+            <ChevronRight aria-hidden className="h-4 w-4" />
+          </button>
         </div>
       }
     >
