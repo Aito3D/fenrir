@@ -3178,7 +3178,7 @@ export function QueuePage() {
               </div>
 
               <DndContext
-                sensors={sensors}
+                sensors={canReorderManually && pendingSortAsc ? sensors : []}
                 collisionDetection={closestCenter}
                 onDragStart={handleDragStart}
                 onDragEnd={handleDragEnd}
