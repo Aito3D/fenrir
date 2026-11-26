@@ -549,6 +549,7 @@ const ES_COGNATES = [
 // Swedish cognates — technical UI labels that Swedish speakers use verbatim
 // from English (loanwords + acronyms + format strings). Curated, not a shortcut.
 const SV_COGNATES = [
+  'Order',  // orders.counterPay.step.order — the same word in Swedish
   'Period',  // revenue.table.period — the same word in Swedish (en period)
   'Multimaterial',  // filamentTrees.orca.tabMultimaterial — the same word in this locale (OrcaSlicer's own tab name)
   'Revision',  // queue.timeline.card.revision — same word in Swedish (en revision)
