@@ -1,9 +1,9 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Check, Loader2, Plus, RotateCcw, X } from 'lucide-react';
 import { api } from '../../api/client';
-import type { FinishedOrderRow, OrderBoardRow, OrderEditResult, QuoteRow, QuotesResponse, ZohoContact } from '../../api/client';
+import type { FinishedOrderRow, OrderBoardResponse, OrderBoardRow, OrderEditResult, QuoteRow, QuotesResponse, ZohoContact } from '../../api/client';
 import { useAuth } from '../../contexts/AuthContext';
 import { useToast } from '../../contexts/ToastContext';
 import { useAitoZohoStatus } from '../../hooks/useAitoZohoStatus';
@@ -16,12 +16,15 @@ import { ClientCombobox } from '../aito/ClientCombobox';
 import { HoldButton } from '../aito/HoldButton';
 import { NewContactForm } from '../aito/NewContactForm';
 import { focusRingCls } from '../formStyles';
+import { CounterPayFlow } from './CounterPayFlow';
 import { NewOrderLines } from './NewOrderLines';
 import { lineTotal, normDiscount } from './orderBoard';
 import { OrderClientHistory } from './OrderClientHistory';
 import { OrderContactBlock } from './OrderContactBlock';
 import { errorReason } from './orderErrors';
 import { quotesQuery } from './quotes';
+import { SplitButton } from './SplitButton';
+import { useCounterPay } from './useCounterPay';
 
 const MODAL_OUT_MS = 170;
 
@@ -86,13 +89,24 @@ export function NewOrderDraftRow({ currency, open, finished, mode = 'order', quo
     : !client ? t('aito.noClient')
     : null;
 
+  // A kept quote line sends its line_id and its current discount (none sent removes it).
+  const requestLines = () => draft.lines.map(l => {
+    const discount = normDiscount(l.discount);
+    return { ...(l.lineId ? { line_id: l.lineId } : {}), item_id: l.item.id, quantity: l.quantity, ...(discount ? { discount } : {}) };
+  });
+  const orderFailed = (e: unknown) => showToast(t('orders.newOrder.failed', { reason: errorReason(t, e) }), 'error');
+  // The counter sale: what the cart, client and email were when Pay was pressed (the draft is emptied once the order exists).
+  const createFailed = useRef(false);
+  const pay = useCounterPay({
+    onCreateError: e => {
+      createFailed.current = true;
+      orderFailed(e);
+    },
+  });
+  const [sale, setSale] = useState<{ lines: NewOrderDraft['lines']; total: number; client: string; email: string | null; isDefault: boolean } | null>(null);
   const create = useMutation({
     mutationFn: (customerId: string): Promise<(OrderEditResult & { salesorder_id: string }) | QuoteSaved> => {
-      // A kept quote line sends its line_id and its current discount (none sent removes it).
-      const lines = draft.lines.map(l => {
-        const discount = normDiscount(l.discount);
-        return { ...(l.lineId ? { line_id: l.lineId } : {}), item_id: l.item.id, quantity: l.quantity, ...(discount ? { discount } : {}) };
-      });
+      const lines = requestLines();
       if (quote) return api.editQuote(quote.id, { customer_id: customerId, lines });
       const body = { customer_id: customerId, client_ref: draft.clientRef, lines };
       return isQuote ? api.createQuote(body) : api.createCounterOrder(body);
@@ -108,17 +122,35 @@ export function NewOrderDraftRow({ currency, open, finished, mode = 'order', quo
       showToast(t(isQuote ? 'orders.newQuote.failed' : 'orders.newOrder.failed', { reason: errorReason(t, e, isQuote ? 'orders.newQuote.err' : undefined) }), 'error');
     },
   });
-  const busy = create.isPending;
-  const canCreate = !why && !busy;
+  const selling = pay.active && !!sale;
+  const busy = create.isPending || pay.busy;
+  const canCreate = !why && !busy && !pay.active;
   const submit = () => {
     if (canCreate && client) create.mutate(client.id);
     else setTried(true);
+  };
+  const payNow = async () => {
+    if (!canCreate || !client) {
+      setTried(true);
+      return;
+    }
+    createFailed.current = false;
+    setSale({ lines: draft.lines, total, client: client.name, email: contact.data?.email || null, isDefault: client.id === defaultId });
+    await pay.start({ customer_id: client.id, client_ref: draft.clientRef, lines: requestLines() });
+    // reset, not clearNewOrderDraft: the new client_ref keeps the next order from being deduped into this one.
+    if (!createFailed.current) reset();
+  };
+  const openOrder = (id: string) => {
+    const board = queryClient.getQueryData<OrderBoardResponse>(['order-board']);
+    if (board) onCreated({ board, row: pay.row, salesorder_id: id });
+    else onClose();
   };
   const { closing, requestClose, dialogRef } = useDismissableDialog(onClose, {
     animationMs: MODAL_OUT_MS,
     onEscape: close => {
       if (creatingClient) setCreatingClient(false);
-      else if (!busy) close();
+      // A payment dialog's own Escape reaches this window listener too: the sale is left through its buttons.
+      else if (!busy && !(pay.active && pay.step !== 'done' && !pay.error)) close();
     },
   });
   // The board behind stays put while the dialog is open (same lock as PreviewModalShell).
@@ -173,11 +205,19 @@ export function NewOrderDraftRow({ currency, open, finished, mode = 'order', quo
         {/* Cart on the left, the decision rail on the right: who, then what, then pay. Stacks below md. */}
         <div className="grid border-t border-bambu-dark-tertiary md:min-h-[60vh] md:grid-cols-[minmax(0,1fr)_23rem]">
           <div className="min-w-0 bg-bambu-dark/40 px-5 py-4 md:rounded-bl-xl">
-            <NewOrderLines lines={draft.lines} currency={currency} disabled={busy} onChange={lines => setDraft({ ...draft, lines })} />
+            {selling && sale ? (
+              <div inert>
+                <NewOrderLines lines={sale.lines} currency={currency} disabled onChange={() => {}} />
+              </div>
+            ) : (
+              <NewOrderLines lines={draft.lines} currency={currency} disabled={busy} onChange={lines => setDraft({ ...draft, lines })} />
+            )}
           </div>
           <aside className="flex min-w-0 flex-col border-t border-bambu-dark-tertiary md:border-l md:border-t-0">
             <section className="animate-rise space-y-4 border-b border-bambu-dark-tertiary px-5 py-4" style={{ animationDelay: '60ms' }}>
-              {creatingClient ? (
+              {selling && sale ? (
+                <p className="text-sm font-medium text-white">{sale.client}</p>
+              ) : creatingClient ? (
                 <NewContactForm onCancel={() => setCreatingClient(false)} onCreated={pick} />
               ) : (
                 <ClientCombobox
@@ -207,52 +247,82 @@ export function NewOrderDraftRow({ currency, open, finished, mode = 'order', quo
             </section>
             {/* Sticks to the bottom of the viewport while a long cart scrolls the modal. */}
             <section className="animate-rise sticky bottom-0 mt-auto space-y-4 rounded-b-xl bg-bambu-dark-secondary px-5 py-4 md:rounded-bl-none" style={{ animationDelay: '120ms' }}>
-              <dl className="space-y-1.5 text-sm">
-                <div className="flex justify-between text-bambu-gray">
-                  <dt>{t('orders.units', { count: units })}</dt>
-                  <dd className="tabular-nums">{formatMoney(gross, currency)}</dd>
-                </div>
-                {saved > 0.005 && (
-                  <div className="fold-open flex justify-between text-bambu-green">
-                    <dt>{t('orders.newOrder.discount')}</dt>
-                    <dd className="tabular-nums">−{formatMoney(saved, currency)}</dd>
+              {selling && sale ? (
+                <CounterPayFlow
+                  pay={pay}
+                  currency={currency}
+                  total={sale.total}
+                  email={sale.email}
+                  isDefaultClient={sale.isDefault}
+                  onNewSale={() => {
+                    pay.reset();
+                    setSale(null);
+                    setTried(false);
+                  }}
+                  onOpenOrder={openOrder}
+                />
+              ) : (
+                <>
+                  <dl className="space-y-1.5 text-sm">
+                    <div className="flex justify-between text-bambu-gray">
+                      <dt>{t('orders.units', { count: units })}</dt>
+                      <dd className="tabular-nums">{formatMoney(gross, currency)}</dd>
+                    </div>
+                    {saved > 0.005 && (
+                      <div className="fold-open flex justify-between text-bambu-green">
+                        <dt>{t('orders.newOrder.discount')}</dt>
+                        <dd className="tabular-nums">−{formatMoney(saved, currency)}</dd>
+                      </div>
+                    )}
+                    <div className="flex items-baseline justify-between border-t border-dashed border-bambu-dark-tertiary pt-3">
+                      <dt className="text-bambu-gray">{t('orders.newOrder.total')}</dt>
+                      <dd className="overflow-hidden text-2xl font-bold tabular-nums text-white">
+                        <span key={roll.n} data-testid="draft-total" className={`inline-block ${roll.dir ? `animate-order-total-${roll.dir}` : ''}`}>
+                          {formatMoney(total, currency)}
+                        </span>
+                      </dd>
+                    </div>
+                  </dl>
+                  <div className="flex items-stretch gap-2">
+                    {!quote && <HoldButton
+                      onHold={reset}
+                      durationMs={500}
+                      progress="perimeter"
+                      label={t('orders.newOrder.reset')}
+                      hint={t('orders.newOrder.holdToReset')}
+                      className={`h-12 w-12 flex-shrink-0 justify-center border border-bambu-dark-tertiary text-bambu-gray transition-colors hover:border-red-400/40 hover:text-red-400 data-[holding=true]:border-red-400 data-[holding=true]:text-red-400 ${focusRingCls}`}
+                    >
+                      <RotateCcw className="relative h-4 w-4" />
+                    </HoldButton>}
+                    {isQuote ? (
+                      <button
+                        type="button"
+                        // Not `disabled`: the click on a blocked button is what says why.
+                        aria-disabled={!canCreate}
+                        onClick={submit}
+                        className={`btn-press inline-flex h-12 flex-1 items-center justify-center gap-2 rounded-lg ${tone.bg} px-6 text-sm font-semibold text-white transition-[opacity,background-color,box-shadow] duration-200 ${focusRingCls} ${canCreate ? `shadow-lg ${tone.lit}` : 'opacity-45'}`}
+                      >
+                        {busy ? <Loader2 aria-hidden="true" className="h-4 w-4 animate-spin" /> : quote ? <Check aria-hidden="true" className="h-4 w-4" /> : <Plus aria-hidden="true" className="h-4 w-4" />}
+                        {quote
+                          ? (busy ? t('orders.newQuote.saving') : t('orders.newQuote.save'))
+                          : busy ? t('orders.newOrder.creating') : t('orders.newQuote.create')}
+                      </button>
+                    ) : (
+                      <SplitButton
+                        ariaDisabled={!canCreate}
+                        busy={create.isPending}
+                        onClick={() => void payNow()}
+                        menuLabel={t('orders.counterPay.more')}
+                        className={`h-12 transition-[opacity,background-color,box-shadow] duration-200 ${tone.bg} text-white ${canCreate ? `shadow-lg ${tone.lit}` : 'opacity-45'}`}
+                        label={create.isPending ? t('orders.newOrder.creating') : t('orders.counterPay.pay', { amount: formatMoney(total, currency) })}
+                        items={[{ key: 'create', label: t('orders.newOrder.create'), hint: t('orders.counterPay.createHint'), onSelect: submit }]}
+                      />
+                    )}
                   </div>
-                )}
-                <div className="flex items-baseline justify-between border-t border-dashed border-bambu-dark-tertiary pt-3">
-                  <dt className="text-bambu-gray">{t('orders.newOrder.total')}</dt>
-                  <dd className="overflow-hidden text-2xl font-bold tabular-nums text-white">
-                    <span key={roll.n} data-testid="draft-total" className={`inline-block ${roll.dir ? `animate-order-total-${roll.dir}` : ''}`}>
-                      {formatMoney(total, currency)}
-                    </span>
-                  </dd>
-                </div>
-              </dl>
-              <div className="flex items-stretch gap-2">
-                {!quote && <HoldButton
-                  onHold={reset}
-                  durationMs={500}
-                  progress="perimeter"
-                  label={t('orders.newOrder.reset')}
-                  hint={t('orders.newOrder.holdToReset')}
-                  className={`h-12 w-12 flex-shrink-0 justify-center border border-bambu-dark-tertiary text-bambu-gray transition-colors hover:border-red-400/40 hover:text-red-400 data-[holding=true]:border-red-400 data-[holding=true]:text-red-400 ${focusRingCls}`}
-                >
-                  <RotateCcw className="relative h-4 w-4" />
-                </HoldButton>}
-                <button
-                  type="button"
-                  // Not `disabled`: the click on a blocked button is what says why.
-                  aria-disabled={!canCreate}
-                  onClick={submit}
-                  className={`btn-press inline-flex h-12 flex-1 items-center justify-center gap-2 rounded-lg ${tone.bg} px-6 text-sm font-semibold text-white transition-[opacity,background-color,box-shadow] duration-200 ${focusRingCls} ${canCreate ? `shadow-lg ${tone.lit}` : 'opacity-45'}`}
-                >
-                  {busy ? <Loader2 aria-hidden="true" className="h-4 w-4 animate-spin" /> : quote ? <Check aria-hidden="true" className="h-4 w-4" /> : <Plus aria-hidden="true" className="h-4 w-4" />}
-                  {quote
-                    ? (busy ? t('orders.newQuote.saving') : t('orders.newQuote.save'))
-                    : busy ? t('orders.newOrder.creating') : t(isQuote ? 'orders.newQuote.create' : 'orders.newOrder.create')}
-                </button>
-              </div>
+                </>
+              )}
               {quote?.state === 'expired' && <p className="text-xs text-bambu-gray">{t('orders.newQuote.redated')}</p>}
-              {tried && why && <p role="alert" className="animate-rise text-xs text-red-400">{why}</p>}
+              {tried && why && !selling && <p role="alert" className="animate-rise text-xs text-red-400">{why}</p>}
             </section>
           </aside>
         </div>

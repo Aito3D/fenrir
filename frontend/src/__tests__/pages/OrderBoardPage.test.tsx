@@ -973,7 +973,8 @@ describe('OrderBoardPage actions', () => {
       await screen.findByText('SO-00412');
       fireEvent.click(screen.getByRole('button', { name: 'New order' }));
       await screen.findByDisplayValue('Client de passage', undefined, { timeout: 3000 });
-      fireEvent.click(screen.getByRole('button', { name: 'Create order' }));
+      fireEvent.click(screen.getByRole('button', { name: 'Other options' }));
+      fireEvent.click(screen.getByRole('menuitem', { name: /^Create order/ }));
       await waitFor(() => expect(window.location.search).toBe('?order=9'), { timeout: 3000 });
       expect(within(await screen.findByTestId('orders-list')).getAllByTestId('order-number').map(n => n.textContent)).toContain('SO-00999');
       expect(screen.getByText('SO-00412')).toBeInTheDocument();

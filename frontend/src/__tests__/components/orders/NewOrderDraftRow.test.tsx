@@ -37,7 +37,12 @@ const renderRow = (onCreated = vi.fn(), onClose = vi.fn()) => {
   render(<NewOrderDraftRow currency="XPF" open={[]} finished={[]} onCreated={onCreated} onClose={onClose} />);
   return { onCreated, onClose };
 };
-const createBtn = () => screen.getByRole('button', { name: 'Create order' });
+const payBtn = () => screen.getByRole('button', { name: /^Pay\s\d/ });
+// "Create the order" lives in the menu of the Pay button's arrow.
+const createOrder = async (user: ReturnType<typeof userEvent.setup>) => {
+  await user.click(screen.getByRole('button', { name: 'Other options' }));
+  await user.click(screen.getByRole('menuitem', { name: /^Create order/ }));
+};
 const lineTotal = () => screen.getByTestId('draft-line-total');
 
 describe('NewOrderDraftRow', () => {
@@ -174,8 +179,8 @@ describe('NewOrderDraftRow', () => {
     await user.clear(discount);
     await user.type(discount, '120%');
     expect(discount).toHaveAttribute('aria-invalid', 'true');
-    expect(createBtn()).toHaveAttribute('aria-disabled', 'true');
-    await user.click(createBtn());
+    expect(payBtn()).toHaveAttribute('aria-disabled', 'true');
+    await createOrder(user);
     expect(await screen.findByText(/a percentage up to 100%/)).toBeInTheDocument();
     expect(posted).toBe(0);
   });
@@ -188,7 +193,7 @@ describe('NewOrderDraftRow', () => {
     renderRow(onCreated);
     expect(screen.getByText('2 to order')).toBeInTheDocument();
     await screen.findByDisplayValue('Client de passage');
-    await user.click(createBtn());
+    await createOrder(user);
     await waitFor(() => expect(onCreated).toHaveBeenCalled());
   });
 
@@ -203,7 +208,7 @@ describe('NewOrderDraftRow', () => {
     seed([{ item: item(), quantity: 2, discount: '10 %' }, { item: item({ id: 'B', name: 'PLA Silk Or' }), quantity: 1, discount: '' }]);
     renderRow(onCreated);
     await screen.findByDisplayValue('Client de passage');
-    await user.click(createBtn());
+    await createOrder(user);
     await waitFor(() => expect(onCreated).toHaveBeenCalledWith(boardResult));
     expect(body).toEqual({
       customer_id: DEFAULT_ID,
@@ -220,7 +225,7 @@ describe('NewOrderDraftRow', () => {
     seed([{ item: item(), quantity: 2, discount: '' }]);
     renderRow(onCreated);
     await screen.findByDisplayValue('Client de passage');
-    await user.click(createBtn());
+    await createOrder(user);
     expect(await screen.findByText(/Order not created: Zoho Books did not confirm/)).toBeInTheDocument();
     expect(onCreated).not.toHaveBeenCalled();
     expect(JSON.parse(localStorage.getItem(DRAFT_KEY)!).lines).toHaveLength(1);
@@ -301,7 +306,7 @@ describe('NewOrderDraftRow', () => {
       await user.click(await screen.findByRole('option', { name: /Tehei TAIRUA/ }, { timeout: 3000 }));
       expect(await screen.findByDisplayValue('Tehei TAIRUA')).toBeInTheDocument();
       await waitFor(() => expect(JSON.parse(localStorage.getItem(DRAFT_KEY)!).client).toEqual({ id: 'c2', name: 'Tehei TAIRUA', isDefault: false }));
-      await user.click(createBtn());
+      await createOrder(user);
       await waitFor(() => expect(onCreated).toHaveBeenCalled());
       expect((box.body as { customer_id: string }).customer_id).toBe('c2');
     });
@@ -351,7 +356,7 @@ describe('NewOrderDraftRow', () => {
       expect(await screen.findByDisplayValue('Teva TEMARII')).toBeInTheDocument();
       expect(screen.queryByLabelText(/company name/i)).not.toBeInTheDocument();
       await waitFor(() => expect(JSON.parse(localStorage.getItem(DRAFT_KEY)!).client).toEqual({ id: 'n1', name: 'Teva TEMARII', isDefault: false }));
-      await user.click(createBtn());
+      await createOrder(user);
       await waitFor(() => expect(onCreated).toHaveBeenCalled());
       expect((box.body as { customer_id: string }).customer_id).toBe('n1');
     });
@@ -381,7 +386,7 @@ describe('NewOrderDraftRow', () => {
       await user.click(screen.getByRole('button', { name: 'Reset to the default client' }));
       expect(await screen.findByDisplayValue('Client de passage')).toBeInTheDocument();
       await waitFor(() => expect(JSON.parse(localStorage.getItem(DRAFT_KEY)!).client).toBeNull());
-      await user.click(createBtn());
+      await createOrder(user);
       await waitFor(() => expect(onCreated).toHaveBeenCalled());
       expect((box.body as { customer_id: string }).customer_id).toBe(DEFAULT_ID);
     });
@@ -522,6 +527,68 @@ describe('NewOrderDraftRow', () => {
     it('an expired quote says saving re-dates it to today', () => {
       render(<NewOrderDraftRow mode="quote" quote={quote({ state: 'expired' })} currency="XPF" open={[]} finished={[]} onCreated={vi.fn()} onClose={vi.fn()} />);
       expect(screen.getByText('This quote has expired: saving re-dates it to today.')).toBeInTheDocument();
+    });
+  });
+
+  describe('counter pay', () => {
+    const row = { id: '9', number: 'SO-9', currency: 'XPF', lines: [], payment: { invoices: [] }, packages: [] };
+    const payOrder = () => server.use(http.post('/api/v1/order-board/orders', () =>
+      HttpResponse.json({ board: { rows: [row], computed_at: null, stock_loaded_at: null, sync: {} }, row, salesorder_id: '9' })));
+
+    it('order mode shows Pay with Create in the menu; quote mode keeps its single button', async () => {
+      const user = userEvent.setup();
+      seed([{ item: item(), quantity: 2, discount: '' }]);
+      renderRow();
+      expect(payBtn()).toHaveTextContent(/^Pay\s+2\s*000/);
+      expect(screen.queryByRole('menu')).not.toBeInTheDocument();
+      await user.click(screen.getByRole('button', { name: 'Other options' }));
+      expect(screen.getByRole('menuitem', { name: /^Create order/ })).toHaveTextContent('Prepare and collect later');
+    });
+
+    it('quote mode keeps its single button', () => {
+      render(<NewOrderDraftRow currency="XPF" open={[]} finished={[]} mode="quote" onCreated={vi.fn()} onClose={vi.fn()} />);
+      expect(screen.queryByRole('button', { name: 'Other options' })).not.toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: /^Pay\s\d/ })).not.toBeInTheDocument();
+    });
+
+    it('after Pay the total, reset and Pay buttons are gone and the cart is inert', async () => {
+      const user = userEvent.setup();
+      payOrder();
+      seed([{ item: item(), quantity: 2, discount: '' }]);
+      renderRow();
+      await user.click(payBtn());
+      expect(await screen.findByTestId('counter-pay')).toBeInTheDocument();
+      expect(screen.queryByTestId('draft-total')).not.toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: /^Pay\s\d/ })).not.toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: /Reset draft/ })).not.toBeInTheDocument();
+      expect(screen.getByTestId('draft-line-total').closest('[inert]')).not.toBeNull();
+      expect(screen.getByText('Card (terminal)')).toBeInTheDocument();
+    });
+
+    it('a failed order creation leaves the draft editable', async () => {
+      const user = userEvent.setup();
+      server.use(http.post('/api/v1/order-board/orders', () => HttpResponse.json({ detail: 'no' }, { status: 500 })));
+      seed([{ item: item(), quantity: 2, discount: '' }]);
+      renderRow();
+      await user.click(payBtn());
+      await waitFor(() => expect(payBtn()).not.toHaveAttribute('aria-disabled'));
+      expect(screen.queryByTestId('counter-pay')).not.toBeInTheDocument();
+      expect(lineTotal()).toBeInTheDocument();
+    });
+
+    it('Escape does nothing while a step is writing', async () => {
+      const user = userEvent.setup();
+      server.use(http.post('/api/v1/order-board/orders', async () => {
+        await new Promise(r => setTimeout(r, 400));
+        return HttpResponse.json({ board: { rows: [row], computed_at: null, stock_loaded_at: null, sync: {} }, row, salesorder_id: '9' });
+      }));
+      seed([{ item: item(), quantity: 2, discount: '' }]);
+      const { onClose } = renderRow();
+      await user.click(payBtn());
+      await screen.findByTestId('counter-pay');
+      await user.keyboard('{Escape}');
+      await new Promise(r => setTimeout(r, 300));
+      expect(onClose).not.toHaveBeenCalled();
     });
   });
 });
