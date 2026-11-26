@@ -6,18 +6,29 @@ import { server } from '../../mocks/server';
 import { render } from '../../utils';
 
 const print = vi.fn();
+// The props the flow hands the card dialog, captured so a test can drive them like the real dialog would.
+const dialogProps = vi.hoisted(() => ({ current: null as null | {
+  onStart: (amount: number) => Promise<unknown>;
+  recover: (e: unknown) => null | { message: string; label: string; start: (amount: number) => Promise<unknown> };
+  fetchPayment: () => Promise<unknown>;
+} }));
 vi.mock('../../../components/aito/usePrintBlob', () => ({ usePrintBlob: () => ({ print, busy: false }) }));
 
 // The real dialog polls every 3 s: a stand-in that reports what the test tells it to.
 vi.mock('../../../components/aito/payment/TerminalPaymentModal', () => ({
-  TerminalPaymentDialog: ({ onSeen, onClose }: { onSeen: (p: unknown) => void; onClose: () => void }) => (
+  TerminalPaymentDialog: (props: { onSeen: (p: unknown) => void; onClose: () => void } & NonNullable<typeof dialogProps.current>) => {
+    dialogProps.current = props;
+    const { onSeen, onClose } = props;
+    return (
     <div data-testid="terminal-dialog">
       <button type="button" onClick={() => onSeen({ id: 1, status: 'paid', booking_status: 'booked', amount: 12400, amount_confirmed: 12400 })}>seen-paid</button>
       <button type="button" onClick={onClose}>close-dialog</button>
     </div>
-  ),
+    );
+  },
 }));
 
+import { ApiError, api } from '../../../api/client';
 import { CounterPayFlow } from '../../../components/orders/CounterPayFlow';
 import type { useCounterPay } from '../../../components/orders/useCounterPay';
 
@@ -284,5 +295,50 @@ describe('CounterPayFlow', () => {
     expect(onDialog).toHaveBeenLastCalledWith(true);
     await user.click(screen.getByRole('button', { name: 'close-dialog' }));
     expect(onDialog).toHaveBeenLastCalledWith(false);
+  });
+
+  describe('the card dialog wiring', () => {
+    const openDialog = async () => {
+      const user = userEvent.setup();
+      target();
+      flow(mkPay());
+      await user.click(screen.getByRole('button', { name: 'Card (terminal)' }));
+      await screen.findByTestId('terminal-dialog');
+      return dialogProps.current!;
+    };
+    afterEach(() => vi.restoreAllMocks());
+
+    it('onStart charges the amount without the force flag', async () => {
+      const start = vi.spyOn(api, 'startOrderTerminalPayment').mockResolvedValue({ id: 1 } as never);
+      const props = await openDialog();
+      await props.onStart(5000);
+      expect(start).toHaveBeenCalledOnce();
+      expect(start).toHaveBeenCalledWith('so1', 5000);
+    });
+
+    it('a link_open refusal offers to cancel the pay link and charge, forcing exactly once', async () => {
+      const start = vi.spyOn(api, 'startOrderTerminalPayment').mockResolvedValue({ id: 1 } as never);
+      const props = await openDialog();
+      const offer = props.recover(new ApiError('open', 409, 'link_open'));
+      expect(offer).toMatchObject({ message: expect.any(String), label: expect.any(String) });
+      expect(start).not.toHaveBeenCalled();
+      await offer!.start(7000);
+      expect(start).toHaveBeenCalledOnce();
+      expect(start).toHaveBeenCalledWith('so1', 7000, true);
+    });
+
+    it('any other error offers no recovery', async () => {
+      const props = await openDialog();
+      expect(props.recover(new ApiError('nope', 409, 'other'))).toBeNull();
+      expect(props.recover(new Error('link_open'))).toBeNull();
+    });
+
+    it('fetchPayment returns the current charge, and throws when there is none', async () => {
+      const props = await openDialog();
+      currentCharge(charge('pending', null));
+      await expect(props.fetchPayment()).resolves.toMatchObject({ id: 1 });
+      currentCharge(null);
+      await expect(props.fetchPayment()).rejects.toThrow();
+    });
   });
 });

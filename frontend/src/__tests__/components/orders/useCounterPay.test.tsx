@@ -3,6 +3,7 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { ReactNode } from 'react';
+import { ApiError } from '../../../api/client';
 import type { OrderBoardResponse } from '../../../api/client';
 
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (k: string) => k }) }));
@@ -118,6 +119,48 @@ describe('useCounterPay', () => {
     await act(async () => r.result.current.retry());
     await waitFor(() => expect(r.result.current.step).toBe('handover'));
     expect(m.applyOrderCredit).toHaveBeenCalledWith('so1', 'inv1', 1500);
+  });
+
+  describe('the apply-credit retry words its refusals', () => {
+    // First pass fails on the unpaid invoice; the retry re-reads it unpaid and applies the credit.
+    const toRetry = async (refusal: unknown) => {
+      arrange(mkRow(), 12400);
+      m.getOrderBoard.mockResolvedValue(boardOf(mkRow({}, 12400)));
+      m.applyOrderCredit.mockRejectedValue(refusal);
+      const r = setup();
+      await toPayment(r);
+      await act(async () => r.result.current.settle(12400));
+      await waitFor(() => expect(r.result.current.error).toBe('orders.counterPay.notAttributed'));
+      await act(async () => r.result.current.retry());
+      await waitFor(() => expect(m.applyOrderCredit).toHaveBeenCalledTimes(1));
+      await waitFor(() => expect(r.result.current.busy).toBe(false));
+      return r;
+    };
+
+    it.each([['a coded detail', new ApiError('x', 400, 'no_credit')], ['a plain-string detail', new ApiError('no_credit', 400)]])(
+      'a 400 no_credit (%s) says the payment is not on the invoice yet', async (_n, e) => {
+        const r = await toRetry(e);
+        expect(r.result.current).toMatchObject({ step: 'invoice', error: 'orders.counterPay.notAttributed' });
+      });
+
+    it('a 409 says the shop is busy', async () => {
+      const r = await toRetry(new ApiError('Another action', 409));
+      expect(r.result.current).toMatchObject({ step: 'invoice', error: 'orders.busy' });
+    });
+
+    it('another 400 code keeps the generic wording', async () => {
+      const r = await toRetry(new ApiError('version', 400, 'other_code'));
+      expect(r.result.current.error).toBe('orders.parcel.stale');
+    });
+
+    it('a 409 on a step that is not the retry keeps the generic wording', async () => {
+      arrange(mkRow());
+      m.createOrderInvoice.mockRejectedValue(new ApiError('Another action', 409));
+      const r = setup();
+      await toPayment(r);
+      await act(async () => r.result.current.settle(12400));
+      await waitFor(() => expect(r.result.current.error).toBe('orders.parcel.stale'));
+    });
   });
 
   describe('invoice retry re-reads the board first', () => {

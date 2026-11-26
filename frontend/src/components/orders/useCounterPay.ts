@@ -1,7 +1,7 @@
 import { useReducer, useRef } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
-import { api } from '../../api/client';
+import { ApiError, api } from '../../api/client';
 import type { CounterOrderLine, OrderBoardLine, OrderBoardResponse, OrderBoardRow, OrderInvoice, OrderPickLines } from '../../api/client';
 import { attributed, invoiceOf, pickLines, rowOf, shortLines } from './counterPay';
 import type { PayStep } from './counterPay';
@@ -182,7 +182,18 @@ export function useCounterPay(opts?: { onCreateError?: (e: unknown) => void }) {
       let row = await take(await api.getOrderBoard());
       const invoice = invoiceOf(row ?? undefined, c.invoiceNumber);
       // The cap: only what this sale took and the invoice does not hold yet, never the customer's other credit.
-      if (invoice && !attributed(invoice, c.paid)) row = await take((await api.applyOrderCredit(c.orderId, invoice.id, Math.max(0, Math.round((c.paid - (invoice.total - invoice.balance)) * 100) / 100))).board);
+      if (invoice && !attributed(invoice, c.paid)) {
+        try {
+          row = await take((await api.applyOrderCredit(c.orderId, invoice.id, Math.max(0, Math.round((c.paid - (invoice.total - invoice.balance)) * 100) / 100))).board);
+        } catch (e) {
+          // The payment is not on the stored board yet, or the first attempt is still writing: say that, not "quantities".
+          if (e instanceof ApiError && ((e.status === 400 && (e.code ?? e.message) === 'no_credit') || e.status === 409)) {
+            fail('invoice', 'invoice', t(e.status === 409 ? 'orders.busy' : 'orders.counterPay.notAttributed'));
+            return;
+          }
+          throw e;
+        }
+      }
       if (!checkInvoice(row)) return;
     }
     await toParcel();

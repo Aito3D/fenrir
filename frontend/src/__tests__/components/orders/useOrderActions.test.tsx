@@ -6,7 +6,7 @@ import { http, HttpResponse } from 'msw';
 import type { ReactNode } from 'react';
 import { server } from '../../mocks/server';
 import type { OrderBoardResponse } from '../../../api/client';
-import { useOrderActions } from '../../../components/orders/useOrderActions';
+import { takeBoard, useOrderActions } from '../../../components/orders/useOrderActions';
 
 vi.mock('../../../contexts/AuthContext', () => ({ useAuth: () => ({ hasPermission: () => true }) }));
 
@@ -220,5 +220,33 @@ describe('useOrderActions', () => {
     await waitFor(() => expect(client.getQueryData(['order-board'])).toEqual(board));
     expect(client.getQueryState(['order-customer', 'so1'])?.isInvalidated).toBe(true);
     expect(client.getQueryState(['order-payment-target', 'so1'])?.isInvalidated).toBe(true);
+  });
+
+  it('takeBoard cancels a poll in flight so the old board never lands over the new one', async () => {
+    const client = new QueryClient();
+    const oldBoard = { ...board, computed_at: 'old' } as OrderBoardResponse;
+    const newBoard = { ...board, computed_at: 'new' } as OrderBoardResponse;
+    let release: () => void = () => {};
+    const slow = client.fetchQuery({
+      queryKey: ['order-board'],
+      queryFn: () => new Promise<OrderBoardResponse>(resolve => { release = () => resolve(oldBoard); }),
+    }).catch(() => undefined);
+    await waitFor(() => expect(client.isFetching({ queryKey: ['order-board'] })).toBe(1));
+    await takeBoard(client, newBoard);
+    release();
+    await slow;
+    expect(client.getQueryData(['order-board'])).toEqual(newBoard);
+  });
+
+  it('takeBoard invalidates the finished list, the finished order and the history', async () => {
+    const client = new QueryClient();
+    const spy = vi.spyOn(client, 'invalidateQueries');
+    await takeBoard(client, board);
+    const keys = spy.mock.calls.map(c => c[0]);
+    expect(keys).toEqual([
+      { queryKey: ['order-board', 'finished'], exact: true },
+      { queryKey: ['order-board-finished-order'] },
+      { queryKey: ['order-events'] },
+    ]);
   });
 });
