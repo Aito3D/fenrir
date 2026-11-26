@@ -13039,6 +13039,8 @@ errors: {
       copy: 'Kopiera {{what}}',
       copied: 'Kopierat',
       alsoOpen: 'Även öppna för den här kunden:',
+      thisOrder: 'Den här ordern',
+      openOrder: 'Öppna order {{number}}',
       mailSubject: 'Beställning {{number}}',
     },
     sync: {

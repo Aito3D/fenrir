@@ -13006,6 +13006,8 @@ export default {
       copy: '{{what}} kopiëren',
       copied: 'Gekopieerd',
       alsoOpen: 'Ook openstaand voor deze klant:',
+      thisOrder: 'Deze bestelling',
+      openOrder: 'Bestelling {{number}} openen',
       mailSubject: 'Bestelling {{number}}',
     },
     sync: {

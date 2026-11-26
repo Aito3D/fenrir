@@ -66,6 +66,7 @@ export function OrderSidePanel({
     <OrderContactBlock
       contact={row.contact}
       orderId={row.id}
+      historyOf={row.customer_id}
       canEdit={canUpdate}
       orderNumber={row.number}
       others={others}

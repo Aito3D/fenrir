@@ -12981,6 +12981,8 @@ export default {
       copy: '{{what}} をコピー',
       copied: 'コピーしました',
       alsoOpen: 'この顧客の他の未処理注文:',
+      thisOrder: 'この注文',
+      openOrder: '注文 {{number}} を開く',
       mailSubject: '注文 {{number}}',
     },
     sync: {

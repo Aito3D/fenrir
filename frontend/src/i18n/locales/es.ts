@@ -12990,6 +12990,8 @@ export default {
       copy: 'Copiar {{what}}',
       copied: 'Copiado',
       alsoOpen: 'También abiertos para este cliente:',
+      thisOrder: 'Este pedido',
+      openOrder: 'Abrir el pedido {{number}}',
       mailSubject: 'Pedido {{number}}',
     },
     sync: {

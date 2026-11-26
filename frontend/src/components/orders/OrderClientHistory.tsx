@@ -3,10 +3,10 @@ import { useTranslation } from 'react-i18next';
 import { useQuery } from '@tanstack/react-query';
 import { ChevronDown, History } from 'lucide-react';
 import { api } from '../../api/client';
-import type { FinishedOrderRow, OrderBoardLine, OrderBoardRow, OrderPayState } from '../../api/client';
+import type { FinishedOrderRow, OrderBoardLine, OrderBoardRow } from '../../api/client';
 import { formatMoney } from '../../utils/pricing';
 import { labelCls, focusRingCls } from '../formStyles';
-import { finishedPayState, formatQty, parseDay } from './orderBoard';
+import { clientOrders, formatQty, parseDay } from './orderBoard';
 import { PaymentPill } from './PaymentPill';
 
 const LIMIT = 5;
@@ -16,17 +16,7 @@ const dayLabel = (iso: string) => {
   return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', ...(d.getFullYear() !== new Date().getFullYear() ? { year: 'numeric' } : {}) });
 };
 
-interface Entry {
-  id: string;
-  number: string;
-  date: string;
-  total: number | null;
-  currency: string;
-  state: OrderPayState | null;
-  lines: OrderBoardLine[] | null; // null: a finished order, fetched on expand
-}
-
-const Lines = ({ lines, currency }: { lines: OrderBoardLine[]; currency: string }) => (
+export const Lines = ({ lines, currency }: { lines: OrderBoardLine[]; currency: string }) => (
   <ul className="space-y-0.5 px-2.5 pb-1.5 text-xs text-bambu-gray-light">
     {lines.map((l) => (
       <li key={l.id} className="flex justify-between gap-2">
@@ -38,7 +28,7 @@ const Lines = ({ lines, currency }: { lines: OrderBoardLine[]; currency: string 
 );
 
 // Same query key as FinishedOrderCard, so an order opened in either place is fetched once.
-function FinishedLines({ id, currency }: { id: string; currency: string }) {
+export function FinishedLines({ id, currency }: { id: string; currency: string }) {
   const { t } = useTranslation();
   const detail = useQuery({ queryKey: ['order-board-finished-order', id], queryFn: () => api.getFinishedOrder(id), staleTime: 60_000 });
   if (detail.data) return <Lines lines={detail.data.lines} currency={currency} />;
@@ -53,10 +43,7 @@ export function OrderClientHistory({ customerId, open, finished, currency }: { c
   const [expanded, setExpanded] = useState<string | null>(null);
   if (!customerId) return null;
 
-  const entries: Entry[] = [
-    ...open.filter((r) => r.customer_id === customerId).map((r) => ({ ...r, state: r.payment?.state ?? null, lines: r.lines })),
-    ...finished.filter((r) => r.customer_id === customerId).map((r) => ({ ...r, state: finishedPayState(r), lines: null })),
-  ].sort((a, b) => b.date.localeCompare(a.date) || b.number.localeCompare(a.number));
+  const entries = clientOrders(customerId, open, finished);
   const shown = all ? entries : entries.slice(0, LIMIT);
 
   return (

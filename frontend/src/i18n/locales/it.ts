@@ -12967,6 +12967,8 @@ export default {
       copy: 'Copia {{what}}',
       copied: 'Copiato',
       alsoOpen: 'Altri ordini aperti per questo cliente:',
+      thisOrder: 'Questo ordine',
+      openOrder: 'Apri l’ordine {{number}}',
       mailSubject: 'Ordine {{number}}',
     },
     sync: {

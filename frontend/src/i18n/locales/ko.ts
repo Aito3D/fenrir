@@ -12564,6 +12564,8 @@ export default {
       copy: '{{what}} 복사',
       copied: '복사됨',
       alsoOpen: '이 고객의 다른 진행 중인 주문:',
+      thisOrder: '이 주문',
+      openOrder: '주문 {{number}} 열기',
       mailSubject: '주문 {{number}}',
     },
     sync: {

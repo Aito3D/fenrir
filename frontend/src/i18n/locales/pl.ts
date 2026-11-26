@@ -13187,6 +13187,8 @@ export default {
       copy: 'Kopiuj {{what}}',
       copied: 'Skopiowano',
       alsoOpen: 'Inne otwarte zamówienia tego klienta:',
+      thisOrder: 'To zamówienie',
+      openOrder: 'Otwórz zamówienie {{number}}',
       mailSubject: 'Zamówienie {{number}}',
     },
     sync: {

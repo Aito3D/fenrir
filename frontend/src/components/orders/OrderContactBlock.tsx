@@ -10,6 +10,7 @@ import { useToast } from '../../contexts/ToastContext';
 import { copyTextToClipboard } from '../../utils/clipboard';
 import { Card } from '../Card';
 import { ClientRatingPill } from '../aito/ClientRatingPill';
+import { OrderClientHistoryButton } from './OrderClientHistoryModal';
 import { errorReason } from './orderErrors';
 import { useOrderActions } from './useOrderActions';
 
@@ -17,7 +18,8 @@ import { useOrderActions } from './useOrderActions';
  *  With `sms` (admins, live orders with something ready) the header carries the pickup-SMS pill,
  *  which turns into "Contacted" once an SMS went out. With `orderId` it also shows the customer's
  *  payment rating (as on the Aito card); `canEdit` adds the email/phone editor. With `customerId` instead of `orderId`
- *  (a counter order not created yet) the rating and the editor go to the Books customer itself. */
+ *  (a counter order not created yet) the rating and the editor go to the Books customer itself.
+ *  `historyOf` (the order's Books customer) adds the History pill and its dialog of the client's orders. */
 export function OrderContactBlock({
   contact,
   orderNumber,
@@ -26,8 +28,10 @@ export function OrderContactBlock({
   sms,
   orderId,
   customerId,
+  historyOf,
   canEdit = false,
 }: {
+  historyOf?: string;
   orderId?: string;
   customerId?: string;
   canEdit?: boolean;
@@ -100,6 +104,7 @@ export function OrderContactBlock({
         <UserRound aria-hidden="true" className="h-3.5 w-3.5 text-bambu-gray" />
         <span className="font-semibold uppercase tracking-wide text-white">{t('orders.contact.title')}</span>
         <ClientRatingPill rating={rating.data} align="start" />
+        {historyOf && contact && <OrderClientHistoryButton customerId={historyOf} name={contact.name} currentId={orderId} onGoto={onGoto} className={pill} />}
         {canEdit && (orderId || customerId) && contact && !editing && (
           <button
             type="button"

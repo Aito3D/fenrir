@@ -12965,6 +12965,8 @@ export default {
       copy: '复制 {{what}}',
       copied: '已复制',
       alsoOpen: '该客户的其他未完成订单：',
+      thisOrder: '此订单',
+      openOrder: '打开订单 {{number}}',
       mailSubject: '订单 {{number}}',
     },
     sync: {

@@ -12965,6 +12965,8 @@ export default {
       copy: '複製 {{what}}',
       copied: '已複製',
       alsoOpen: '該客戶的其他未完成訂單：',
+      thisOrder: '此訂單',
+      openOrder: '開啟訂單 {{number}}',
       mailSubject: '訂單 {{number}}',
     },
     sync: {

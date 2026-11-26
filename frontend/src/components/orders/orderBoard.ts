@@ -375,3 +375,25 @@ export function lineTotal(l: NewOrderDraftLine): number | null {
 export const PAY_CHIPS: Exclude<PayFilter, 'all' | 'overdue'>[] = ['unpaid', 'partial', 'paid'];
 export const chipCls = (active: boolean) =>
   `btn-press rounded-full border px-3 py-1.5 text-xs ${active ? 'border-bambu-green bg-bambu-green/15 text-white' : 'border-bambu-dark-tertiary bg-bambu-dark-secondary text-bambu-gray hover:text-white'}`;
+
+/** One order of a client's history. `lines` is null for a finished order (fetched on expand), `status` for a shipped one. */
+export interface ClientOrder {
+  id: string;
+  number: string;
+  date: string;
+  total: number | null;
+  currency: string;
+  state: OrderPayState | null;
+  left: number;
+  status: OrderStatus | null;
+  lines: OrderBoardLine[] | null;
+}
+
+/** A client's orders, open and shipped, newest first. */
+export const clientOrders = (customerId: string, open: OrderBoardRow[], finished: FinishedOrderRow[]): ClientOrder[] =>
+  !customerId
+    ? []
+    : [
+        ...open.filter(r => r.customer_id === customerId).map(r => ({ id: r.id, number: r.number, date: r.date, total: r.total, currency: r.currency, state: r.payment?.state ?? null, left: r.payment?.left ?? 0, status: r.status, lines: r.lines })),
+        ...finished.filter(r => r.customer_id === customerId).map(r => ({ id: r.id, number: r.number, date: r.date, total: r.total, currency: r.currency, state: finishedPayState(r), left: r.payment?.left ?? 0, status: null, lines: null })),
+      ].sort((a, b) => b.date.localeCompare(a.date) || b.number.localeCompare(a.number));

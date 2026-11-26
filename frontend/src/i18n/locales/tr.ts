@@ -12909,6 +12909,8 @@ export default {
       copy: '{{what}} kopyala',
       copied: 'Kopyalandı',
       alsoOpen: 'Bu müşterinin diğer açık siparişleri:',
+      thisOrder: 'Bu sipariş',
+      openOrder: '{{number}} siparişini aç',
       mailSubject: 'Sipariş {{number}}',
     },
     sync: {

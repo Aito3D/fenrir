@@ -12629,6 +12629,8 @@ export default {
       copy: 'Копіювати {{what}}',
       copied: 'Скопійовано',
       alsoOpen: 'Інші відкриті замовлення цього клієнта:',
+      thisOrder: 'Це замовлення',
+      openOrder: 'Відкрити замовлення {{number}}',
       mailSubject: 'Замовлення {{number}}',
     },
     sync: {

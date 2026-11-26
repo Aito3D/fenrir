@@ -13038,6 +13038,8 @@ export default {
       copy: 'Copy {{what}}',
       copied: 'Copied',
       alsoOpen: 'Also open for this customer:',
+      thisOrder: 'This order',
+      openOrder: 'Open order {{number}}',
       mailSubject: 'Order {{number}}',
     },
     sync: {
