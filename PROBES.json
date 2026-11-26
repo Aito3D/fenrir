@@ -239,5 +239,54 @@
     "timeout": 600,
     "scrub": [],
     "files": []
+  },
+  {
+    "id": "queue-openapi",
+    "cmd": "PYTHONHASHSEED=0 PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=. ./venv/bin/python3 tools/probe_queue_openapi.py 2>/dev/null",
+    "timeout": 300,
+    "scrub": [],
+    "files": []
+  },
+  {
+    "id": "queue-schemas",
+    "cmd": "PYTHONHASHSEED=0 PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=. ./venv/bin/python3 tools/probe_queue_schemas.py 2>/dev/null",
+    "timeout": 300,
+    "scrub": [],
+    "files": []
+  },
+  {
+    "id": "queue-http",
+    "cmd": "mkdir -p /tmp/fenrir-queue-probe/http-data && OUT=$(mktemp /tmp/fenrir-queue-probe/http.XXXXXX) && PROBE_OUT=$OUT DATA_DIR=/tmp/fenrir-queue-probe/http-data LOG_DIR=/tmp/fenrir-queue-probe/http-data/logs PYTHONHASHSEED=0 PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=. ./venv/bin/python3 -m pytest -p backend.tests.conftest -p no:randomly -p no:cacheprovider -q tools/probe_queue_http_test.py > $OUT.log 2>&1; rc=$?; cat $OUT; [ $rc = 0 ] || tail -40 $OUT.log; rm -f $OUT $OUT.log; exit $rc",
+    "timeout": 600,
+    "scrub": [],
+    "files": []
+  },
+  {
+    "id": "queue-services",
+    "cmd": "mkdir -p /tmp/fenrir-queue-probe/services-data && OUT=$(mktemp /tmp/fenrir-queue-probe/services.XXXXXX) && PROBE_OUT=$OUT DATA_DIR=/tmp/fenrir-queue-probe/services-data LOG_DIR=/tmp/fenrir-queue-probe/services-data/logs PYTHONHASHSEED=0 PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=. ./venv/bin/python3 -m pytest -p backend.tests.conftest -p no:randomly -p no:cacheprovider -q tools/probe_queue_services_test.py > $OUT.log 2>&1; rc=$?; cat $OUT; [ $rc = 0 ] || tail -40 $OUT.log; rm -f $OUT $OUT.log; exit $rc",
+    "timeout": 300,
+    "scrub": [],
+    "files": []
+  },
+  {
+    "id": "queue-permissions",
+    "cmd": "PYTHONHASHSEED=0 PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=. ./venv/bin/python3 tools/probe_queue_permissions.py 2>/dev/null",
+    "timeout": 300,
+    "scrub": [],
+    "files": []
+  },
+  {
+    "id": "queue-frontend-rules",
+    "cmd": "mkdir -p /tmp/fenrir-queue-probe && frontend/node_modules/.bin/rolldown tools/probe_queue_frontend_entry.ts --format cjs --file /tmp/fenrir-queue-probe/queueFrontend.cjs >/dev/null 2>&1 && TZ=UTC node tools/probe_queue_frontend.cjs",
+    "timeout": 120,
+    "scrub": [],
+    "files": []
+  },
+  {
+    "id": "queue-i18n",
+    "cmd": "LC_ALL=C node tools/probe_queue_i18n.cjs",
+    "timeout": 120,
+    "scrub": [],
+    "files": []
   }
 ]

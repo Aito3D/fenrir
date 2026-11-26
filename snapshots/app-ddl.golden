@@ -1412,6 +1412,7 @@ CREATE TABLE print_log_entries (
 	ended_offline BOOLEAN, 
 	planned_cost FLOAT, 
 	planned_grams FLOAT, 
+	pending_charge TEXT, 
 	PRIMARY KEY (id), 
 	FOREIGN KEY(archive_id) REFERENCES print_archives (id) ON DELETE SET NULL, 
 	FOREIGN KEY(queue_item_id) REFERENCES print_queue (id) ON DELETE SET NULL, 
@@ -2218,6 +2219,17 @@ CREATE TABLE telegram_pending_verdicts (
 	FOREIGN KEY(provider_id) REFERENCES notification_providers (id) ON DELETE CASCADE, 
 	FOREIGN KEY(archive_id) REFERENCES print_archives (id) ON DELETE CASCADE
 );
+CREATE TABLE threedfp_spool_links (
+	id INTEGER NOT NULL, 
+	spool_id INTEGER, 
+	spoolman_spool_id INTEGER, 
+	filament_id INTEGER NOT NULL, 
+	created_at DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL, 
+	updated_at DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL, 
+	PRIMARY KEY (id), 
+	CONSTRAINT ck_threedfp_spool_links_one_inventory CHECK ((spool_id IS NULL) <> (spoolman_spool_id IS NULL)), 
+	FOREIGN KEY(spool_id) REFERENCES spool (id) ON DELETE CASCADE
+);
 CREATE TABLE user_email_preferences (
 	id INTEGER NOT NULL, 
 	user_id INTEGER NOT NULL, 
@@ -2317,7 +2329,12 @@ CREATE TABLE users (
 	orca_cloud_pending_verifier VARCHAR(64), 
 	orca_cloud_pending_state VARCHAR(32), 
 	orca_cloud_pending_at DATETIME, 
-	ui_prefs JSON
+	ui_prefs JSON, 
+	threedfp_token VARCHAR(255), 
+	threedfp_email VARCHAR(255), 
+	threedfp_pending_device_code VARCHAR(255), 
+	threedfp_pending_interval INTEGER, 
+	threedfp_pending_at DATETIME
 );
 CREATE TABLE virtual_printers (
 	id INTEGER NOT NULL, 

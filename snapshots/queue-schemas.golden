@@ -1,0 +1,4631 @@
+### exit: 0
+### stdout:
+=== models
+class ColorSubstitution(BaseModel)
+    slot_id: <class 'int'>  required  metadata=[]
+    type: <class 'str'>  required  metadata=[]
+    wanted: <class 'str'>  required  metadata=[]
+    got: <class 'str'>  required  metadata=[]
+    tray: <class 'int'>  required  metadata=[]
+class PrintBatchCreate(BaseModel)
+    name: <class 'str'>  required  metadata=[]
+    archive_id: int | None  default=None  metadata=[]
+    library_file_id: int | None  default=None  metadata=[]
+    item_ids: list[int] | None  default=None  metadata=[]
+    plates: list[backend.app.schemas.print_queue.PrintBatchPlateTarget] | None  default=None  metadata=[]
+    project_id: int | None  default=None  metadata=[]
+    due_date: datetime.datetime | None  default=None  metadata=[]
+    notes: str | None  default=None  metadata=[]
+    external_source: str | None  default=None  metadata=[MinLen(min_length=1), MaxLen(max_length=32), _PydanticGeneralMetadata(pattern='^[a-z0-9_-]+$')]
+    external_ref: str | None  default=None  metadata=[MinLen(min_length=1), MaxLen(max_length=255)]
+class PrintBatchDispatchRequest(BaseModel)
+    plate_id: int | None  default=None  metadata=[]
+    only_plate: <class 'bool'>  default=False  metadata=[]
+    limit: int | None  default=None  metadata=[Ge(ge=1), Le(le=999)]
+class PrintBatchPlateProgress(BaseModel)
+    plate_id: int | None  default=None  metadata=[]
+    plate_name: str | None  default=None  metadata=[]
+    quantity_target: <class 'int'>  default=0  metadata=[]
+    dispatched: <class 'int'>  default=0  metadata=[]
+    remaining: <class 'int'>  default=0  metadata=[]
+    pending_count: <class 'int'>  default=0  metadata=[]
+    printing_count: <class 'int'>  default=0  metadata=[]
+    completed_count: <class 'int'>  default=0  metadata=[]
+    failed_count: <class 'int'>  default=0  metadata=[]
+    cancelled_count: <class 'int'>  default=0  metadata=[]
+    skipped_count: <class 'int'>  default=0  metadata=[]
+    actual_cost: float | None  default=None  metadata=[]
+    estimated_remaining_cost: float | None  default=None  metadata=[]
+    filament_used_grams: float | None  default=None  metadata=[]
+    print_time_seconds: <class 'int'>  default=0  metadata=[]
+    can_dispatch: <class 'bool'>  default=False  metadata=[]
+class PrintBatchPlateTarget(BaseModel)
+    plate_id: int | None  default=None  metadata=[]
+    plate_name: str | None  default=None  metadata=[]
+    quantity_target: <class 'int'>  default=1  metadata=[Ge(ge=0), Le(le=999)]
+    sort_order: <class 'int'>  default=0  metadata=[]
+class PrintBatchResponse(BaseModel)
+    id: <class 'int'>  required  metadata=[]
+    name: <class 'str'>  required  metadata=[]
+    archive_id: int | None  default=None  metadata=[]
+    library_file_id: int | None  default=None  metadata=[]
+    quantity: <class 'int'>  required  metadata=[]
+    status: <class 'str'>  required  metadata=[]
+    created_at: datetime.datetime | None  required  metadata=[PlainSerializer(func=<function serialize_utc_datetime>, return_type=PydanticUndefined, when_used='always')]
+    completed_at: typing.Optional[typing.Annotated[datetime.datetime | None, PlainSerializer(func=<function serialize_utc_datetime>, return_type=PydanticUndefined, when_used='always')]]  default=None  metadata=[]
+    created_by_id: int | None  default=None  metadata=[]
+    created_by_username: str | None  default=None  metadata=[]
+    project_id: int | None  default=None  metadata=[]
+    due_date: typing.Optional[typing.Annotated[datetime.datetime | None, PlainSerializer(func=<function serialize_utc_datetime>, return_type=PydanticUndefined, when_used='always')]]  default=None  metadata=[]
+    notes: str | None  default=None  metadata=[]
+    external_source: str | None  default=None  metadata=[]
+    external_ref: str | None  default=None  metadata=[]
+    pending_count: <class 'int'>  default=0  metadata=[]
+    printing_count: <class 'int'>  default=0  metadata=[]
+    completed_count: <class 'int'>  default=0  metadata=[]
+    failed_count: <class 'int'>  default=0  metadata=[]
+    cancelled_count: <class 'int'>  default=0  metadata=[]
+    skipped_count: <class 'int'>  default=0  metadata=[]
+    has_targets: <class 'bool'>  default=False  metadata=[]
+    target_count: <class 'int'>  default=0  metadata=[]
+    remaining_count: <class 'int'>  default=0  metadata=[]
+    dispatchable_count: <class 'int'>  default=0  metadata=[]
+    actual_cost: float | None  default=None  metadata=[]
+    estimated_remaining_cost: float | None  default=None  metadata=[]
+    filament_used_grams: float | None  default=None  metadata=[]
+    print_time_seconds: <class 'int'>  default=0  metadata=[]
+    plates: list[backend.app.schemas.print_queue.PrintBatchPlateProgress]  default=[]  metadata=[]
+class PrintBatchUngroupResponse(BaseModel)
+    ungrouped_count: <class 'int'>  required  metadata=[]
+    message: <class 'str'>  required  metadata=[]
+class PrintBatchUpdate(IgnoresNullForRequiredColumns)
+    name: str | None  default=None  metadata=[]
+    status: typing.Optional[typing.Literal['active', 'cancelled']]  default=None  metadata=[]
+    plates: list[backend.app.schemas.print_queue.PrintBatchPlateTarget] | None  default=None  metadata=[]
+    project_id: int | None  default=None  metadata=[]
+    due_date: datetime.datetime | None  default=None  metadata=[]
+    notes: str | None  default=None  metadata=[]
+class PrintQueueBulkUpdate(IgnoresNullForRequiredColumns)
+    item_ids: list[int]  required  metadata=[]
+    printer_id: int | None  default=None  metadata=[]
+    scheduled_time: datetime.datetime | None  default=None  metadata=[AfterValidator(func=<function _naive_utc>)]
+    require_previous_success: bool | None  default=None  metadata=[]
+    auto_off_after: bool | None  default=None  metadata=[]
+    manual_start: bool | None  default=None  metadata=[]
+    bed_levelling: typing.Optional[typing.Annotated[typing.Literal['off', 'on', 'auto'], BeforeValidator(func=<function _coerce_tristate>, json_schema_input_type=PydanticUndefined)]]  default=None  metadata=[]
+    flow_cali: typing.Optional[typing.Annotated[typing.Literal['off', 'on', 'auto'], BeforeValidator(func=<function _coerce_tristate>, json_schema_input_type=PydanticUndefined)]]  default=None  metadata=[]
+    vibration_cali: bool | None  default=None  metadata=[]
+    layer_inspect: bool | None  default=None  metadata=[]
+    timelapse: bool | None  default=None  metadata=[]
+    use_ams: bool | None  default=None  metadata=[]
+    nozzle_offset_cali: typing.Optional[typing.Annotated[typing.Literal['off', 'on', 'auto'], BeforeValidator(func=<function _coerce_tristate>, json_schema_input_type=PydanticUndefined)]]  default=None  metadata=[]
+    confirm_outcome: bool | None  default=None  metadata=[]
+    preheat_override: typing.Optional[typing.Literal['inherit', 'on', 'off']]  default=None  metadata=[]
+    preheat_chamber_target_override: int | None  default=None  metadata=[Ge(ge=0), Le(le=65)]
+    gcode_injection: bool | None  default=None  metadata=[]
+    cost_center_id: int | None  default=None  metadata=[]
+    estimated_cost: float | None  default=None  metadata=[]
+class PrintQueueBulkUpdateResponse(BaseModel)
+    updated_count: <class 'int'>  required  metadata=[]
+    skipped_count: <class 'int'>  required  metadata=[]
+    message: <class 'str'>  required  metadata=[]
+class PrintQueueDuplicateRequest(BaseModel)
+    item_ids: list[int]  required  metadata=[MinLen(min_length=1), MaxLen(max_length=500)]
+class PrintQueueDuplicateResponse(BaseModel)
+    created_ids: list[int]  required  metadata=[]
+    skipped_count: <class 'int'>  required  metadata=[]
+class PrintQueueHistoryClearResponse(BaseModel)
+    cleared: <class 'int'>  required  metadata=[]
+    kept: <class 'int'>  required  metadata=[]
+class PrintQueueHistoryResponse(BaseModel)
+    items: list[backend.app.schemas.print_queue.PrintQueueItemResponse]  required  metadata=[]
+    total: <class 'int'>  required  metadata=[]
+    locations: list[str]  required  metadata=[]
+class PrintQueueItemCreate(BaseModel)
+    printer_id: int | None  default=None  metadata=[]
+    target_model: str | None  default=None  metadata=[]
+    target_location: str | None  default=None  metadata=[]
+    required_filament_types: list[str] | None  default=None  metadata=[]
+    filament_overrides: list[dict] | None  default=None  metadata=[]
+    archive_id: int | None  default=None  metadata=[]
+    library_file_id: int | None  default=None  metadata=[]
+    scheduled_time: datetime.datetime | None  default=None  metadata=[AfterValidator(func=<function _naive_utc>)]
+    require_previous_success: <class 'bool'>  default=False  metadata=[]
+    auto_off_after: <class 'bool'>  default=False  metadata=[]
+    manual_start: <class 'bool'>  default=False  metadata=[]
+    insert_at_top: <class 'bool'>  default=False  metadata=[]
+    insert_position: int | None  default=None  metadata=[]
+    skip_filament_check: <class 'bool'>  default=False  metadata=[]
+    ams_mapping: list[int] | None  default=None  metadata=[]
+    plate_id: int | None  default=None  metadata=[]
+    bed_levelling: typing.Literal['off', 'on', 'auto']  default='auto'  metadata=[BeforeValidator(func=<function _coerce_tristate>, json_schema_input_type=PydanticUndefined)]
+    flow_cali: typing.Literal['off', 'on', 'auto']  default='auto'  metadata=[BeforeValidator(func=<function _coerce_tristate>, json_schema_input_type=PydanticUndefined)]
+    vibration_cali: <class 'bool'>  default=True  metadata=[]
+    layer_inspect: <class 'bool'>  default=False  metadata=[]
+    timelapse: <class 'bool'>  default=False  metadata=[]
+    use_ams: <class 'bool'>  default=True  metadata=[]
+    nozzle_offset_cali: typing.Literal['off', 'on', 'auto']  default='auto'  metadata=[BeforeValidator(func=<function _coerce_tristate>, json_schema_input_type=PydanticUndefined)]
+    confirm_outcome: <class 'bool'>  default=False  metadata=[]
+    preheat_override: typing.Literal['inherit', 'on', 'off']  default='inherit'  metadata=[]
+    preheat_chamber_target_override: int | None  default=None  metadata=[Ge(ge=0), Le(le=65)]
+    gcode_injection: <class 'bool'>  default=False  metadata=[]
+    quantity: <class 'int'>  default=1  metadata=[]
+    batch_id: int | None  default=None  metadata=[]
+    project_id: int | None  default=None  metadata=[]
+    aito_task_id: int | None  default=None  metadata=[]
+    cost_center_id: int | None  default=None  metadata=[]
+    estimated_cost: float | None  default=None  metadata=[]
+    nozzle_rack_choice: dict[int, int] | None  default=None  metadata=[]
+    cleanup_library_after_dispatch: <class 'bool'>  default=False  metadata=[]
+    variants: list[backend.app.schemas.print_queue.QueueVariantCreate] | None  default=None  metadata=[]
+class PrintQueueItemResponse(BaseModel)
+    id: <class 'int'>  required  metadata=[]
+    printer_id: int | None  required  metadata=[]
+    target_model: str | None  default=None  metadata=[]
+    target_location: str | None  default=None  metadata=[]
+    required_filament_types: list[str] | None  default=None  metadata=[]
+    filament_overrides: list[dict] | None  default=None  metadata=[]
+    waiting_reason: str | None  default=None  metadata=[]
+    archive_id: int | None  required  metadata=[]
+    library_file_id: int | None  required  metadata=[]
+    revision_id: int | None  default=None  metadata=[]
+    aito_task_id: int | None  default=None  metadata=[]
+    cost_center_id: int | None  default=None  metadata=[]
+    estimated_cost: float | None  default=None  metadata=[]
+    position: <class 'int'>  required  metadata=[]
+    scheduled_time: datetime.datetime | None  required  metadata=[PlainSerializer(func=<function serialize_utc_datetime>, return_type=PydanticUndefined, when_used='always')]
+    require_previous_success: <class 'bool'>  required  metadata=[]
+    auto_off_after: <class 'bool'>  required  metadata=[]
+    manual_start: <class 'bool'>  required  metadata=[]
+    filament_short: <class 'bool'>  default=False  metadata=[]
+    skip_filament_check: <class 'bool'>  default=False  metadata=[]
+    ams_mapping: list[int] | None  default=None  metadata=[]
+    plate_id: int | None  default=None  metadata=[]
+    bed_levelling: typing.Literal['off', 'on', 'auto']  default='auto'  metadata=[BeforeValidator(func=<function _coerce_tristate>, json_schema_input_type=PydanticUndefined)]
+    flow_cali: typing.Literal['off', 'on', 'auto']  default='auto'  metadata=[BeforeValidator(func=<function _coerce_tristate>, json_schema_input_type=PydanticUndefined)]
+    vibration_cali: <class 'bool'>  default=True  metadata=[]
+    layer_inspect: <class 'bool'>  default=False  metadata=[]
+    timelapse: <class 'bool'>  default=False  metadata=[]
+    use_ams: <class 'bool'>  default=True  metadata=[]
+    nozzle_offset_cali: typing.Literal['off', 'on', 'auto']  default='auto'  metadata=[BeforeValidator(func=<function _coerce_tristate>, json_schema_input_type=PydanticUndefined)]
+    confirm_outcome: <class 'bool'>  default=False  metadata=[]
+    preheat_override: typing.Literal['inherit', 'on', 'off']  default='inherit'  metadata=[]
+    preheat_chamber_target_override: int | None  default=None  metadata=[]
+    status: typing.Literal['pending', 'printing', 'completed', 'failed', 'skipped', 'cancelled', 'slicing', 'slice_failed']  required  metadata=[]
+    started_at: datetime.datetime | None  required  metadata=[PlainSerializer(func=<function serialize_utc_datetime>, return_type=PydanticUndefined, when_used='always')]
+    completed_at: datetime.datetime | None  required  metadata=[PlainSerializer(func=<function serialize_utc_datetime>, return_type=PydanticUndefined, when_used='always')]
+    error_message: str | None  required  metadata=[]
+    created_at: datetime.datetime | None  required  metadata=[PlainSerializer(func=<function serialize_utc_datetime>, return_type=PydanticUndefined, when_used='always')]
+    archive_name: str | None  default=None  metadata=[]
+    archive_thumbnail: str | None  default=None  metadata=[]
+    archive_deleted: <class 'bool'>  default=False  metadata=[]
+    library_file_name: str | None  default=None  metadata=[]
+    library_file_thumbnail: str | None  default=None  metadata=[]
+    printer_name: str | None  default=None  metadata=[]
+    print_time_seconds: int | None  default=None  metadata=[]
+    filament_used_grams: float | None  default=None  metadata=[]
+    filament_type: str | None  default=None  metadata=[]
+    filament_color: str | None  default=None  metadata=[]
+    layer_height: float | None  default=None  metadata=[]
+    nozzle_diameter: float | None  default=None  metadata=[]
+    sliced_for_model: str | None  default=None  metadata=[]
+    bed_type: str | None  default=None  metadata=[]
+    archive_has_slicer_ams_mapping: <class 'bool'>  default=False  metadata=[]
+    slicer_ams_mapping: list[int] | None  default=None  metadata=[]
+    created_by_id: int | None  default=None  metadata=[]
+    created_by_username: str | None  default=None  metadata=[]
+    batch_id: int | None  default=None  metadata=[]
+    batch_name: str | None  default=None  metadata=[]
+    variants: list[backend.app.schemas.print_queue.QueueVariantSummary]  default=[]  metadata=[]
+    project_code: str | None  default=None  metadata=[]
+    project_name: str | None  default=None  metadata=[]
+    revision_item_name: str | None  default=None  metadata=[]
+    revision_number: int | None  default=None  metadata=[]
+    revision_status: str | None  default=None  metadata=[]
+    aito_task_title: str | None  default=None  metadata=[]
+    aito_client_name: str | None  default=None  metadata=[]
+    aito_due_date: str | None  default=None  metadata=[]
+    aito_quantity: int | None  default=None  metadata=[]
+    aito_board_column: str | None  default=None  metadata=[]
+    slice_job_id: int | None  default=None  metadata=[]
+    been_jumped: <class 'bool'>  default=False  metadata=[]
+    gcode_injection: <class 'bool'>  default=False  metadata=[]
+    cleanup_library_after_dispatch: <class 'bool'>  default=False  metadata=[]
+    nozzle_mapping: list[int] | None  default=None  metadata=[]
+    nozzle_rack_choice: dict[int, int] | None  default=None  metadata=[]
+    color_substitutions: list[backend.app.schemas.print_queue.ColorSubstitution] | None  default=None  metadata=[]
+class PrintQueueItemUpdate(IgnoresNullForRequiredColumns)
+    printer_id: int | None  default=None  metadata=[]
+    target_model: str | None  default=None  metadata=[]
+    target_location: str | None  default=None  metadata=[]
+    filament_overrides: list[dict] | None  default=None  metadata=[]
+    position: int | None  default=None  metadata=[]
+    scheduled_time: datetime.datetime | None  default=None  metadata=[AfterValidator(func=<function _naive_utc>)]
+    require_previous_success: bool | None  default=None  metadata=[]
+    auto_off_after: bool | None  default=None  metadata=[]
+    manual_start: bool | None  default=None  metadata=[]
+    skip_filament_check: bool | None  default=None  metadata=[]
+    ams_mapping: list[int] | None  default=None  metadata=[]
+    plate_id: int | None  default=None  metadata=[]
+    bed_levelling: typing.Optional[typing.Annotated[typing.Literal['off', 'on', 'auto'], BeforeValidator(func=<function _coerce_tristate>, json_schema_input_type=PydanticUndefined)]]  default=None  metadata=[]
+    flow_cali: typing.Optional[typing.Annotated[typing.Literal['off', 'on', 'auto'], BeforeValidator(func=<function _coerce_tristate>, json_schema_input_type=PydanticUndefined)]]  default=None  metadata=[]
+    vibration_cali: bool | None  default=None  metadata=[]
+    layer_inspect: bool | None  default=None  metadata=[]
+    timelapse: bool | None  default=None  metadata=[]
+    use_ams: bool | None  default=None  metadata=[]
+    nozzle_offset_cali: typing.Optional[typing.Annotated[typing.Literal['off', 'on', 'auto'], BeforeValidator(func=<function _coerce_tristate>, json_schema_input_type=PydanticUndefined)]]  default=None  metadata=[]
+    confirm_outcome: bool | None  default=None  metadata=[]
+    preheat_override: typing.Optional[typing.Literal['inherit', 'on', 'off']]  default=None  metadata=[]
+    preheat_chamber_target_override: int | None  default=None  metadata=[Ge(ge=0), Le(le=65)]
+    gcode_injection: bool | None  default=None  metadata=[]
+    cost_center_id: int | None  default=None  metadata=[]
+    estimated_cost: float | None  default=None  metadata=[]
+    nozzle_mapping: list[int] | None  default=None  metadata=[]
+    nozzle_rack_choice: dict[int, int] | None  default=None  metadata=[]
+    add_copies: <class 'int'>  default=0  metadata=[Ge(ge=0), Le(le=998)]
+class PrintQueueReorder(BaseModel)
+    items: list[backend.app.schemas.print_queue.PrintQueueReorderItem]  required  metadata=[]
+class PrintQueueReorderItem(BaseModel)
+    id: <class 'int'>  required  metadata=[]
+    position: <class 'int'>  required  metadata=[]
+class QueueVariantCreate(BaseModel)
+    library_file_id: <class 'int'>  required  metadata=[]
+    target_model: str | None  default=None  metadata=[]
+    plate_id: int | None  default=None  metadata=[]
+    ams_mapping: list[int] | None  default=None  metadata=[]
+    nozzle_mapping: list[int] | None  default=None  metadata=[]
+    nozzle_rack_choice: dict[int, int] | None  default=None  metadata=[]
+    filament_overrides: list[dict] | None  default=None  metadata=[]
+class QueueVariantSummary(BaseModel)
+    library_file_id: <class 'int'>  required  metadata=[]
+    filename: <class 'str'>  required  metadata=[]
+    target_model: <class 'str'>  required  metadata=[]
+    position: <class 'int'>  required  metadata=[]
+=== json schemas
+{
+ "ColorSubstitution": {
+  "description": "A slot sent with a spool of another colour than the file asked for (#3279).",
+  "properties": {
+   "got": {
+    "title": "Got",
+    "type": "string"
+   },
+   "slot_id": {
+    "title": "Slot Id",
+    "type": "integer"
+   },
+   "tray": {
+    "title": "Tray",
+    "type": "integer"
+   },
+   "type": {
+    "title": "Type",
+    "type": "string"
+   },
+   "wanted": {
+    "title": "Wanted",
+    "type": "string"
+   }
+  },
+  "required": [
+   "slot_id",
+   "type",
+   "wanted",
+   "got",
+   "tray"
+  ],
+  "title": "ColorSubstitution",
+  "type": "object"
+ },
+ "PrintBatchCreate": {
+  "$defs": {
+   "PrintBatchPlateTarget": {
+    "description": "How many runs of one plate an order wants (#342).\n\n``plate_id`` is the plate index inside the source 3MF, or null for a\nsingle-plate file \u2014 matching ``PrintQueueItem.plate_id``. A target of 0 is\nlegal and means \"this plate is not required (yet)\".",
+    "properties": {
+     "plate_id": {
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "title": "Plate Id"
+     },
+     "plate_name": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "title": "Plate Name"
+     },
+     "quantity_target": {
+      "default": 1,
+      "maximum": 999,
+      "minimum": 0,
+      "title": "Quantity Target",
+      "type": "integer"
+     },
+     "sort_order": {
+      "default": 0,
+      "title": "Sort Order",
+      "type": "integer"
+     }
+    },
+    "title": "PrintBatchPlateTarget",
+    "type": "object"
+   }
+  },
+  "description": "Create a batch, either empty (multi-plate pre-batch flow) or by\nassigning existing pending queue items into it (manual \"Group as batch\").",
+  "properties": {
+   "archive_id": {
+    "anyOf": [
+     {
+      "type": "integer"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Archive Id"
+   },
+   "due_date": {
+    "anyOf": [
+     {
+      "format": "date-time",
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Due Date"
+   },
+   "external_ref": {
+    "anyOf": [
+     {
+      "maxLength": 255,
+      "minLength": 1,
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "External Ref"
+   },
+   "external_source": {
+    "anyOf": [
+     {
+      "maxLength": 32,
+      "minLength": 1,
+      "pattern": "^[a-z0-9_-]+$",
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "External Source"
+   },
+   "item_ids": {
+    "anyOf": [
+     {
+      "items": {
+       "type": "integer"
+      },
+      "type": "array"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Item Ids"
+   },
+   "library_file_id": {
+    "anyOf": [
+     {
+      "type": "integer"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Library File Id"
+   },
+   "name": {
+    "title": "Name",
+    "type": "string"
+   },
+   "notes": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Notes"
+   },
+   "plates": {
+    "anyOf": [
+     {
+      "items": {
+       "$ref": "#/$defs/PrintBatchPlateTarget"
+      },
+      "type": "array"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Plates"
+   },
+   "project_id": {
+    "anyOf": [
+     {
+      "type": "integer"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Project Id"
+   }
+  },
+  "required": [
+   "name"
+  ],
+  "title": "PrintBatchCreate",
+  "type": "object"
+ },
+ "PrintBatchDispatchRequest": {
+  "description": "Create queue items for the runs an order still owes.",
+  "properties": {
+   "limit": {
+    "anyOf": [
+     {
+      "maximum": 999,
+      "minimum": 1,
+      "type": "integer"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Limit"
+   },
+   "only_plate": {
+    "default": false,
+    "title": "Only Plate",
+    "type": "boolean"
+   },
+   "plate_id": {
+    "anyOf": [
+     {
+      "type": "integer"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Plate Id"
+   }
+  },
+  "title": "PrintBatchDispatchRequest",
+  "type": "object"
+ },
+ "PrintBatchPlateProgress": {
+  "description": "Per-plate progress within a batch.",
+  "properties": {
+   "actual_cost": {
+    "anyOf": [
+     {
+      "type": "number"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Actual Cost"
+   },
+   "can_dispatch": {
+    "default": false,
+    "title": "Can Dispatch",
+    "type": "boolean"
+   },
+   "cancelled_count": {
+    "default": 0,
+    "title": "Cancelled Count",
+    "type": "integer"
+   },
+   "completed_count": {
+    "default": 0,
+    "title": "Completed Count",
+    "type": "integer"
+   },
+   "dispatched": {
+    "default": 0,
+    "title": "Dispatched",
+    "type": "integer"
+   },
+   "estimated_remaining_cost": {
+    "anyOf": [
+     {
+      "type": "number"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Estimated Remaining Cost"
+   },
+   "failed_count": {
+    "default": 0,
+    "title": "Failed Count",
+    "type": "integer"
+   },
+   "filament_used_grams": {
+    "anyOf": [
+     {
+      "type": "number"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Filament Used Grams"
+   },
+   "pending_count": {
+    "default": 0,
+    "title": "Pending Count",
+    "type": "integer"
+   },
+   "plate_id": {
+    "anyOf": [
+     {
+      "type": "integer"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Plate Id"
+   },
+   "plate_name": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Plate Name"
+   },
+   "print_time_seconds": {
+    "default": 0,
+    "title": "Print Time Seconds",
+    "type": "integer"
+   },
+   "printing_count": {
+    "default": 0,
+    "title": "Printing Count",
+    "type": "integer"
+   },
+   "quantity_target": {
+    "default": 0,
+    "title": "Quantity Target",
+    "type": "integer"
+   },
+   "remaining": {
+    "default": 0,
+    "title": "Remaining",
+    "type": "integer"
+   },
+   "skipped_count": {
+    "default": 0,
+    "title": "Skipped Count",
+    "type": "integer"
+   }
+  },
+  "title": "PrintBatchPlateProgress",
+  "type": "object"
+ },
+ "PrintBatchPlateTarget": {
+  "description": "How many runs of one plate an order wants (#342).\n\n``plate_id`` is the plate index inside the source 3MF, or null for a\nsingle-plate file \u2014 matching ``PrintQueueItem.plate_id``. A target of 0 is\nlegal and means \"this plate is not required (yet)\".",
+  "properties": {
+   "plate_id": {
+    "anyOf": [
+     {
+      "type": "integer"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Plate Id"
+   },
+   "plate_name": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Plate Name"
+   },
+   "quantity_target": {
+    "default": 1,
+    "maximum": 999,
+    "minimum": 0,
+    "title": "Quantity Target",
+    "type": "integer"
+   },
+   "sort_order": {
+    "default": 0,
+    "title": "Sort Order",
+    "type": "integer"
+   }
+  },
+  "title": "PrintBatchPlateTarget",
+  "type": "object"
+ },
+ "PrintBatchResponse": {
+  "$defs": {
+   "PrintBatchPlateProgress": {
+    "description": "Per-plate progress within a batch.",
+    "properties": {
+     "actual_cost": {
+      "anyOf": [
+       {
+        "type": "number"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "title": "Actual Cost"
+     },
+     "can_dispatch": {
+      "default": false,
+      "title": "Can Dispatch",
+      "type": "boolean"
+     },
+     "cancelled_count": {
+      "default": 0,
+      "title": "Cancelled Count",
+      "type": "integer"
+     },
+     "completed_count": {
+      "default": 0,
+      "title": "Completed Count",
+      "type": "integer"
+     },
+     "dispatched": {
+      "default": 0,
+      "title": "Dispatched",
+      "type": "integer"
+     },
+     "estimated_remaining_cost": {
+      "anyOf": [
+       {
+        "type": "number"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "title": "Estimated Remaining Cost"
+     },
+     "failed_count": {
+      "default": 0,
+      "title": "Failed Count",
+      "type": "integer"
+     },
+     "filament_used_grams": {
+      "anyOf": [
+       {
+        "type": "number"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "title": "Filament Used Grams"
+     },
+     "pending_count": {
+      "default": 0,
+      "title": "Pending Count",
+      "type": "integer"
+     },
+     "plate_id": {
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "title": "Plate Id"
+     },
+     "plate_name": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "title": "Plate Name"
+     },
+     "print_time_seconds": {
+      "default": 0,
+      "title": "Print Time Seconds",
+      "type": "integer"
+     },
+     "printing_count": {
+      "default": 0,
+      "title": "Printing Count",
+      "type": "integer"
+     },
+     "quantity_target": {
+      "default": 0,
+      "title": "Quantity Target",
+      "type": "integer"
+     },
+     "remaining": {
+      "default": 0,
+      "title": "Remaining",
+      "type": "integer"
+     },
+     "skipped_count": {
+      "default": 0,
+      "title": "Skipped Count",
+      "type": "integer"
+     }
+    },
+    "title": "PrintBatchPlateProgress",
+    "type": "object"
+   }
+  },
+  "description": "Response for a print batch with progress stats.",
+  "properties": {
+   "actual_cost": {
+    "anyOf": [
+     {
+      "type": "number"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Actual Cost"
+   },
+   "archive_id": {
+    "anyOf": [
+     {
+      "type": "integer"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Archive Id"
+   },
+   "cancelled_count": {
+    "default": 0,
+    "title": "Cancelled Count",
+    "type": "integer"
+   },
+   "completed_at": {
+    "anyOf": [
+     {
+      "format": "date-time",
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Completed At"
+   },
+   "completed_count": {
+    "default": 0,
+    "title": "Completed Count",
+    "type": "integer"
+   },
+   "created_at": {
+    "anyOf": [
+     {
+      "format": "date-time",
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "title": "Created At"
+   },
+   "created_by_id": {
+    "anyOf": [
+     {
+      "type": "integer"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Created By Id"
+   },
+   "created_by_username": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Created By Username"
+   },
+   "dispatchable_count": {
+    "default": 0,
+    "title": "Dispatchable Count",
+    "type": "integer"
+   },
+   "due_date": {
+    "anyOf": [
+     {
+      "format": "date-time",
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Due Date"
+   },
+   "estimated_remaining_cost": {
+    "anyOf": [
+     {
+      "type": "number"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Estimated Remaining Cost"
+   },
+   "external_ref": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "External Ref"
+   },
+   "external_source": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "External Source"
+   },
+   "failed_count": {
+    "default": 0,
+    "title": "Failed Count",
+    "type": "integer"
+   },
+   "filament_used_grams": {
+    "anyOf": [
+     {
+      "type": "number"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Filament Used Grams"
+   },
+   "has_targets": {
+    "default": false,
+    "title": "Has Targets",
+    "type": "boolean"
+   },
+   "id": {
+    "title": "Id",
+    "type": "integer"
+   },
+   "library_file_id": {
+    "anyOf": [
+     {
+      "type": "integer"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Library File Id"
+   },
+   "name": {
+    "title": "Name",
+    "type": "string"
+   },
+   "notes": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Notes"
+   },
+   "pending_count": {
+    "default": 0,
+    "title": "Pending Count",
+    "type": "integer"
+   },
+   "plates": {
+    "default": [],
+    "items": {
+     "$ref": "#/$defs/PrintBatchPlateProgress"
+    },
+    "title": "Plates",
+    "type": "array"
+   },
+   "print_time_seconds": {
+    "default": 0,
+    "title": "Print Time Seconds",
+    "type": "integer"
+   },
+   "printing_count": {
+    "default": 0,
+    "title": "Printing Count",
+    "type": "integer"
+   },
+   "project_id": {
+    "anyOf": [
+     {
+      "type": "integer"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Project Id"
+   },
+   "quantity": {
+    "title": "Quantity",
+    "type": "integer"
+   },
+   "remaining_count": {
+    "default": 0,
+    "title": "Remaining Count",
+    "type": "integer"
+   },
+   "skipped_count": {
+    "default": 0,
+    "title": "Skipped Count",
+    "type": "integer"
+   },
+   "status": {
+    "title": "Status",
+    "type": "string"
+   },
+   "target_count": {
+    "default": 0,
+    "title": "Target Count",
+    "type": "integer"
+   }
+  },
+  "required": [
+   "id",
+   "name",
+   "quantity",
+   "status",
+   "created_at"
+  ],
+  "title": "PrintBatchResponse",
+  "type": "object"
+ },
+ "PrintBatchUngroupResponse": {
+  "description": "Response after ungrouping a batch.",
+  "properties": {
+   "message": {
+    "title": "Message",
+    "type": "string"
+   },
+   "ungrouped_count": {
+    "title": "Ungrouped Count",
+    "type": "integer"
+   }
+  },
+  "required": [
+   "ungrouped_count",
+   "message"
+  ],
+  "title": "PrintBatchUngroupResponse",
+  "type": "object"
+ },
+ "PrintBatchUpdate": {
+  "$defs": {
+   "PrintBatchPlateTarget": {
+    "description": "How many runs of one plate an order wants (#342).\n\n``plate_id`` is the plate index inside the source 3MF, or null for a\nsingle-plate file \u2014 matching ``PrintQueueItem.plate_id``. A target of 0 is\nlegal and means \"this plate is not required (yet)\".",
+    "properties": {
+     "plate_id": {
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "title": "Plate Id"
+     },
+     "plate_name": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "title": "Plate Name"
+     },
+     "quantity_target": {
+      "default": 1,
+      "maximum": 999,
+      "minimum": 0,
+      "title": "Quantity Target",
+      "type": "integer"
+     },
+     "sort_order": {
+      "default": 0,
+      "title": "Sort Order",
+      "type": "integer"
+     }
+    },
+    "title": "PrintBatchPlateTarget",
+    "type": "object"
+   }
+  },
+  "description": "Edit an order's header or its per-plate targets while it runs.\n\nEvery field is optional; ``plates`` replaces the full target set when\ngiven, so a plate omitted from the list has its target row removed.",
+  "properties": {
+   "due_date": {
+    "anyOf": [
+     {
+      "format": "date-time",
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Due Date"
+   },
+   "name": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Name"
+   },
+   "notes": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Notes"
+   },
+   "plates": {
+    "anyOf": [
+     {
+      "items": {
+       "$ref": "#/$defs/PrintBatchPlateTarget"
+      },
+      "type": "array"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Plates"
+   },
+   "project_id": {
+    "anyOf": [
+     {
+      "type": "integer"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Project Id"
+   },
+   "status": {
+    "anyOf": [
+     {
+      "enum": [
+       "active",
+       "cancelled"
+      ],
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Status"
+   }
+  },
+  "title": "PrintBatchUpdate",
+  "type": "object"
+ },
+ "PrintQueueBulkUpdate": {
+  "description": "Bulk update multiple queue items with the same values.",
+  "properties": {
+   "auto_off_after": {
+    "anyOf": [
+     {
+      "type": "boolean"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Auto Off After"
+   },
+   "bed_levelling": {
+    "anyOf": [
+     {
+      "enum": [
+       "off",
+       "on",
+       "auto"
+      ],
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Bed Levelling"
+   },
+   "confirm_outcome": {
+    "anyOf": [
+     {
+      "type": "boolean"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Confirm Outcome"
+   },
+   "cost_center_id": {
+    "anyOf": [
+     {
+      "type": "integer"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Cost Center Id"
+   },
+   "estimated_cost": {
+    "anyOf": [
+     {
+      "type": "number"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Estimated Cost"
+   },
+   "flow_cali": {
+    "anyOf": [
+     {
+      "enum": [
+       "off",
+       "on",
+       "auto"
+      ],
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Flow Cali"
+   },
+   "gcode_injection": {
+    "anyOf": [
+     {
+      "type": "boolean"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Gcode Injection"
+   },
+   "item_ids": {
+    "items": {
+     "type": "integer"
+    },
+    "title": "Item Ids",
+    "type": "array"
+   },
+   "layer_inspect": {
+    "anyOf": [
+     {
+      "type": "boolean"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Layer Inspect"
+   },
+   "manual_start": {
+    "anyOf": [
+     {
+      "type": "boolean"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Manual Start"
+   },
+   "nozzle_offset_cali": {
+    "anyOf": [
+     {
+      "enum": [
+       "off",
+       "on",
+       "auto"
+      ],
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Nozzle Offset Cali"
+   },
+   "preheat_chamber_target_override": {
+    "anyOf": [
+     {
+      "maximum": 65,
+      "minimum": 0,
+      "type": "integer"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Preheat Chamber Target Override"
+   },
+   "preheat_override": {
+    "anyOf": [
+     {
+      "enum": [
+       "inherit",
+       "on",
+       "off"
+      ],
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Preheat Override"
+   },
+   "printer_id": {
+    "anyOf": [
+     {
+      "type": "integer"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Printer Id"
+   },
+   "require_previous_success": {
+    "anyOf": [
+     {
+      "type": "boolean"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Require Previous Success"
+   },
+   "scheduled_time": {
+    "anyOf": [
+     {
+      "format": "date-time",
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Scheduled Time"
+   },
+   "timelapse": {
+    "anyOf": [
+     {
+      "type": "boolean"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Timelapse"
+   },
+   "use_ams": {
+    "anyOf": [
+     {
+      "type": "boolean"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Use Ams"
+   },
+   "vibration_cali": {
+    "anyOf": [
+     {
+      "type": "boolean"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Vibration Cali"
+   }
+  },
+  "required": [
+   "item_ids"
+  ],
+  "title": "PrintQueueBulkUpdate",
+  "type": "object"
+ },
+ "PrintQueueBulkUpdateResponse": {
+  "description": "Response for bulk update operation.",
+  "properties": {
+   "message": {
+    "title": "Message",
+    "type": "string"
+   },
+   "skipped_count": {
+    "title": "Skipped Count",
+    "type": "integer"
+   },
+   "updated_count": {
+    "title": "Updated Count",
+    "type": "integer"
+   }
+  },
+  "required": [
+   "updated_count",
+   "skipped_count",
+   "message"
+  ],
+  "title": "PrintQueueBulkUpdateResponse",
+  "type": "object"
+ },
+ "PrintQueueDuplicateRequest": {
+  "description": "Queue another copy of each of these jobs (#3441).",
+  "properties": {
+   "item_ids": {
+    "items": {
+     "type": "integer"
+    },
+    "maxItems": 500,
+    "minItems": 1,
+    "title": "Item Ids",
+    "type": "array"
+   }
+  },
+  "required": [
+   "item_ids"
+  ],
+  "title": "PrintQueueDuplicateRequest",
+  "type": "object"
+ },
+ "PrintQueueDuplicateResponse": {
+  "description": "The copies made, in the order of the request, and how many jobs got none.",
+  "properties": {
+   "created_ids": {
+    "items": {
+     "type": "integer"
+    },
+    "title": "Created Ids",
+    "type": "array"
+   },
+   "skipped_count": {
+    "title": "Skipped Count",
+    "type": "integer"
+   }
+  },
+  "required": [
+   "created_ids",
+   "skipped_count"
+  ],
+  "title": "PrintQueueDuplicateResponse",
+  "type": "object"
+ },
+ "PrintQueueHistoryClearResponse": {
+  "properties": {
+   "cleared": {
+    "title": "Cleared",
+    "type": "integer"
+   },
+   "kept": {
+    "title": "Kept",
+    "type": "integer"
+   }
+  },
+  "required": [
+   "cleared",
+   "kept"
+  ],
+  "title": "PrintQueueHistoryClearResponse",
+  "type": "object"
+ },
+ "PrintQueueHistoryResponse": {
+  "$defs": {
+   "ColorSubstitution": {
+    "description": "A slot sent with a spool of another colour than the file asked for (#3279).",
+    "properties": {
+     "got": {
+      "title": "Got",
+      "type": "string"
+     },
+     "slot_id": {
+      "title": "Slot Id",
+      "type": "integer"
+     },
+     "tray": {
+      "title": "Tray",
+      "type": "integer"
+     },
+     "type": {
+      "title": "Type",
+      "type": "string"
+     },
+     "wanted": {
+      "title": "Wanted",
+      "type": "string"
+     }
+    },
+    "required": [
+     "slot_id",
+     "type",
+     "wanted",
+     "got",
+     "tray"
+    ],
+    "title": "ColorSubstitution",
+    "type": "object"
+   },
+   "PrintQueueItemResponse": {
+    "properties": {
+     "aito_board_column": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "title": "Aito Board Column"
+     },
+     "aito_client_name": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "title": "Aito Client Name"
+     },
+     "aito_due_date": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "title": "Aito Due Date"
+     },
+     "aito_quantity": {
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "title": "Aito Quantity"
+     },
+     "aito_task_id": {
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "title": "Aito Task Id"
+     },
+     "aito_task_title": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "title": "Aito Task Title"
+     },
+     "ams_mapping": {
+      "anyOf": [
+       {
+        "items": {
+         "type": "integer"
+        },
+        "type": "array"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "title": "Ams Mapping"
+     },
+     "archive_deleted": {
+      "default": false,
+      "title": "Archive Deleted",
+      "type": "boolean"
+     },
+     "archive_has_slicer_ams_mapping": {
+      "default": false,
+      "title": "Archive Has Slicer Ams Mapping",
+      "type": "boolean"
+     },
+     "archive_id": {
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Archive Id"
+     },
+     "archive_name": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "title": "Archive Name"
+     },
+     "archive_thumbnail": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "title": "Archive Thumbnail"
+     },
+     "auto_off_after": {
+      "title": "Auto Off After",
+      "type": "boolean"
+     },
+     "batch_id": {
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "title": "Batch Id"
+     },
+     "batch_name": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "title": "Batch Name"
+     },
+     "bed_levelling": {
+      "default": "auto",
+      "enum": [
+       "off",
+       "on",
+       "auto"
+      ],
+      "title": "Bed Levelling",
+      "type": "string"
+     },
+     "bed_type": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "title": "Bed Type"
+     },
+     "been_jumped": {
+      "default": false,
+      "title": "Been Jumped",
+      "type": "boolean"
+     },
+     "cleanup_library_after_dispatch": {
+      "default": false,
+      "title": "Cleanup Library After Dispatch",
+      "type": "boolean"
+     },
+     "color_substitutions": {
+      "anyOf": [
+       {
+        "items": {
+         "$ref": "#/$defs/ColorSubstitution"
+        },
+        "type": "array"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "title": "Color Substitutions"
+     },
+     "completed_at": {
+      "anyOf": [
+       {
+        "format": "date-time",
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Completed At"
+     },
+     "confirm_outcome": {
+      "default": false,
+      "title": "Confirm Outcome",
+      "type": "boolean"
+     },
+     "cost_center_id": {
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "title": "Cost Center Id"
+     },
+     "created_at": {
+      "anyOf": [
+       {
+        "format": "date-time",
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Created At"
+     },
+     "created_by_id": {
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "title": "Created By Id"
+     },
+     "created_by_username": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "title": "Created By Username"
+     },
+     "error_message": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Error Message"
+     },
+     "estimated_cost": {
+      "anyOf": [
+       {
+        "type": "number"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "title": "Estimated Cost"
+     },
+     "filament_color": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "title": "Filament Color"
+     },
+     "filament_overrides": {
+      "anyOf": [
+       {
+        "items": {
+         "additionalProperties": true,
+         "type": "object"
+        },
+        "type": "array"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "title": "Filament Overrides"
+     },
+     "filament_short": {
+      "default": false,
+      "title": "Filament Short",
+      "type": "boolean"
+     },
+     "filament_type": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "title": "Filament Type"
+     },
+     "filament_used_grams": {
+      "anyOf": [
+       {
+        "type": "number"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "title": "Filament Used Grams"
+     },
+     "flow_cali": {
+      "default": "auto",
+      "enum": [
+       "off",
+       "on",
+       "auto"
+      ],
+      "title": "Flow Cali",
+      "type": "string"
+     },
+     "gcode_injection": {
+      "default": false,
+      "title": "Gcode Injection",
+      "type": "boolean"
+     },
+     "id": {
+      "title": "Id",
+      "type": "integer"
+     },
+     "layer_height": {
+      "anyOf": [
+       {
+        "type": "number"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "title": "Layer Height"
+     },
+     "layer_inspect": {
+      "default": false,
+      "title": "Layer Inspect",
+      "type": "boolean"
+     },
+     "library_file_id": {
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Library File Id"
+     },
+     "library_file_name": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "title": "Library File Name"
+     },
+     "library_file_thumbnail": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "title": "Library File Thumbnail"
+     },
+     "manual_start": {
+      "title": "Manual Start",
+      "type": "boolean"
+     },
+     "nozzle_diameter": {
+      "anyOf": [
+       {
+        "type": "number"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "title": "Nozzle Diameter"
+     },
+     "nozzle_mapping": {
+      "anyOf": [
+       {
+        "items": {
+         "type": "integer"
+        },
+        "type": "array"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "title": "Nozzle Mapping"
+     },
+     "nozzle_offset_cali": {
+      "default": "auto",
+      "enum": [
+       "off",
+       "on",
+       "auto"
+      ],
+      "title": "Nozzle Offset Cali",
+      "type": "string"
+     },
+     "nozzle_rack_choice": {
+      "anyOf": [
+       {
+        "additionalProperties": {
+         "type": "integer"
+        },
+        "type": "object"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "title": "Nozzle Rack Choice"
+     },
+     "plate_id": {
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "title": "Plate Id"
+     },
+     "position": {
+      "title": "Position",
+      "type": "integer"
+     },
+     "preheat_chamber_target_override": {
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "title": "Preheat Chamber Target Override"
+     },
+     "preheat_override": {
+      "default": "inherit",
+      "enum": [
+       "inherit",
+       "on",
+       "off"
+      ],
+      "title": "Preheat Override",
+      "type": "string"
+     },
+     "print_time_seconds": {
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "title": "Print Time Seconds"
+     },
+     "printer_id": {
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Printer Id"
+     },
+     "printer_name": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "title": "Printer Name"
+     },
+     "project_code": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "title": "Project Code"
+     },
+     "project_name": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "title": "Project Name"
+     },
+     "require_previous_success": {
+      "title": "Require Previous Success",
+      "type": "boolean"
+     },
+     "required_filament_types": {
+      "anyOf": [
+       {
+        "items": {
+         "type": "string"
+        },
+        "type": "array"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "title": "Required Filament Types"
+     },
+     "revision_id": {
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "title": "Revision Id"
+     },
+     "revision_item_name": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "title": "Revision Item Name"
+     },
+     "revision_number": {
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "title": "Revision Number"
+     },
+     "revision_status": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "title": "Revision Status"
+     },
+     "scheduled_time": {
+      "anyOf": [
+       {
+        "format": "date-time",
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Scheduled Time"
+     },
+     "skip_filament_check": {
+      "default": false,
+      "title": "Skip Filament Check",
+      "type": "boolean"
+     },
+     "slice_job_id": {
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "title": "Slice Job Id"
+     },
+     "sliced_for_model": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "title": "Sliced For Model"
+     },
+     "slicer_ams_mapping": {
+      "anyOf": [
+       {
+        "items": {
+         "type": "integer"
+        },
+        "type": "array"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "title": "Slicer Ams Mapping"
+     },
+     "started_at": {
+      "anyOf": [
+       {
+        "format": "date-time",
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Started At"
+     },
+     "status": {
+      "enum": [
+       "pending",
+       "printing",
+       "completed",
+       "failed",
+       "skipped",
+       "cancelled",
+       "slicing",
+       "slice_failed"
+      ],
+      "title": "Status",
+      "type": "string"
+     },
+     "target_location": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "title": "Target Location"
+     },
+     "target_model": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "title": "Target Model"
+     },
+     "timelapse": {
+      "default": false,
+      "title": "Timelapse",
+      "type": "boolean"
+     },
+     "use_ams": {
+      "default": true,
+      "title": "Use Ams",
+      "type": "boolean"
+     },
+     "variants": {
+      "default": [],
+      "items": {
+       "$ref": "#/$defs/QueueVariantSummary"
+      },
+      "title": "Variants",
+      "type": "array"
+     },
+     "vibration_cali": {
+      "default": true,
+      "title": "Vibration Cali",
+      "type": "boolean"
+     },
+     "waiting_reason": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "title": "Waiting Reason"
+     }
+    },
+    "required": [
+     "id",
+     "printer_id",
+     "archive_id",
+     "library_file_id",
+     "position",
+     "scheduled_time",
+     "require_previous_success",
+     "auto_off_after",
+     "manual_start",
+     "status",
+     "started_at",
+     "completed_at",
+     "error_message",
+     "created_at"
+    ],
+    "title": "PrintQueueItemResponse",
+    "type": "object"
+   },
+   "QueueVariantSummary": {
+    "description": "One candidate on a cross-model queue item, for display (#671).",
+    "properties": {
+     "filename": {
+      "title": "Filename",
+      "type": "string"
+     },
+     "library_file_id": {
+      "title": "Library File Id",
+      "type": "integer"
+     },
+     "position": {
+      "title": "Position",
+      "type": "integer"
+     },
+     "target_model": {
+      "title": "Target Model",
+      "type": "string"
+     }
+    },
+    "required": [
+     "library_file_id",
+     "filename",
+     "target_model",
+     "position"
+    ],
+    "title": "QueueVariantSummary",
+    "type": "object"
+   }
+  },
+  "description": "One page of the queue history, plus what the page needs around it.\n\n``items`` holds the page in display order, followed by any other history\nruns of the batches on that page, so a batch row can count all of its runs.",
+  "properties": {
+   "items": {
+    "items": {
+     "$ref": "#/$defs/PrintQueueItemResponse"
+    },
+    "title": "Items",
+    "type": "array"
+   },
+   "locations": {
+    "items": {
+     "type": "string"
+    },
+    "title": "Locations",
+    "type": "array"
+   },
+   "total": {
+    "title": "Total",
+    "type": "integer"
+   }
+  },
+  "required": [
+   "items",
+   "total",
+   "locations"
+  ],
+  "title": "PrintQueueHistoryResponse",
+  "type": "object"
+ },
+ "PrintQueueItemCreate": {
+  "$defs": {
+   "QueueVariantCreate": {
+    "description": "One candidate file for a cross-model queue item (#671).\n\nPer-file rather than per-item because the settings genuinely differ between\ncandidates: an H2C slice is dual-nozzle and will not share slot count, AMS\nmapping or nozzle mapping with the H2S slice of the same model.\n\n``target_model`` is normally omitted and read from the file's own\n``sliced_for_model``; supply it only for a legacy 3MF that declares none.",
+    "properties": {
+     "ams_mapping": {
+      "anyOf": [
+       {
+        "items": {
+         "type": "integer"
+        },
+        "type": "array"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "title": "Ams Mapping"
+     },
+     "filament_overrides": {
+      "anyOf": [
+       {
+        "items": {
+         "additionalProperties": true,
+         "type": "object"
+        },
+        "type": "array"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "title": "Filament Overrides"
+     },
+     "library_file_id": {
+      "title": "Library File Id",
+      "type": "integer"
+     },
+     "nozzle_mapping": {
+      "anyOf": [
+       {
+        "items": {
+         "type": "integer"
+        },
+        "type": "array"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "title": "Nozzle Mapping"
+     },
+     "nozzle_rack_choice": {
+      "anyOf": [
+       {
+        "additionalProperties": {
+         "type": "integer"
+        },
+        "type": "object"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "title": "Nozzle Rack Choice"
+     },
+     "plate_id": {
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "title": "Plate Id"
+     },
+     "target_model": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "title": "Target Model"
+     }
+    },
+    "required": [
+     "library_file_id"
+    ],
+    "title": "QueueVariantCreate",
+    "type": "object"
+   }
+  },
+  "properties": {
+   "aito_task_id": {
+    "anyOf": [
+     {
+      "type": "integer"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Aito Task Id"
+   },
+   "ams_mapping": {
+    "anyOf": [
+     {
+      "items": {
+       "type": "integer"
+      },
+      "type": "array"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Ams Mapping"
+   },
+   "archive_id": {
+    "anyOf": [
+     {
+      "type": "integer"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Archive Id"
+   },
+   "auto_off_after": {
+    "default": false,
+    "title": "Auto Off After",
+    "type": "boolean"
+   },
+   "batch_id": {
+    "anyOf": [
+     {
+      "type": "integer"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Batch Id"
+   },
+   "bed_levelling": {
+    "default": "auto",
+    "enum": [
+     "off",
+     "on",
+     "auto"
+    ],
+    "title": "Bed Levelling",
+    "type": "string"
+   },
+   "cleanup_library_after_dispatch": {
+    "default": false,
+    "title": "Cleanup Library After Dispatch",
+    "type": "boolean"
+   },
+   "confirm_outcome": {
+    "default": false,
+    "title": "Confirm Outcome",
+    "type": "boolean"
+   },
+   "cost_center_id": {
+    "anyOf": [
+     {
+      "type": "integer"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Cost Center Id"
+   },
+   "estimated_cost": {
+    "anyOf": [
+     {
+      "type": "number"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Estimated Cost"
+   },
+   "filament_overrides": {
+    "anyOf": [
+     {
+      "items": {
+       "additionalProperties": true,
+       "type": "object"
+      },
+      "type": "array"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Filament Overrides"
+   },
+   "flow_cali": {
+    "default": "auto",
+    "enum": [
+     "off",
+     "on",
+     "auto"
+    ],
+    "title": "Flow Cali",
+    "type": "string"
+   },
+   "gcode_injection": {
+    "default": false,
+    "title": "Gcode Injection",
+    "type": "boolean"
+   },
+   "insert_at_top": {
+    "default": false,
+    "title": "Insert At Top",
+    "type": "boolean"
+   },
+   "insert_position": {
+    "anyOf": [
+     {
+      "type": "integer"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Insert Position"
+   },
+   "layer_inspect": {
+    "default": false,
+    "title": "Layer Inspect",
+    "type": "boolean"
+   },
+   "library_file_id": {
+    "anyOf": [
+     {
+      "type": "integer"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Library File Id"
+   },
+   "manual_start": {
+    "default": false,
+    "title": "Manual Start",
+    "type": "boolean"
+   },
+   "nozzle_offset_cali": {
+    "default": "auto",
+    "enum": [
+     "off",
+     "on",
+     "auto"
+    ],
+    "title": "Nozzle Offset Cali",
+    "type": "string"
+   },
+   "nozzle_rack_choice": {
+    "anyOf": [
+     {
+      "additionalProperties": {
+       "type": "integer"
+      },
+      "type": "object"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Nozzle Rack Choice"
+   },
+   "plate_id": {
+    "anyOf": [
+     {
+      "type": "integer"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Plate Id"
+   },
+   "preheat_chamber_target_override": {
+    "anyOf": [
+     {
+      "maximum": 65,
+      "minimum": 0,
+      "type": "integer"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Preheat Chamber Target Override"
+   },
+   "preheat_override": {
+    "default": "inherit",
+    "enum": [
+     "inherit",
+     "on",
+     "off"
+    ],
+    "title": "Preheat Override",
+    "type": "string"
+   },
+   "printer_id": {
+    "anyOf": [
+     {
+      "type": "integer"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Printer Id"
+   },
+   "project_id": {
+    "anyOf": [
+     {
+      "type": "integer"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Project Id"
+   },
+   "quantity": {
+    "default": 1,
+    "title": "Quantity",
+    "type": "integer"
+   },
+   "require_previous_success": {
+    "default": false,
+    "title": "Require Previous Success",
+    "type": "boolean"
+   },
+   "required_filament_types": {
+    "anyOf": [
+     {
+      "items": {
+       "type": "string"
+      },
+      "type": "array"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Required Filament Types"
+   },
+   "scheduled_time": {
+    "anyOf": [
+     {
+      "format": "date-time",
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Scheduled Time"
+   },
+   "skip_filament_check": {
+    "default": false,
+    "title": "Skip Filament Check",
+    "type": "boolean"
+   },
+   "target_location": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Target Location"
+   },
+   "target_model": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Target Model"
+   },
+   "timelapse": {
+    "default": false,
+    "title": "Timelapse",
+    "type": "boolean"
+   },
+   "use_ams": {
+    "default": true,
+    "title": "Use Ams",
+    "type": "boolean"
+   },
+   "variants": {
+    "anyOf": [
+     {
+      "items": {
+       "$ref": "#/$defs/QueueVariantCreate"
+      },
+      "type": "array"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Variants"
+   },
+   "vibration_cali": {
+    "default": true,
+    "title": "Vibration Cali",
+    "type": "boolean"
+   }
+  },
+  "title": "PrintQueueItemCreate",
+  "type": "object"
+ },
+ "PrintQueueItemResponse": {
+  "$defs": {
+   "ColorSubstitution": {
+    "description": "A slot sent with a spool of another colour than the file asked for (#3279).",
+    "properties": {
+     "got": {
+      "title": "Got",
+      "type": "string"
+     },
+     "slot_id": {
+      "title": "Slot Id",
+      "type": "integer"
+     },
+     "tray": {
+      "title": "Tray",
+      "type": "integer"
+     },
+     "type": {
+      "title": "Type",
+      "type": "string"
+     },
+     "wanted": {
+      "title": "Wanted",
+      "type": "string"
+     }
+    },
+    "required": [
+     "slot_id",
+     "type",
+     "wanted",
+     "got",
+     "tray"
+    ],
+    "title": "ColorSubstitution",
+    "type": "object"
+   },
+   "QueueVariantSummary": {
+    "description": "One candidate on a cross-model queue item, for display (#671).",
+    "properties": {
+     "filename": {
+      "title": "Filename",
+      "type": "string"
+     },
+     "library_file_id": {
+      "title": "Library File Id",
+      "type": "integer"
+     },
+     "position": {
+      "title": "Position",
+      "type": "integer"
+     },
+     "target_model": {
+      "title": "Target Model",
+      "type": "string"
+     }
+    },
+    "required": [
+     "library_file_id",
+     "filename",
+     "target_model",
+     "position"
+    ],
+    "title": "QueueVariantSummary",
+    "type": "object"
+   }
+  },
+  "properties": {
+   "aito_board_column": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Aito Board Column"
+   },
+   "aito_client_name": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Aito Client Name"
+   },
+   "aito_due_date": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Aito Due Date"
+   },
+   "aito_quantity": {
+    "anyOf": [
+     {
+      "type": "integer"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Aito Quantity"
+   },
+   "aito_task_id": {
+    "anyOf": [
+     {
+      "type": "integer"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Aito Task Id"
+   },
+   "aito_task_title": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Aito Task Title"
+   },
+   "ams_mapping": {
+    "anyOf": [
+     {
+      "items": {
+       "type": "integer"
+      },
+      "type": "array"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Ams Mapping"
+   },
+   "archive_deleted": {
+    "default": false,
+    "title": "Archive Deleted",
+    "type": "boolean"
+   },
+   "archive_has_slicer_ams_mapping": {
+    "default": false,
+    "title": "Archive Has Slicer Ams Mapping",
+    "type": "boolean"
+   },
+   "archive_id": {
+    "anyOf": [
+     {
+      "type": "integer"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "title": "Archive Id"
+   },
+   "archive_name": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Archive Name"
+   },
+   "archive_thumbnail": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Archive Thumbnail"
+   },
+   "auto_off_after": {
+    "title": "Auto Off After",
+    "type": "boolean"
+   },
+   "batch_id": {
+    "anyOf": [
+     {
+      "type": "integer"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Batch Id"
+   },
+   "batch_name": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Batch Name"
+   },
+   "bed_levelling": {
+    "default": "auto",
+    "enum": [
+     "off",
+     "on",
+     "auto"
+    ],
+    "title": "Bed Levelling",
+    "type": "string"
+   },
+   "bed_type": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Bed Type"
+   },
+   "been_jumped": {
+    "default": false,
+    "title": "Been Jumped",
+    "type": "boolean"
+   },
+   "cleanup_library_after_dispatch": {
+    "default": false,
+    "title": "Cleanup Library After Dispatch",
+    "type": "boolean"
+   },
+   "color_substitutions": {
+    "anyOf": [
+     {
+      "items": {
+       "$ref": "#/$defs/ColorSubstitution"
+      },
+      "type": "array"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Color Substitutions"
+   },
+   "completed_at": {
+    "anyOf": [
+     {
+      "format": "date-time",
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "title": "Completed At"
+   },
+   "confirm_outcome": {
+    "default": false,
+    "title": "Confirm Outcome",
+    "type": "boolean"
+   },
+   "cost_center_id": {
+    "anyOf": [
+     {
+      "type": "integer"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Cost Center Id"
+   },
+   "created_at": {
+    "anyOf": [
+     {
+      "format": "date-time",
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "title": "Created At"
+   },
+   "created_by_id": {
+    "anyOf": [
+     {
+      "type": "integer"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Created By Id"
+   },
+   "created_by_username": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Created By Username"
+   },
+   "error_message": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "title": "Error Message"
+   },
+   "estimated_cost": {
+    "anyOf": [
+     {
+      "type": "number"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Estimated Cost"
+   },
+   "filament_color": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Filament Color"
+   },
+   "filament_overrides": {
+    "anyOf": [
+     {
+      "items": {
+       "additionalProperties": true,
+       "type": "object"
+      },
+      "type": "array"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Filament Overrides"
+   },
+   "filament_short": {
+    "default": false,
+    "title": "Filament Short",
+    "type": "boolean"
+   },
+   "filament_type": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Filament Type"
+   },
+   "filament_used_grams": {
+    "anyOf": [
+     {
+      "type": "number"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Filament Used Grams"
+   },
+   "flow_cali": {
+    "default": "auto",
+    "enum": [
+     "off",
+     "on",
+     "auto"
+    ],
+    "title": "Flow Cali",
+    "type": "string"
+   },
+   "gcode_injection": {
+    "default": false,
+    "title": "Gcode Injection",
+    "type": "boolean"
+   },
+   "id": {
+    "title": "Id",
+    "type": "integer"
+   },
+   "layer_height": {
+    "anyOf": [
+     {
+      "type": "number"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Layer Height"
+   },
+   "layer_inspect": {
+    "default": false,
+    "title": "Layer Inspect",
+    "type": "boolean"
+   },
+   "library_file_id": {
+    "anyOf": [
+     {
+      "type": "integer"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "title": "Library File Id"
+   },
+   "library_file_name": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Library File Name"
+   },
+   "library_file_thumbnail": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Library File Thumbnail"
+   },
+   "manual_start": {
+    "title": "Manual Start",
+    "type": "boolean"
+   },
+   "nozzle_diameter": {
+    "anyOf": [
+     {
+      "type": "number"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Nozzle Diameter"
+   },
+   "nozzle_mapping": {
+    "anyOf": [
+     {
+      "items": {
+       "type": "integer"
+      },
+      "type": "array"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Nozzle Mapping"
+   },
+   "nozzle_offset_cali": {
+    "default": "auto",
+    "enum": [
+     "off",
+     "on",
+     "auto"
+    ],
+    "title": "Nozzle Offset Cali",
+    "type": "string"
+   },
+   "nozzle_rack_choice": {
+    "anyOf": [
+     {
+      "additionalProperties": {
+       "type": "integer"
+      },
+      "type": "object"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Nozzle Rack Choice"
+   },
+   "plate_id": {
+    "anyOf": [
+     {
+      "type": "integer"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Plate Id"
+   },
+   "position": {
+    "title": "Position",
+    "type": "integer"
+   },
+   "preheat_chamber_target_override": {
+    "anyOf": [
+     {
+      "type": "integer"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Preheat Chamber Target Override"
+   },
+   "preheat_override": {
+    "default": "inherit",
+    "enum": [
+     "inherit",
+     "on",
+     "off"
+    ],
+    "title": "Preheat Override",
+    "type": "string"
+   },
+   "print_time_seconds": {
+    "anyOf": [
+     {
+      "type": "integer"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Print Time Seconds"
+   },
+   "printer_id": {
+    "anyOf": [
+     {
+      "type": "integer"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "title": "Printer Id"
+   },
+   "printer_name": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Printer Name"
+   },
+   "project_code": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Project Code"
+   },
+   "project_name": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Project Name"
+   },
+   "require_previous_success": {
+    "title": "Require Previous Success",
+    "type": "boolean"
+   },
+   "required_filament_types": {
+    "anyOf": [
+     {
+      "items": {
+       "type": "string"
+      },
+      "type": "array"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Required Filament Types"
+   },
+   "revision_id": {
+    "anyOf": [
+     {
+      "type": "integer"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Revision Id"
+   },
+   "revision_item_name": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Revision Item Name"
+   },
+   "revision_number": {
+    "anyOf": [
+     {
+      "type": "integer"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Revision Number"
+   },
+   "revision_status": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Revision Status"
+   },
+   "scheduled_time": {
+    "anyOf": [
+     {
+      "format": "date-time",
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "title": "Scheduled Time"
+   },
+   "skip_filament_check": {
+    "default": false,
+    "title": "Skip Filament Check",
+    "type": "boolean"
+   },
+   "slice_job_id": {
+    "anyOf": [
+     {
+      "type": "integer"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Slice Job Id"
+   },
+   "sliced_for_model": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Sliced For Model"
+   },
+   "slicer_ams_mapping": {
+    "anyOf": [
+     {
+      "items": {
+       "type": "integer"
+      },
+      "type": "array"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Slicer Ams Mapping"
+   },
+   "started_at": {
+    "anyOf": [
+     {
+      "format": "date-time",
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "title": "Started At"
+   },
+   "status": {
+    "enum": [
+     "pending",
+     "printing",
+     "completed",
+     "failed",
+     "skipped",
+     "cancelled",
+     "slicing",
+     "slice_failed"
+    ],
+    "title": "Status",
+    "type": "string"
+   },
+   "target_location": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Target Location"
+   },
+   "target_model": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Target Model"
+   },
+   "timelapse": {
+    "default": false,
+    "title": "Timelapse",
+    "type": "boolean"
+   },
+   "use_ams": {
+    "default": true,
+    "title": "Use Ams",
+    "type": "boolean"
+   },
+   "variants": {
+    "default": [],
+    "items": {
+     "$ref": "#/$defs/QueueVariantSummary"
+    },
+    "title": "Variants",
+    "type": "array"
+   },
+   "vibration_cali": {
+    "default": true,
+    "title": "Vibration Cali",
+    "type": "boolean"
+   },
+   "waiting_reason": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Waiting Reason"
+   }
+  },
+  "required": [
+   "id",
+   "printer_id",
+   "archive_id",
+   "library_file_id",
+   "position",
+   "scheduled_time",
+   "require_previous_success",
+   "auto_off_after",
+   "manual_start",
+   "status",
+   "started_at",
+   "completed_at",
+   "error_message",
+   "created_at"
+  ],
+  "title": "PrintQueueItemResponse",
+  "type": "object"
+ },
+ "PrintQueueItemUpdate": {
+  "properties": {
+   "add_copies": {
+    "default": 0,
+    "maximum": 998,
+    "minimum": 0,
+    "title": "Add Copies",
+    "type": "integer"
+   },
+   "ams_mapping": {
+    "anyOf": [
+     {
+      "items": {
+       "type": "integer"
+      },
+      "type": "array"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Ams Mapping"
+   },
+   "auto_off_after": {
+    "anyOf": [
+     {
+      "type": "boolean"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Auto Off After"
+   },
+   "bed_levelling": {
+    "anyOf": [
+     {
+      "enum": [
+       "off",
+       "on",
+       "auto"
+      ],
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Bed Levelling"
+   },
+   "confirm_outcome": {
+    "anyOf": [
+     {
+      "type": "boolean"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Confirm Outcome"
+   },
+   "cost_center_id": {
+    "anyOf": [
+     {
+      "type": "integer"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Cost Center Id"
+   },
+   "estimated_cost": {
+    "anyOf": [
+     {
+      "type": "number"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Estimated Cost"
+   },
+   "filament_overrides": {
+    "anyOf": [
+     {
+      "items": {
+       "additionalProperties": true,
+       "type": "object"
+      },
+      "type": "array"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Filament Overrides"
+   },
+   "flow_cali": {
+    "anyOf": [
+     {
+      "enum": [
+       "off",
+       "on",
+       "auto"
+      ],
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Flow Cali"
+   },
+   "gcode_injection": {
+    "anyOf": [
+     {
+      "type": "boolean"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Gcode Injection"
+   },
+   "layer_inspect": {
+    "anyOf": [
+     {
+      "type": "boolean"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Layer Inspect"
+   },
+   "manual_start": {
+    "anyOf": [
+     {
+      "type": "boolean"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Manual Start"
+   },
+   "nozzle_mapping": {
+    "anyOf": [
+     {
+      "items": {
+       "type": "integer"
+      },
+      "type": "array"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Nozzle Mapping"
+   },
+   "nozzle_offset_cali": {
+    "anyOf": [
+     {
+      "enum": [
+       "off",
+       "on",
+       "auto"
+      ],
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Nozzle Offset Cali"
+   },
+   "nozzle_rack_choice": {
+    "anyOf": [
+     {
+      "additionalProperties": {
+       "type": "integer"
+      },
+      "type": "object"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Nozzle Rack Choice"
+   },
+   "plate_id": {
+    "anyOf": [
+     {
+      "type": "integer"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Plate Id"
+   },
+   "position": {
+    "anyOf": [
+     {
+      "type": "integer"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Position"
+   },
+   "preheat_chamber_target_override": {
+    "anyOf": [
+     {
+      "maximum": 65,
+      "minimum": 0,
+      "type": "integer"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Preheat Chamber Target Override"
+   },
+   "preheat_override": {
+    "anyOf": [
+     {
+      "enum": [
+       "inherit",
+       "on",
+       "off"
+      ],
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Preheat Override"
+   },
+   "printer_id": {
+    "anyOf": [
+     {
+      "type": "integer"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Printer Id"
+   },
+   "require_previous_success": {
+    "anyOf": [
+     {
+      "type": "boolean"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Require Previous Success"
+   },
+   "scheduled_time": {
+    "anyOf": [
+     {
+      "format": "date-time",
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Scheduled Time"
+   },
+   "skip_filament_check": {
+    "anyOf": [
+     {
+      "type": "boolean"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Skip Filament Check"
+   },
+   "target_location": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Target Location"
+   },
+   "target_model": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Target Model"
+   },
+   "timelapse": {
+    "anyOf": [
+     {
+      "type": "boolean"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Timelapse"
+   },
+   "use_ams": {
+    "anyOf": [
+     {
+      "type": "boolean"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Use Ams"
+   },
+   "vibration_cali": {
+    "anyOf": [
+     {
+      "type": "boolean"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Vibration Cali"
+   }
+  },
+  "title": "PrintQueueItemUpdate",
+  "type": "object"
+ },
+ "PrintQueueReorder": {
+  "$defs": {
+   "PrintQueueReorderItem": {
+    "properties": {
+     "id": {
+      "title": "Id",
+      "type": "integer"
+     },
+     "position": {
+      "title": "Position",
+      "type": "integer"
+     }
+    },
+    "required": [
+     "id",
+     "position"
+    ],
+    "title": "PrintQueueReorderItem",
+    "type": "object"
+   }
+  },
+  "properties": {
+   "items": {
+    "items": {
+     "$ref": "#/$defs/PrintQueueReorderItem"
+    },
+    "title": "Items",
+    "type": "array"
+   }
+  },
+  "required": [
+   "items"
+  ],
+  "title": "PrintQueueReorder",
+  "type": "object"
+ },
+ "PrintQueueReorderItem": {
+  "properties": {
+   "id": {
+    "title": "Id",
+    "type": "integer"
+   },
+   "position": {
+    "title": "Position",
+    "type": "integer"
+   }
+  },
+  "required": [
+   "id",
+   "position"
+  ],
+  "title": "PrintQueueReorderItem",
+  "type": "object"
+ },
+ "QueueVariantCreate": {
+  "description": "One candidate file for a cross-model queue item (#671).\n\nPer-file rather than per-item because the settings genuinely differ between\ncandidates: an H2C slice is dual-nozzle and will not share slot count, AMS\nmapping or nozzle mapping with the H2S slice of the same model.\n\n``target_model`` is normally omitted and read from the file's own\n``sliced_for_model``; supply it only for a legacy 3MF that declares none.",
+  "properties": {
+   "ams_mapping": {
+    "anyOf": [
+     {
+      "items": {
+       "type": "integer"
+      },
+      "type": "array"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Ams Mapping"
+   },
+   "filament_overrides": {
+    "anyOf": [
+     {
+      "items": {
+       "additionalProperties": true,
+       "type": "object"
+      },
+      "type": "array"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Filament Overrides"
+   },
+   "library_file_id": {
+    "title": "Library File Id",
+    "type": "integer"
+   },
+   "nozzle_mapping": {
+    "anyOf": [
+     {
+      "items": {
+       "type": "integer"
+      },
+      "type": "array"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Nozzle Mapping"
+   },
+   "nozzle_rack_choice": {
+    "anyOf": [
+     {
+      "additionalProperties": {
+       "type": "integer"
+      },
+      "type": "object"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Nozzle Rack Choice"
+   },
+   "plate_id": {
+    "anyOf": [
+     {
+      "type": "integer"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Plate Id"
+   },
+   "target_model": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Target Model"
+   }
+  },
+  "required": [
+   "library_file_id"
+  ],
+  "title": "QueueVariantCreate",
+  "type": "object"
+ },
+ "QueueVariantSummary": {
+  "description": "One candidate on a cross-model queue item, for display (#671).",
+  "properties": {
+   "filename": {
+    "title": "Filename",
+    "type": "string"
+   },
+   "library_file_id": {
+    "title": "Library File Id",
+    "type": "integer"
+   },
+   "position": {
+    "title": "Position",
+    "type": "integer"
+   },
+   "target_model": {
+    "title": "Target Model",
+    "type": "string"
+   }
+  },
+  "required": [
+   "library_file_id",
+   "filename",
+   "target_model",
+   "position"
+  ],
+  "title": "QueueVariantSummary",
+  "type": "object"
+ }
+}
+=== validation
+{"fields_set": [], "input": {}, "model": "PrintQueueItemCreate", "ok": {}}
+{"fields_set": ["archive_id", "bed_levelling", "flow_cali", "nozzle_offset_cali"], "input": {"archive_id": 1, "bed_levelling": true, "flow_cali": false, "nozzle_offset_cali": "on"}, "model": "PrintQueueItemCreate", "ok": {"archive_id": 1, "bed_levelling": "on", "flow_cali": "off", "nozzle_offset_cali": "on"}}
+{"fields_set": ["bed_levelling", "flow_cali", "nozzle_offset_cali"], "input": {"bed_levelling": 0, "flow_cali": 1, "nozzle_offset_cali": 2}, "model": "PrintQueueItemCreate", "ok": {"bed_levelling": "off", "flow_cali": "on", "nozzle_offset_cali": "auto"}}
+{"errors": [{"loc": ["bed_levelling"], "msg": "Input should be 'off', 'on' or 'auto'", "type": "literal_error"}], "input": {"bed_levelling": "AUTO"}, "model": "PrintQueueItemCreate"}
+{"fields_set": ["bed_levelling"], "input": {"bed_levelling": 3}, "model": "PrintQueueItemCreate", "ok": {"bed_levelling": "auto"}}
+{"errors": [{"loc": ["bed_levelling"], "msg": "Input should be 'off', 'on' or 'auto'", "type": "literal_error"}], "input": {"bed_levelling": null}, "model": "PrintQueueItemCreate"}
+{"errors": [{"loc": ["bed_levelling"], "msg": "Input should be 'off', 'on' or 'auto'", "type": "literal_error"}], "input": {"bed_levelling": "maybe"}, "model": "PrintQueueItemCreate"}
+{"fields_set": ["scheduled_time"], "input": {"scheduled_time": "2026-05-01T10:00:00+02:00"}, "model": "PrintQueueItemCreate", "ok": {"scheduled_time": "2026-05-01T08:00:00"}}
+{"fields_set": ["scheduled_time"], "input": {"scheduled_time": "2026-05-01T10:00:00Z"}, "model": "PrintQueueItemCreate", "ok": {"scheduled_time": "2026-05-01T10:00:00"}}
+{"fields_set": ["scheduled_time"], "input": {"scheduled_time": "2026-05-01T10:00:00"}, "model": "PrintQueueItemCreate", "ok": {"scheduled_time": "2026-05-01T10:00:00"}}
+{"errors": [{"loc": ["scheduled_time"], "msg": "Input should be a valid datetime or date, invalid character in year", "type": "datetime_from_date_parsing"}], "input": {"scheduled_time": "not a date"}, "model": "PrintQueueItemCreate"}
+{"fields_set": ["scheduled_time"], "input": {"scheduled_time": null}, "model": "PrintQueueItemCreate", "ok": {"scheduled_time": null}}
+{"fields_set": ["preheat_chamber_target_override", "preheat_override"], "input": {"preheat_chamber_target_override": 45, "preheat_override": "on"}, "model": "PrintQueueItemCreate", "ok": {"preheat_chamber_target_override": 45, "preheat_override": "on"}}
+{"errors": [{"loc": ["preheat_override"], "msg": "Input should be 'inherit', 'on' or 'off'", "type": "literal_error"}], "input": {"preheat_override": "maybe"}, "model": "PrintQueueItemCreate"}
+{"errors": [{"loc": ["preheat_chamber_target_override"], "msg": "Input should be greater than or equal to 0", "type": "greater_than_equal"}], "input": {"preheat_chamber_target_override": -1}, "model": "PrintQueueItemCreate"}
+{"errors": [{"loc": ["preheat_chamber_target_override"], "msg": "Input should be less than or equal to 65", "type": "less_than_equal"}], "input": {"preheat_chamber_target_override": 1000}, "model": "PrintQueueItemCreate"}
+{"fields_set": ["quantity"], "input": {"quantity": 0}, "model": "PrintQueueItemCreate", "ok": {"quantity": 0}}
+{"fields_set": ["quantity"], "input": {"quantity": 5000}, "model": "PrintQueueItemCreate", "ok": {"quantity": 5000}}
+{"fields_set": ["quantity"], "input": {"quantity": "3"}, "model": "PrintQueueItemCreate", "ok": {"quantity": 3}}
+{"fields_set": ["ams_mapping", "filament_overrides", "nozzle_rack_choice"], "input": {"ams_mapping": [0, -1, 3], "filament_overrides": [{"slot_id": 1, "type": "PLA"}], "nozzle_rack_choice": {"1": 2}}, "model": "PrintQueueItemCreate", "ok": {"ams_mapping": [0, -1, 3], "filament_overrides": [{"slot_id": 1, "type": "PLA"}], "nozzle_rack_choice": {"1": 2}}}
+{"errors": [{"loc": ["ams_mapping"], "msg": "Input should be a valid list", "type": "list_type"}], "input": {"ams_mapping": "0,1"}, "model": "PrintQueueItemCreate"}
+{"fields_set": ["variants"], "input": {"variants": [{"library_file_id": 4}, {"library_file_id": 5, "plate_id": 2, "target_model": "H2D"}]}, "model": "PrintQueueItemCreate", "ok": {"variants": [{"library_file_id": 4}, {"library_file_id": 5, "plate_id": 2, "target_model": "H2D"}]}}
+{"errors": [{"loc": ["variants", 0, "library_file_id"], "msg": "Field required", "type": "missing"}], "input": {"variants": [{}]}, "model": "PrintQueueItemCreate"}
+{"fields_set": ["printer_id"], "input": {"printer_id": "7", "unknown_field": 1}, "model": "PrintQueueItemCreate", "ok": {"printer_id": 7}}
+{"fields_set": [], "input": {}, "model": "PrintQueueItemUpdate", "ok": {}}
+{"fields_set": ["printer_id", "scheduled_time"], "input": {"bed_levelling": null, "manual_start": null, "printer_id": null, "scheduled_time": null, "timelapse": null}, "model": "PrintQueueItemUpdate", "ok": {"printer_id": null, "scheduled_time": null}}
+{"fields_set": ["bed_levelling", "position", "use_ams"], "input": {"bed_levelling": true, "position": 3, "use_ams": false}, "model": "PrintQueueItemUpdate", "ok": {"bed_levelling": "on", "position": 3, "use_ams": false}}
+{"fields_set": ["add_copies"], "input": {"add_copies": 998}, "model": "PrintQueueItemUpdate", "ok": {"add_copies": 998}}
+{"errors": [{"loc": ["add_copies"], "msg": "Input should be less than or equal to 998", "type": "less_than_equal"}], "input": {"add_copies": 999}, "model": "PrintQueueItemUpdate"}
+{"errors": [{"loc": ["add_copies"], "msg": "Input should be greater than or equal to 0", "type": "greater_than_equal"}], "input": {"add_copies": -1}, "model": "PrintQueueItemUpdate"}
+{"errors": [{"loc": ["add_copies"], "msg": "Input should be a valid integer", "type": "int_type"}], "input": {"add_copies": null}, "model": "PrintQueueItemUpdate"}
+{"fields_set": ["scheduled_time"], "input": {"preheat_override": null, "scheduled_time": "2026-05-01T10:00:00-10:00"}, "model": "PrintQueueItemUpdate", "ok": {"scheduled_time": "2026-05-01T20:00:00"}}
+{"fields_set": ["items"], "input": {"items": []}, "model": "PrintQueueReorder", "ok": {"items": []}}
+{"fields_set": ["items"], "input": {"items": [{"id": 1, "position": 2}, {"id": 2, "position": 1}]}, "model": "PrintQueueReorder", "ok": {"items": [{"id": 1, "position": 2}, {"id": 2, "position": 1}]}}
+{"fields_set": ["items"], "input": {"items": [{"id": 1, "position": 1}, {"id": 1, "position": 2}]}, "model": "PrintQueueReorder", "ok": {"items": [{"id": 1, "position": 1}, {"id": 1, "position": 2}]}}
+{"errors": [{"loc": [], "msg": "Value error, Duplicate positions in reorder request: [1]", "type": "value_error"}], "input": {"items": [{"id": 1, "position": 1}, {"id": 2, "position": 1}]}, "model": "PrintQueueReorder"}
+{"fields_set": ["items"], "input": {"items": [{"id": 1, "position": 0}]}, "model": "PrintQueueReorder", "ok": {"items": [{"id": 1, "position": 0}]}}
+{"fields_set": ["items"], "input": {"items": [{"id": 1, "position": -4}]}, "model": "PrintQueueReorder", "ok": {"items": [{"id": 1, "position": -4}]}}
+{"errors": [{"loc": ["items", 0, "position"], "msg": "Field required", "type": "missing"}], "input": {"items": [{"id": 1}]}, "model": "PrintQueueReorder"}
+{"errors": [{"loc": ["items"], "msg": "Field required", "type": "missing"}], "input": {}, "model": "PrintQueueReorder"}
+{"fields_set": ["item_ids"], "input": {"item_ids": []}, "model": "PrintQueueBulkUpdate", "ok": {"item_ids": []}}
+{"fields_set": ["bed_levelling", "item_ids", "timelapse"], "input": {"bed_levelling": false, "item_ids": [1, 2], "timelapse": true, "vibration_cali": null}, "model": "PrintQueueBulkUpdate", "ok": {"bed_levelling": "off", "item_ids": [1, 2], "timelapse": true}}
+{"errors": [{"loc": ["item_ids"], "msg": "Field required", "type": "missing"}], "input": {"timelapse": true}, "model": "PrintQueueBulkUpdate"}
+{"errors": [{"loc": ["preheat_chamber_target_override"], "msg": "Input should be less than or equal to 65", "type": "less_than_equal"}], "input": {"item_ids": [1], "preheat_chamber_target_override": 500}, "model": "PrintQueueBulkUpdate"}
+{"errors": [{"loc": ["item_ids"], "msg": "List should have at least 1 item after validation, not 0", "type": "too_short"}], "input": {"item_ids": []}, "model": "PrintQueueDuplicateRequest"}
+{"fields_set": ["item_ids"], "input": {"item_ids": [1, 1, 2]}, "model": "PrintQueueDuplicateRequest", "ok": {"item_ids": [1, 1, 2]}}
+{"errors": [{"loc": ["item_ids"], "msg": "List should have at most 500 items after validation, not 501", "type": "too_long"}], "input": "<long>", "model": "PrintQueueDuplicateRequest"}
+{"fields_set": [], "input": {}, "model": "PrintBatchPlateTarget", "ok": {}}
+{"fields_set": ["plate_id", "quantity_target"], "input": {"plate_id": 2, "quantity_target": 0}, "model": "PrintBatchPlateTarget", "ok": {"plate_id": 2, "quantity_target": 0}}
+{"errors": [{"loc": ["quantity_target"], "msg": "Input should be less than or equal to 999", "type": "less_than_equal"}], "input": {"quantity_target": 1000}, "model": "PrintBatchPlateTarget"}
+{"errors": [{"loc": ["quantity_target"], "msg": "Input should be greater than or equal to 0", "type": "greater_than_equal"}], "input": {"quantity_target": -1}, "model": "PrintBatchPlateTarget"}
+{"errors": [{"loc": ["name"], "msg": "Field required", "type": "missing"}], "input": {}, "model": "PrintBatchCreate"}
+{"fields_set": ["name"], "input": {"name": "b"}, "model": "PrintBatchCreate", "ok": {"name": "b"}}
+{"fields_set": ["archive_id", "name"], "input": {"archive_id": 1, "name": "b"}, "model": "PrintBatchCreate", "ok": {"archive_id": 1, "name": "b"}}
+{"fields_set": ["archive_id", "library_file_id", "name"], "input": {"archive_id": 1, "library_file_id": 2, "name": "b"}, "model": "PrintBatchCreate", "ok": {"archive_id": 1, "library_file_id": 2, "name": "b"}}
+{"fields_set": ["item_ids", "name"], "input": {"item_ids": [1, 2], "name": "b"}, "model": "PrintBatchCreate", "ok": {"item_ids": [1, 2], "name": "b"}}
+{"fields_set": ["archive_id", "item_ids", "name"], "input": {"archive_id": 1, "item_ids": [1], "name": "b"}, "model": "PrintBatchCreate", "ok": {"archive_id": 1, "item_ids": [1], "name": "b"}}
+{"fields_set": ["item_ids", "name"], "input": {"item_ids": [], "name": "b"}, "model": "PrintBatchCreate", "ok": {"item_ids": [], "name": "b"}}
+{"fields_set": ["due_date", "library_file_id", "name", "notes", "plates"], "input": {"due_date": "2026-06-01T00:00:00Z", "library_file_id": 1, "name": "b", "notes": "n", "plates": [{"plate_id": 1, "quantity_target": 3}]}, "model": "PrintBatchCreate", "ok": {"due_date": "2026-06-01T00:00:00Z", "library_file_id": 1, "name": "b", "notes": "n", "plates": [{"plate_id": 1, "quantity_target": 3}]}}
+{"fields_set": ["external_ref", "external_source", "library_file_id", "name"], "input": {"external_ref": "#1079", "external_source": "shopify", "library_file_id": 1, "name": "b"}, "model": "PrintBatchCreate", "ok": {"external_ref": "#1079", "external_source": "shopify", "library_file_id": 1, "name": "b"}}
+{"errors": [{"loc": ["external_source"], "msg": "String should match pattern '^[a-z0-9_-]+$'", "type": "string_pattern_mismatch"}], "input": {"external_source": "Shopify", "library_file_id": 1, "name": "b"}, "model": "PrintBatchCreate"}
+{"errors": [{"loc": [], "msg": "Value error, external_source and external_ref must be given together", "type": "value_error"}], "input": {"external_source": "shopify", "library_file_id": 1, "name": "b"}, "model": "PrintBatchCreate"}
+{"errors": [{"loc": [], "msg": "Value error, external_source and external_ref must be given together", "type": "value_error"}], "input": {"external_ref": "x", "library_file_id": 1, "name": "b"}, "model": "PrintBatchCreate"}
+{"errors": [{"loc": ["external_source"], "msg": "String should have at least 1 character", "type": "string_too_short"}, {"loc": ["external_ref"], "msg": "String should have at least 1 character", "type": "string_too_short"}], "input": {"external_ref": "", "external_source": "", "library_file_id": 1, "name": "b"}, "model": "PrintBatchCreate"}
+{"fields_set": [], "input": {}, "model": "PrintBatchUpdate", "ok": {}}
+{"fields_set": ["due_date", "notes", "project_id"], "input": {"due_date": null, "name": null, "notes": null, "project_id": null, "status": null}, "model": "PrintBatchUpdate", "ok": {"due_date": null, "notes": null, "project_id": null}}
+{"fields_set": ["status"], "input": {"status": "cancelled"}, "model": "PrintBatchUpdate", "ok": {"status": "cancelled"}}
+{"errors": [{"loc": ["status"], "msg": "Input should be 'active' or 'cancelled'", "type": "literal_error"}], "input": {"status": "completed"}, "model": "PrintBatchUpdate"}
+{"fields_set": [], "input": {}, "model": "PrintBatchDispatchRequest", "ok": {}}
+{"fields_set": ["limit", "only_plate", "plate_id"], "input": {"limit": 999, "only_plate": true, "plate_id": 1}, "model": "PrintBatchDispatchRequest", "ok": {"limit": 999, "only_plate": true, "plate_id": 1}}
+{"errors": [{"loc": ["limit"], "msg": "Input should be greater than or equal to 1", "type": "greater_than_equal"}], "input": {"limit": 0}, "model": "PrintBatchDispatchRequest"}
+{"errors": [{"loc": ["limit"], "msg": "Input should be less than or equal to 999", "type": "less_than_equal"}], "input": {"limit": 1000}, "model": "PrintBatchDispatchRequest"}
+{"fields_set": ["ams_mapping", "library_file_id", "nozzle_rack_choice"], "input": {"ams_mapping": [1], "library_file_id": 1, "nozzle_rack_choice": {"0": 1}}, "model": "QueueVariantCreate", "ok": {"ams_mapping": [1], "library_file_id": 1, "nozzle_rack_choice": {"0": 1}}}
+{"fields_set": ["got", "slot_id", "tray", "type", "wanted"], "input": {"got": "#000", "slot_id": 1, "tray": 3, "type": "PLA", "wanted": "#fff"}, "model": "ColorSubstitution", "ok": {"got": "#000", "slot_id": 1, "tray": 3, "type": "PLA", "wanted": "#fff"}}
+{"errors": [{"loc": ["type"], "msg": "Field required", "type": "missing"}, {"loc": ["wanted"], "msg": "Field required", "type": "missing"}, {"loc": ["got"], "msg": "Field required", "type": "missing"}, {"loc": ["tray"], "msg": "Field required", "type": "missing"}], "input": {"slot_id": 1}, "model": "ColorSubstitution"}
+=== response datetime serialization
+none {"completed_at": null, "created_at": "2026-01-01T00:00:00Z", "scheduled_time": null, "started_at": null}
+naive {"completed_at": "2026-05-01T10:00:00Z", "created_at": "2026-05-01T10:00:00Z", "scheduled_time": "2026-05-01T10:00:00Z", "started_at": "2026-05-01T10:00:00Z"}
+utc {"completed_at": "2026-05-01T10:00:00+00:00Z", "created_at": "2026-05-01T10:00:00+00:00Z", "scheduled_time": "2026-05-01T10:00:00+00:00Z", "started_at": "2026-05-01T10:00:00+00:00Z"}
+offset {"completed_at": "2026-05-01T10:00:00.123456-10:00Z", "created_at": "2026-05-01T10:00:00.123456-10:00Z", "scheduled_time": "2026-05-01T10:00:00.123456-10:00Z", "started_at": "2026-05-01T10:00:00.123456-10:00Z"}
+defaults {"aito_board_column": null, "aito_client_name": null, "aito_due_date": null, "aito_quantity": null, "aito_task_id": null, "aito_task_title": null, "ams_mapping": null, "archive_deleted": false, "archive_has_slicer_ams_mapping": false, "archive_id": null, "archive_name": null, "archive_thumbnail": null, "auto_off_after": false, "batch_id": null, "batch_name": null, "bed_levelling": "auto", "bed_type": null, "been_jumped": false, "cleanup_library_after_dispatch": false, "color_substitutions": null, "completed_at": null, "confirm_outcome": false, "cost_center_id": null, "created_at": "2026-01-01T00:00:00Z", "created_by_id": null, "created_by_username": null, "error_message": null, "estimated_cost": null, "filament_color": null, "filament_overrides": null, "filament_short": false, "filament_type": null, "filament_used_grams": null, "flow_cali": "auto", "gcode_injection": false, "id": 1, "layer_height": null, "layer_inspect": false, "library_file_id": null, "library_file_name": null, "library_file_thumbnail": null, "manual_start": false, "nozzle_diameter": null, "nozzle_mapping": null, "nozzle_offset_cali": "auto", "nozzle_rack_choice": null, "plate_id": null, "position": 1, "preheat_chamber_target_override": null, "preheat_override": "inherit", "print_time_seconds": null, "printer_id": null, "printer_name": null, "project_code": null, "project_name": null, "require_previous_success": false, "required_filament_types": null, "revision_id": null, "revision_item_name": null, "revision_number": null, "revision_status": null, "scheduled_time": null, "skip_filament_check": false, "slice_job_id": null, "sliced_for_model": null, "slicer_ams_mapping": null, "started_at": null, "status": "pending", "target_location": null, "target_model": null, "timelapse": false, "use_ams": true, "variants": [], "vibration_cali": true, "waiting_reason": null}
+bad status [(('status',), 'literal_error')]
+=== ddl
+constants {'SLICE_WAIT_STATUSES': ('slicing', 'slice_failed')}
+-- sqlite
+CREATE TABLE print_queue (
+	id INTEGER NOT NULL, 
+	printer_id INTEGER, 
+	target_model VARCHAR(50), 
+	target_location VARCHAR(100), 
+	required_filament_types TEXT, 
+	waiting_reason TEXT, 
+	archive_id INTEGER, 
+	library_file_id INTEGER, 
+	cost_center_id INTEGER, 
+	estimated_cost FLOAT, 
+	billing_run_id VARCHAR(36), 
+	project_id INTEGER, 
+	batch_id INTEGER, 
+	revision_id INTEGER, 
+	aito_task_id INTEGER, 
+	position INTEGER NOT NULL, 
+	scheduled_time DATETIME, 
+	manual_start BOOLEAN NOT NULL, 
+	require_previous_success BOOLEAN NOT NULL, 
+	auto_off_after BOOLEAN NOT NULL, 
+	ams_mapping TEXT, 
+	slicer_ams_mapping TEXT, 
+	filament_overrides TEXT, 
+	plate_id INTEGER, 
+	print_time_seconds INTEGER, 
+	been_jumped BOOLEAN NOT NULL, 
+	gcode_injection BOOLEAN NOT NULL, 
+	dispatch_attempts INTEGER DEFAULT '0' NOT NULL, 
+	nozzle_mapping TEXT, 
+	nozzles_info TEXT, 
+	nozzle_rack_choice TEXT, 
+	color_substitutions TEXT, 
+	cleanup_library_after_dispatch BOOLEAN DEFAULT 0 NOT NULL, 
+	bed_levelling VARCHAR(8) DEFAULT 'auto' NOT NULL, 
+	flow_cali VARCHAR(8) DEFAULT 'auto' NOT NULL, 
+	vibration_cali BOOLEAN NOT NULL, 
+	layer_inspect BOOLEAN NOT NULL, 
+	timelapse BOOLEAN NOT NULL, 
+	use_ams BOOLEAN NOT NULL, 
+	nozzle_offset_cali VARCHAR(8) DEFAULT 'auto' NOT NULL, 
+	confirm_outcome BOOLEAN DEFAULT '0' NOT NULL, 
+	preheat_override VARCHAR(10) DEFAULT 'inherit' NOT NULL, 
+	preheat_chamber_target_override INTEGER, 
+	status VARCHAR(20) NOT NULL, 
+	dispatching_at DATETIME, 
+	gate_acknowledged BOOLEAN DEFAULT 0 NOT NULL, 
+	filament_short BOOLEAN DEFAULT 0 NOT NULL, 
+	skip_filament_check BOOLEAN DEFAULT 0 NOT NULL, 
+	started_at DATETIME, 
+	completed_at DATETIME, 
+	error_message TEXT, 
+	created_at DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL, 
+	created_by_id INTEGER, 
+	PRIMARY KEY (id), 
+	FOREIGN KEY(printer_id) REFERENCES printers (id) ON DELETE CASCADE, 
+	FOREIGN KEY(archive_id) REFERENCES print_archives (id) ON DELETE CASCADE, 
+	FOREIGN KEY(library_file_id) REFERENCES library_files (id) ON DELETE CASCADE, 
+	FOREIGN KEY(cost_center_id) REFERENCES cost_centers (id) ON DELETE SET NULL, 
+	FOREIGN KEY(project_id) REFERENCES projects (id) ON DELETE SET NULL, 
+	FOREIGN KEY(batch_id) REFERENCES print_batches (id) ON DELETE SET NULL, 
+	FOREIGN KEY(created_by_id) REFERENCES users (id) ON DELETE SET NULL
+);
+CREATE INDEX ix_print_queue_aito_task_id ON print_queue (aito_task_id);
+CREATE INDEX ix_print_queue_revision_id ON print_queue (revision_id);
+-- postgresql
+CREATE TABLE print_queue (
+	id SERIAL NOT NULL, 
+	printer_id INTEGER, 
+	target_model VARCHAR(50), 
+	target_location VARCHAR(100), 
+	required_filament_types TEXT, 
+	waiting_reason TEXT, 
+	archive_id INTEGER, 
+	library_file_id INTEGER, 
+	cost_center_id INTEGER, 
+	estimated_cost FLOAT, 
+	billing_run_id VARCHAR(36), 
+	project_id INTEGER, 
+	batch_id INTEGER, 
+	revision_id INTEGER, 
+	aito_task_id INTEGER, 
+	position INTEGER NOT NULL, 
+	scheduled_time TIMESTAMP WITHOUT TIME ZONE, 
+	manual_start BOOLEAN NOT NULL, 
+	require_previous_success BOOLEAN NOT NULL, 
+	auto_off_after BOOLEAN NOT NULL, 
+	ams_mapping TEXT, 
+	slicer_ams_mapping TEXT, 
+	filament_overrides TEXT, 
+	plate_id INTEGER, 
+	print_time_seconds INTEGER, 
+	been_jumped BOOLEAN NOT NULL, 
+	gcode_injection BOOLEAN NOT NULL, 
+	dispatch_attempts INTEGER DEFAULT '0' NOT NULL, 
+	nozzle_mapping TEXT, 
+	nozzles_info TEXT, 
+	nozzle_rack_choice TEXT, 
+	color_substitutions TEXT, 
+	cleanup_library_after_dispatch BOOLEAN DEFAULT false NOT NULL, 
+	bed_levelling VARCHAR(8) DEFAULT 'auto' NOT NULL, 
+	flow_cali VARCHAR(8) DEFAULT 'auto' NOT NULL, 
+	vibration_cali BOOLEAN NOT NULL, 
+	layer_inspect BOOLEAN NOT NULL, 
+	timelapse BOOLEAN NOT NULL, 
+	use_ams BOOLEAN NOT NULL, 
+	nozzle_offset_cali VARCHAR(8) DEFAULT 'auto' NOT NULL, 
+	confirm_outcome BOOLEAN DEFAULT '0' NOT NULL, 
+	preheat_override VARCHAR(10) DEFAULT 'inherit' NOT NULL, 
+	preheat_chamber_target_override INTEGER, 
+	status VARCHAR(20) NOT NULL, 
+	dispatching_at TIMESTAMP WITHOUT TIME ZONE, 
+	gate_acknowledged BOOLEAN DEFAULT false NOT NULL, 
+	filament_short BOOLEAN DEFAULT false NOT NULL, 
+	skip_filament_check BOOLEAN DEFAULT false NOT NULL, 
+	started_at TIMESTAMP WITHOUT TIME ZONE, 
+	completed_at TIMESTAMP WITHOUT TIME ZONE, 
+	error_message TEXT, 
+	created_at TIMESTAMP WITHOUT TIME ZONE DEFAULT now() NOT NULL, 
+	created_by_id INTEGER, 
+	PRIMARY KEY (id), 
+	FOREIGN KEY(printer_id) REFERENCES printers (id) ON DELETE CASCADE, 
+	FOREIGN KEY(archive_id) REFERENCES print_archives (id) ON DELETE CASCADE, 
+	FOREIGN KEY(library_file_id) REFERENCES library_files (id) ON DELETE CASCADE, 
+	FOREIGN KEY(cost_center_id) REFERENCES cost_centers (id) ON DELETE SET NULL, 
+	FOREIGN KEY(project_id) REFERENCES projects (id) ON DELETE SET NULL, 
+	FOREIGN KEY(batch_id) REFERENCES print_batches (id) ON DELETE SET NULL, 
+	FOREIGN KEY(created_by_id) REFERENCES users (id) ON DELETE SET NULL
+);
+CREATE INDEX ix_print_queue_aito_task_id ON print_queue (aito_task_id);
+CREATE INDEX ix_print_queue_revision_id ON print_queue (revision_id);
+columns [('id', None, None), ('printer_id', None, None), ('target_model', None, None), ('target_location', None, None), ('required_filament_types', None, None), ('waiting_reason', None, None), ('archive_id', None, None), ('library_file_id', None, None), ('cost_center_id', None, None), ('estimated_cost', None, None), ('billing_run_id', None, None), ('project_id', None, None), ('batch_id', None, None), ('revision_id', None, None), ('aito_task_id', None, None), ('position', '0', None), ('scheduled_time', None, None), ('manual_start', 'False', None), ('require_previous_success', 'False', None), ('auto_off_after', 'False', None), ('ams_mapping', None, None), ('slicer_ams_mapping', None, None), ('filament_overrides', None, None), ('plate_id', None, None), ('print_time_seconds', None, None), ('been_jumped', 'False', None), ('gcode_injection', 'False', None), ('dispatch_attempts', '0', '0'), ('nozzle_mapping', None, None), ('nozzles_info', None, None), ('nozzle_rack_choice', None, None), ('color_substitutions', None, None), ('cleanup_library_after_dispatch', 'False', 'false'), ('bed_levelling', "'auto'", 'auto'), ('flow_cali', "'auto'", 'auto'), ('vibration_cali', 'True', None), ('layer_inspect', 'False', None), ('timelapse', 'False', None), ('use_ams', 'True', None), ('nozzle_offset_cali', "'auto'", 'auto'), ('confirm_outcome', 'False', '0'), ('preheat_override', "'inherit'", 'inherit'), ('preheat_chamber_target_override', None, None), ('status', "'pending'", None), ('dispatching_at', None, None), ('gate_acknowledged', 'False', 'false'), ('filament_short', 'False', 'false'), ('skip_filament_check', 'False', 'false'), ('started_at', None, None), ('completed_at', None, None), ('error_message', None, None), ('created_at', None, 'now()'), ('created_by_id', None, None)]
+-- sqlite
+CREATE TABLE print_queue_variants (
+	id INTEGER NOT NULL, 
+	queue_item_id INTEGER NOT NULL, 
+	position INTEGER NOT NULL, 
+	library_file_id INTEGER NOT NULL, 
+	target_model VARCHAR(50) NOT NULL, 
+	plate_id INTEGER, 
+	ams_mapping TEXT, 
+	nozzle_mapping TEXT, 
+	nozzle_rack_choice TEXT, 
+	filament_overrides TEXT, 
+	required_filament_types TEXT, 
+	print_time_seconds INTEGER, 
+	attempt_count INTEGER DEFAULT '0' NOT NULL, 
+	created_at DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL, 
+	PRIMARY KEY (id), 
+	FOREIGN KEY(queue_item_id) REFERENCES print_queue (id) ON DELETE CASCADE, 
+	FOREIGN KEY(library_file_id) REFERENCES library_files (id) ON DELETE CASCADE
+);
+CREATE INDEX ix_print_queue_variants_queue_item_id ON print_queue_variants (queue_item_id);
+-- postgresql
+CREATE TABLE print_queue_variants (
+	id SERIAL NOT NULL, 
+	queue_item_id INTEGER NOT NULL, 
+	position INTEGER NOT NULL, 
+	library_file_id INTEGER NOT NULL, 
+	target_model VARCHAR(50) NOT NULL, 
+	plate_id INTEGER, 
+	ams_mapping TEXT, 
+	nozzle_mapping TEXT, 
+	nozzle_rack_choice TEXT, 
+	filament_overrides TEXT, 
+	required_filament_types TEXT, 
+	print_time_seconds INTEGER, 
+	attempt_count INTEGER DEFAULT '0' NOT NULL, 
+	created_at TIMESTAMP WITHOUT TIME ZONE DEFAULT now() NOT NULL, 
+	PRIMARY KEY (id), 
+	FOREIGN KEY(queue_item_id) REFERENCES print_queue (id) ON DELETE CASCADE, 
+	FOREIGN KEY(library_file_id) REFERENCES library_files (id) ON DELETE CASCADE
+);
+CREATE INDEX ix_print_queue_variants_queue_item_id ON print_queue_variants (queue_item_id);
+columns [('id', None, None), ('queue_item_id', None, None), ('position', '0', None), ('library_file_id', None, None), ('target_model', None, None), ('plate_id', None, None), ('ams_mapping', None, None), ('nozzle_mapping', None, None), ('nozzle_rack_choice', None, None), ('filament_overrides', None, None), ('required_filament_types', None, None), ('print_time_seconds', None, None), ('attempt_count', '0', '0'), ('created_at', None, 'now()')]
+relationships PrintQueueItem [('archive', 'PrintArchive', 'MANYTOONE', "CascadeOptions('merge,save-update')", 'select'), ('batch', 'PrintBatch', 'MANYTOONE', "CascadeOptions('merge,save-update')", 'select'), ('cost_center', 'CostCenter', 'MANYTOONE', "CascadeOptions('merge,save-update')", 'select'), ('created_by', 'User', 'MANYTOONE', "CascadeOptions('merge,save-update')", 'select'), ('library_file', 'LibraryFile', 'MANYTOONE', "CascadeOptions('merge,save-update')", 'select'), ('printer', 'Printer', 'MANYTOONE', "CascadeOptions('merge,save-update')", 'select'), ('project', 'Project', 'MANYTOONE', "CascadeOptions('merge,save-update')", 'select'), ('variants', 'PrintQueueVariant', 'ONETOMANY', "CascadeOptions('delete,delete-orphan,expunge,merge,refresh-expire,save-update')", 'select')]
+relationships PrintQueueVariant [('library_file', 'LibraryFile', 'MANYTOONE', "CascadeOptions('merge,save-update')", 'select'), ('queue_item', 'PrintQueueItem', 'MANYTOONE', "CascadeOptions('merge,save-update')", 'select')]
+
+### stderr:
+
