@@ -1854,6 +1854,16 @@ const HISTORY_PAGE_SIZE = 50;
 const ACTIVE_STATUSES = ['pending', 'printing', 'skipped'];
 const EMPTY_QUEUE: PrintQueueItem[] = [];
 
+// Positions are one sequence across every pending job, so a reorder of a filtered
+// view hands the visible jobs the positions they already occupy (hidden jobs keep
+// their place). The reorder route rejects duplicate positions in one request, so
+// if two visible jobs share a position we fall back to 1..n.
+function reorderUpdates(reordered: PrintQueueItem[]) {
+  const slots = reordered.map((i) => i.position).sort((a, b) => a - b);
+  const distinct = new Set(slots).size === slots.length;
+  return reordered.map((item, index) => ({ id: item.id, position: distinct ? slots[index] : index + 1 }));
+}
+
 export function QueuePage() {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
@@ -2602,11 +2612,7 @@ export function QueuePage() {
       ...remaining.slice(insertAt),
     ];
 
-    const updates = reordered.map((item, index) => ({
-      id: item.id,
-      position: index + 1,
-    }));
-    reorderMutation.mutate(updates);
+    reorderMutation.mutate(reorderUpdates(reordered));
   };
 
   // Group pending items by batch_id. Items with batch_id null render as
@@ -2679,9 +2685,7 @@ export function QueuePage() {
       ...movingItems,
       ...remaining.slice(insertAt),
     ];
-    reorderMutation.mutate(
-      reordered.map((item, index) => ({ id: item.id, position: index + 1 })),
-    );
+    reorderMutation.mutate(reorderUpdates(reordered));
   };
 
   // Build up/down thunks for the row at `idx` within its displayed sibling

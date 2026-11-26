@@ -7,12 +7,13 @@ import re
 import zipfile
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any, Literal, cast
 
 import defusedxml.ElementTree as ET
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import ValidationError
 from sqlalchemy import ColumnElement, UnaryExpression, and_, case, func, inspect, or_, select, update
+from sqlalchemy.engine import CursorResult
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased, selectinload
@@ -2577,8 +2578,22 @@ async def cancel_batch(
     cancelled_count = 0
     cancelled_ids: list[int] = []
     for item in pending_items:
+        # Conditional write: skip a row the scheduler moved to printing since the read.
+        cancelled_at = datetime.now(timezone.utc)
+        claimed = cast(
+            CursorResult,
+            await db.execute(
+                update(PrintQueueItem)
+                .where(PrintQueueItem.id == item.id, PrintQueueItem.status.in_(("pending", *SLICE_WAIT_STATUSES)))
+                .values(status="cancelled", completed_at=cancelled_at)
+                .execution_options(synchronize_session=False)
+            ),
+        )
+        if claimed.rowcount == 0:
+            continue
+        # Mirror the write on the loaded row: keeps it fresh and marks the session dirty (wakes the scheduler on commit).
         item.status = "cancelled"
-        item.completed_at = datetime.now(timezone.utc)
+        item.completed_at = cancelled_at
         await release_budget_reservation(
             db,
             source_type="print_queue",
@@ -3083,6 +3098,20 @@ async def delete_queue_item(
     if item.status == "printing":
         raise HTTPException(400, "Cannot delete item that is currently printing")
 
+    # Conditional no-op write: takes the row lock and fails when the scheduler moved the row to
+    # printing since the read; the ORM delete below keeps its variant cascade.
+    claimed = cast(
+        CursorResult,
+        await db.execute(
+            update(PrintQueueItem)
+            .where(PrintQueueItem.id == item_id, PrintQueueItem.status != "printing")
+            .values(status=PrintQueueItem.status)
+            .execution_options(synchronize_session=False)
+        ),
+    )
+    if claimed.rowcount == 0:
+        raise HTTPException(409, "Cannot delete item: it is already printing")
+
     batch_id = item.batch_id
     keep_as_cancelled = not await _remove_queue_item(db, item)
     await db.commit()
@@ -3253,8 +3282,22 @@ async def cancel_queue_item(
     if item.status not in ("pending", *SLICE_WAIT_STATUSES):
         raise HTTPException(400, f"Cannot cancel item with status '{item.status}'")
 
+    # Conditional write: the scheduler may have moved the row to printing since the read.
+    cancelled_at = datetime.now(timezone.utc)
+    claimed = cast(
+        CursorResult,
+        await db.execute(
+            update(PrintQueueItem)
+            .where(PrintQueueItem.id == item.id, PrintQueueItem.status.in_(("pending", *SLICE_WAIT_STATUSES)))
+            .values(status="cancelled", completed_at=cancelled_at)
+            .execution_options(synchronize_session=False)
+        ),
+    )
+    if claimed.rowcount == 0:
+        raise HTTPException(409, "Cannot cancel item: it is already printing")
+    # Mirror the write on the loaded row: keeps it fresh and marks the session dirty (wakes the scheduler on commit).
     item.status = "cancelled"
-    item.completed_at = datetime.now(timezone.utc)
+    item.completed_at = cancelled_at
     await release_budget_reservation(
         db,
         source_type="print_queue",
