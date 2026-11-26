@@ -181,7 +181,8 @@ export function useCounterPay(opts?: { onCreateError?: (e: unknown) => void }) {
       // Created earlier: re-read first, the invoice may be paid already (lost answer) or missing from the answered board.
       let row = await take(await api.getOrderBoard());
       const invoice = invoiceOf(row ?? undefined, c.invoiceNumber);
-      if (invoice && !attributed(invoice, c.paid)) row = await take((await api.applyOrderCredit(c.orderId, invoice.id)).board);
+      // The cap: only what this sale took and the invoice does not hold yet, never the customer's other credit.
+      if (invoice && !attributed(invoice, c.paid)) row = await take((await api.applyOrderCredit(c.orderId, invoice.id, Math.max(0, Math.round((c.paid - (invoice.total - invoice.balance)) * 100) / 100))).board);
       if (!checkInvoice(row)) return;
     }
     await toParcel();

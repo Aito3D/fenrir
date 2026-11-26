@@ -164,6 +164,7 @@ class PrepSheetBatchBody(BaseModel):
 async def print_prep_sheet_batch(
 # backend/app/api/routes/order_board/documents.py
 class DocumentEmailBody(BaseModel):
+class ApplyCreditBody(BaseModel):
 class ContactBody(BaseModel):
 async def get_document_pdf(
 async def get_document_email(

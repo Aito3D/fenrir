@@ -205,7 +205,7 @@ class OrderNotOnBoard(Exception)
 class QuoteNotStored(Exception)
 async def _row(db: sqlalchemy.ext.asyncio.session.AsyncSession, salesorder_id: str) -> dict
 async def accept_quote(db: sqlalchemy.ext.asyncio.session.AsyncSession, estimate_id: str, *, by: str | None) -> str
-async def apply_credit(db: sqlalchemy.ext.asyncio.session.AsyncSession, salesorder_id: str, invoice_id: str, *, by: str | None = None) -> float
+async def apply_credit(db: sqlalchemy.ext.asyncio.session.AsyncSession, salesorder_id: str, invoice_id: str, *, cap: float | None = None, by: str | None = None) -> float
 async def cancel_order(db: sqlalchemy.ext.asyncio.session.AsyncSession, salesorder_id: str, *, by: str | None = None) -> None
 async def confirm_stored_copy(db: sqlalchemy.ext.asyncio.session.AsyncSession, salesorder_id: str) -> backend.app.models.order_board_doc.OrderBoardDoc
 async def create_counter_order(db: sqlalchemy.ext.asyncio.session.AsyncSession, customer_id: str, lines: list[dict], client_ref: str, *, by: str | None) -> str

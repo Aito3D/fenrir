@@ -1762,6 +1762,64 @@ async def test_invoice_credit_is_capped_by_credit_cap(db_session, books, monkeyp
     assert outcome["failed_step"] is None
 
 
+async def _capped_invoice(db, books, monkeypatch, *, advance, cap, unused=None):
+    """invoice_shipped(whole, apply_credit) with a credit_cap; returns the outcome and how often the order was re-read."""
+    await _ready(db, books, advance=advance)
+    books.unused = [
+        {"payment_id": "p1", "date": "2026-09-01", "unused_amount": unused if unused is not None else advance}
+    ]
+    _settling_credits(books, monkeypatch)
+    refreshed = []
+    refresh = sync.refresh_order
+
+    async def counting(db_, salesorder_id):
+        refreshed.append(salesorder_id)
+        return await refresh(db_, salesorder_id)
+
+    monkeypatch.setattr(sync, "refresh_order", counting)
+    outcome = await actions.invoice_shipped(db, "so1", apply_credit=True, scope="whole", credit_cap=cap)
+    return outcome, refreshed
+
+
+@pytest.mark.asyncio
+async def test_invoice_credit_cap_zero_applies_nothing_and_is_not_flagged(db_session, books, monkeypatch):
+    # cap 0 is falsy: the credit_unconfirmed check is skipped, yet the pre-read refresh (cap is not None) still runs.
+    outcome, refreshed = await _capped_invoice(db_session, books, monkeypatch, advance=600, cap=0)
+    assert (outcome["invoice"], outcome["credit_applied"]) == ("created", 0)
+    assert (outcome["failed_step"], outcome["error"]) == (None, None)
+    assert "apply_invoice_credits" not in _names(books)
+    assert len(refreshed) >= 2  # before the invoice, and after it
+
+
+@pytest.mark.asyncio
+async def test_invoice_credit_cap_above_the_advance_is_flagged_unconfirmed(db_session, books, monkeypatch):
+    outcome, _ = await _capped_invoice(db_session, books, monkeypatch, advance=300, cap=600)
+    assert outcome["credit_applied"] == 300
+    assert (outcome["failed_step"], outcome["error"]) == ("credit", "credit_unconfirmed")
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("cap", [1500, 5000])  # the invoice's balance is 1500: its total, then far above it
+async def test_invoice_credit_cap_at_or_above_the_total_applies_the_balance(db_session, books, monkeypatch, cap):
+    outcome, _ = await _capped_invoice(db_session, books, monkeypatch, advance=2000, cap=cap, unused=2000)
+    assert outcome["credit_applied"] == 1500
+    assert outcome["failed_step"] is None
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("advance", "cap", "applied", "flagged"),
+    [
+        (12.34, 12.345, 12.34, False),  # 0.005 short of the cap: inside the 0.01 tolerance
+        (12.33, 12.345, 12.33, True),  # 0.015 short: below 12.345 - 0.01, flagged
+    ],
+)
+async def test_invoice_credit_cap_fractional_tolerance(db_session, books, monkeypatch, advance, cap, applied, flagged):
+    outcome, _ = await _capped_invoice(db_session, books, monkeypatch, advance=advance, cap=cap)
+    assert outcome["credit_applied"] == applied
+    assert (outcome["failed_step"] == "credit") is flagged
+
+
 @pytest.mark.asyncio
 async def test_invoice_without_cap_is_unchanged(db_session, books, monkeypatch):
     await _ready(db_session, books, advance=600)

@@ -2385,6 +2385,23 @@
      }
     }
    ],
+   "requestBody": {
+    "content": {
+     "application/json": {
+      "schema": {
+       "anyOf": [
+        {
+         "$ref": "#/components/schemas/ApplyCreditBody"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Body"
+      }
+     }
+    }
+   },
    "responses": {
     "200": {
      "content": {
@@ -4408,6 +4425,24 @@
     "settled_at"
    ],
    "title": "AitoTerminalPaymentView",
+   "type": "object"
+  },
+  "ApplyCreditBody": {
+   "properties": {
+    "cap": {
+     "anyOf": [
+      {
+       "minimum": 0.0,
+       "type": "number"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Cap"
+    }
+   },
+   "title": "ApplyCreditBody",
    "type": "object"
   },
   "ContactBody": {

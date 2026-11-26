@@ -125,8 +125,9 @@ Conforme au design, avec ces précisions et écarts :
   avant l'étape Facture ; l'impression et l'envoi par mail de la facture.
 - Vu seulement en navigateur sans serveur (requêtes simulées) : paiement partiel, échec de remise, appui long sur
   « Payer » non parcourus.
-- Au « Réessayer » de l'étape Facture, le crédit est appliqué sans le plafond de la vente (route existante) : sans effet
-  pour un paiement complet ; pour un paiement partiel d'un client ayant un autre acompte, la facture pourrait le consommer.
+- Au « Réessayer » de l'étape Facture, le crédit est désormais plafonné à ce que la vente a encaissé moins ce que la
+  facture porte déjà (paramètre `cap` optionnel de la route `apply-credit`) : l'acompte d'un autre client de passage
+  n'est plus consommé. Les autres appels de la route n'envoient pas de plafond et ne changent pas.
 - Cas restant bloquant (repli : « Ouvrir la commande ») : colis créé par Books mais réponse perdue ; facture restée en
   brouillon après un échec de « marquer envoyée ».
 - Le câblage de la fenêtre TPE est copié de la fiche commande (`OrderPaymentBlock`) : à factoriser si l'un des deux change.

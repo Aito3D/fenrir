@@ -12122,7 +12122,9 @@
     "path:invoice_id!",
     "path:salesorder_id!"
    ],
-   "requestBody": {},
+   "requestBody": {
+    "application/json": "anyOf(ApplyCreditBody,null)"
+   },
    "responses": {
     "200": "object",
     "422": "HTTPValidationError"
@@ -17874,6 +17876,12 @@
     "zoho_default_contact_name": "anyOf(string,null)",
     "zoho_organization_id": "anyOf(string,null)",
     "zoho_refresh_token": "anyOf(string,null)"
+   },
+   "required": []
+  },
+  "ApplyCreditBody": {
+   "properties": {
+    "cap": "anyOf(number,null)"
    },
    "required": []
   },

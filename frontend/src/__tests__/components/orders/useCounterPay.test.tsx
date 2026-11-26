@@ -102,7 +102,22 @@ describe('useCounterPay', () => {
     await waitFor(() => expect(r.result.current.step).toBe('handover'));
     expect(m.createOrderInvoice).toHaveBeenCalledTimes(1);
     expect(m.applyOrderCredit).toHaveBeenCalledTimes(1);
-    expect(m.applyOrderCredit).toHaveBeenCalledWith('so1', 'inv1');
+    expect(m.applyOrderCredit).toHaveBeenCalledWith('so1', 'inv1', 12400);
+  });
+
+  it('a partly paid sale retries the credit capped at what the invoice does not hold yet', async () => {
+    arrange(mkRow(), 12400);
+    m.createOrderInvoice.mockResolvedValue({ board: boardOf(mkRow({}, 12400)), outcome: created } as never);
+    // 2000 taken, 500 already applied: balance 11900 on a 12400 invoice.
+    m.getOrderBoard.mockResolvedValue(boardOf(mkRow({}, 11900)));
+    m.applyOrderCredit.mockResolvedValue({ applied: 1500, board: boardOf(mkRow({}, 10400)) } as never);
+    const r = setup();
+    await toPayment(r);
+    await act(async () => r.result.current.settle(2000));
+    await waitFor(() => expect(r.result.current.error).toBe('orders.counterPay.notAttributed'));
+    await act(async () => r.result.current.retry());
+    await waitFor(() => expect(r.result.current.step).toBe('handover'));
+    expect(m.applyOrderCredit).toHaveBeenCalledWith('so1', 'inv1', 1500);
   });
 
   describe('invoice retry re-reads the board first', () => {
@@ -137,7 +152,7 @@ describe('useCounterPay', () => {
       await act(async () => r.result.current.retry());
       await waitFor(() => expect(r.result.current.step).toBe('handover'));
       expect(m.applyOrderCredit).toHaveBeenCalledTimes(1);
-      expect(m.applyOrderCredit).toHaveBeenCalledWith('so1', 'inv1');
+      expect(m.applyOrderCredit).toHaveBeenCalledWith('so1', 'inv1', 12400);
     });
 
     it('an invoice still missing on the re-read stays an error and never calls the API with an empty id', async () => {

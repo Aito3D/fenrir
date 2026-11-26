@@ -271,6 +271,54 @@ async def test_apply_credit_is_capped_by_balance_and_order_credit(async_client, 
     assert len(applied) == 1
 
 
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("payload", "expected"),
+    [
+        (None, 3000),  # no body: today's behaviour
+        ({}, 3000),  # body without a cap: same
+        ({"cap": None}, 3000),
+        ({"cap": 1200}, 1200),  # below the advance
+        ({"cap": 3000}, 3000),
+        ({"cap": 9999}, 3000),  # above balance and advance
+        ({"cap": 12.345}, 12.35),  # rounded to the cent like the other limits
+        ({"cap": 0}, "no_credit"),
+    ],
+)
+async def test_apply_credit_cap_is_min_of_balance_advance_and_cap(  # noqa: F811
+    async_client, tokens, order, monkeypatch, payload, expected
+):
+    applied = []
+
+    async def invoice(db, invoice_id):
+        return {"invoice_id": invoice_id, "balance": 5000}
+
+    async def payments(db, customer_id):
+        return [{"payment_id": "pay-1", "retainerinvoice_id": "ret-1", "unused_amount": 9000, "date": "2026-10-01"}]
+
+    async def apply(db, invoice_id, rows):
+        applied.append(rows)
+
+    monkeypatch.setattr(zoho_service, "get_invoice", invoice)
+    monkeypatch.setattr(zoho_service, "list_customer_payments", payments)
+    monkeypatch.setattr(zoho_service, "apply_invoice_credits", apply)
+    kw = {} if payload is None else {"json": payload}
+    r = await async_client.post(f"{BASE}/invoices/inv-1/apply-credit", headers=tokens["both"], **kw)
+    if expected == "no_credit":
+        assert (r.status_code, r.json()["detail"]) == (400, "no_credit")
+        assert applied == []
+    else:
+        assert r.status_code == 200 and r.json()["applied"] == expected
+        assert applied == [[{"payment_id": "pay-1", "amount_applied": expected}]]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("cap", [-1, "nan", "abc"])
+async def test_apply_credit_rejects_a_bad_cap(async_client, tokens, order, cap):  # noqa: F811
+    r = await async_client.post(f"{BASE}/invoices/inv-1/apply-credit", json={"cap": cap}, headers=tokens["both"])
+    assert r.status_code == 422
+
+
 @pytest.fixture
 def quote_mail(monkeypatch):
     """A fake Books for the quote email: one offered address, every send recorded, `error` raised when set."""
