@@ -357,6 +357,64 @@ describe('useCounterPay', () => {
     expect(m.handOverOrderParcel).toHaveBeenCalledTimes(2);
   });
 
+  it('a thrown createOrderInvoice is a worded error; the retry posts a second invoice call and adopts the one on the board', async () => {
+    arrange(mkRow(), 0);
+    m.createOrderInvoice.mockRejectedValueOnce(new Error('timeout'))
+      .mockResolvedValueOnce({ board: boardOf(mkRow({}, 0)), outcome: { ...created, invoice: 'none', invoice_number: null } } as never);
+    const r = setup();
+    await toPayment(r);
+    await act(async () => r.result.current.settle(12400));
+    await waitFor(() => expect(r.result.current.error).toBe('timeout'));
+    expect(r.result.current.step).toBe('invoice');
+    expect(r.result.current.busy).toBe(false);
+    await act(async () => r.result.current.retry());
+    await waitFor(() => expect(r.result.current.step).toBe('handover'));
+    expect(m.createOrderInvoice).toHaveBeenCalledTimes(2);
+    expect(m.applyOrderCredit).not.toHaveBeenCalled();
+    expect(r.result.current.invoice?.id).toBe('inv1');
+    expect(r.result.current.error).toBeNull();
+  });
+
+  it('a thrown hand-over is a worded error, and retry hands over again to done', async () => {
+    arrange(mkRow());
+    m.handOverOrderParcel.mockRejectedValueOnce(new Error('timeout'));
+    const r = setup();
+    await toPayment(r);
+    await act(async () => r.result.current.settle(12400));
+    await waitFor(() => expect(r.result.current.step).toBe('handover'));
+    await act(async () => r.result.current.handOver());
+    await waitFor(() => expect(r.result.current.error).toBe('timeout'));
+    expect(r.result.current.step).toBe('handover');
+    await act(async () => r.result.current.retry());
+    await waitFor(() => expect(r.result.current.step).toBe('done'));
+    expect(m.handOverOrderParcel).toHaveBeenCalledTimes(2);
+    expect(m.createOrderInvoice).toHaveBeenCalledTimes(1);
+    expect(m.createOrderParcel).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([['an empty-message Error', new Error('')], ['a non-Error rejection', 'plain string']])('%s still leaves a non-empty error and a callable retry', async (_n, reason) => {
+    arrange(mkRow());
+    m.createOrderParcel.mockRejectedValueOnce(reason);
+    const r = setup();
+    await toPayment(r);
+    await act(async () => r.result.current.settle(12400));
+    await waitFor(() => expect(r.result.current.error).toBe('orders.handover.failed'));
+    expect(r.result.current.step).toBe('parcel');
+    await act(async () => r.result.current.retry());
+    await waitFor(() => expect(r.result.current.step).toBe('handover'));
+    expect(m.createOrderParcel).toHaveBeenCalledTimes(2);
+  });
+
+  it('retry with no error makes no API call', async () => {
+    arrange(mkRow());
+    const r = setup();
+    await toPayment(r);
+    await act(async () => r.result.current.retry());
+    expect(r.result.current).toMatchObject({ step: 'payment', busy: false, error: null });
+    for (const f of Object.values(m)) if (f !== m.createCounterOrder) expect(f).not.toHaveBeenCalled();
+    expect(m.createCounterOrder).toHaveBeenCalledTimes(1);
+  });
+
   it('board answers invalidate the finished list and the events', async () => {
     arrange(mkRow());
     const r = setup();
