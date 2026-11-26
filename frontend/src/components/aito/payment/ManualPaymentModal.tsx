@@ -27,7 +27,7 @@ type ManualBody = { mode: AitoManualPaymentMode; amount: number; reference: stri
  *  invoice in Zoho Books and records the payment on it; on an invoice it
  *  records the payment directly. An Order Board order passes `onRecord` (its
  *  own route) instead of a project, and `hint` for the document it pays. */
-export function ManualPaymentModal({ project, onRecord, document, hint, onClose }: ({
+export function ManualPaymentModal({ project, onRecord, document, hint, onClose, initialMode = 'card' }: ({
   project: AitoProject;
   onRecord?: never;
 } | {
@@ -38,11 +38,13 @@ export function ManualPaymentModal({ project, onRecord, document, hint, onClose 
   /** Replaces the quote / invoice hint under the reference. */
   hint?: string;
   onClose: () => void;
+  /** The mode the form opens on. */
+  initialMode?: AitoManualPaymentMode;
 }) {
   const { t } = useTranslation();
   const { showToast } = useToast();
   const queryClient = useQueryClient();
-  const [mode, setMode] = useState<AitoManualPaymentMode>('card');
+  const [mode, setMode] = useState<AitoManualPaymentMode>(initialMode);
   const [amount, setAmount] = useState(document.due !== null ? String(document.due) : '');
   const [reference, setReference] = useState('');
   const [error, setError] = useState<string | null>(null);

@@ -79,4 +79,12 @@ describe('ManualPaymentModal', () => {
     render(<ManualPaymentModal project={makeProject()} document={quote} onClose={() => {}} />);
     expect(screen.getByText(/retainer invoice on the quote/)).toBeInTheDocument();
   });
+
+  it('opens on Card unless told otherwise, and on the mode it is given', () => {
+    const { unmount } = render(<ManualPaymentModal project={makeProject()} document={invoice} onClose={() => {}} />);
+    expect(screen.getByRole('radio', { name: 'Card' })).toHaveAttribute('aria-checked', 'true');
+    unmount();
+    render(<ManualPaymentModal project={makeProject()} document={invoice} initialMode="cash" onClose={() => {}} />);
+    expect(screen.getByRole('radio', { name: 'Cash' })).toHaveAttribute('aria-checked', 'true');
+  });
 });

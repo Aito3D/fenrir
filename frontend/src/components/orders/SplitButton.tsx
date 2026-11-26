@@ -16,7 +16,7 @@ export interface SplitItem {
 
 /** A main action with an arrow on its LEFT. The menu opens from the arrow or a 500 ms press on the main button;
  *  Escape and a click outside close it. `className` styles both halves (colour, height). */
-export function SplitButton({ label, onClick, ariaDisabled, busy, className = '', menuLabel, items }: {
+export function SplitButton({ label, onClick, ariaDisabled, busy, className = '', menuLabel, items, menuBelow }: {
   label: ReactNode;
   onClick: () => void;
   ariaDisabled?: boolean;
@@ -24,6 +24,8 @@ export function SplitButton({ label, onClick, ariaDisabled, busy, className = ''
   className?: string;
   menuLabel: string;
   items: SplitItem[];
+  /** Opens the menu under the button instead of over it. */
+  menuBelow?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const [reason, setReason] = useState<string | null>(null);
@@ -102,13 +104,13 @@ export function SplitButton({ label, onClick, ariaDisabled, busy, className = ''
           }
           if (!busy) onClick();
         }}
-        className={`btn-press inline-flex flex-1 items-center justify-center gap-2 rounded-r-lg px-5 text-sm font-semibold ${className} ${focusRingCls}`}
+        className={`btn-press inline-flex flex-1 items-center justify-center gap-2 whitespace-nowrap rounded-r-lg px-5 text-sm font-semibold ${className} ${focusRingCls}`}
       >
         {busy && <Loader2 aria-hidden="true" className="h-4 w-4 animate-spin" />}
         {label}
       </button>
       {open && (
-        <div role="menu" className="absolute bottom-full left-0 right-0 z-20 mb-2 rounded-lg border border-bambu-dark-tertiary bg-bambu-dark-secondary p-1.5 shadow-xl">
+        <div role="menu" className={`absolute left-0 right-0 z-20 rounded-lg border border-bambu-dark-tertiary bg-bambu-dark-secondary p-1.5 shadow-xl ${menuBelow ? 'top-full mt-2' : 'bottom-full mb-2'}`}>
           {items.map(item => (
             <button
               key={item.key}

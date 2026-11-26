@@ -123,6 +123,7 @@ export function NewOrderDraftRow({ currency, open, finished, mode = 'order', quo
     },
   });
   const selling = pay.active && !!sale;
+  const [payDialog, setPayDialog] = useState(false);
   const busy = create.isPending || pay.busy;
   const canCreate = !why && !busy && !pay.active;
   const submit = () => {
@@ -145,12 +146,17 @@ export function NewOrderDraftRow({ currency, open, finished, mode = 'order', quo
     if (board) onCreated({ board, row: pay.row, salesorder_id: id });
     else onClose();
   };
+  // Escape, the X and the backdrop: nothing while a write runs or a payment dialog is open; a sale's order opens on the board.
+  const dismiss = (close: () => void) => {
+    if (busy || payDialog) return;
+    if (pay.active && pay.row) openOrder(pay.row.id);
+    else close();
+  };
   const { closing, requestClose, dialogRef } = useDismissableDialog(onClose, {
     animationMs: MODAL_OUT_MS,
     onEscape: close => {
       if (creatingClient) setCreatingClient(false);
-      // A payment dialog's own Escape reaches this window listener too: the sale is left through its buttons.
-      else if (!busy && !(pay.active && pay.step !== 'done' && !pay.error)) close();
+      else dismiss(close);
     },
   });
   // The board behind stays put while the dialog is open (same lock as PreviewModalShell).
@@ -176,7 +182,7 @@ export function NewOrderDraftRow({ currency, open, finished, mode = 'order', quo
       className={`fixed inset-0 z-[110] flex items-start justify-center overflow-y-auto overscroll-contain bg-black/50 p-4 backdrop-blur-sm sm:pt-[8vh] ${
         closing ? 'animate-overlay-out pointer-events-none' : 'animate-overlay-in'
       }`}
-      onClick={busy ? undefined : requestClose}
+      onClick={() => dismiss(requestClose)}
     >
       <Card
         ref={dialogRef}
@@ -190,14 +196,14 @@ export function NewOrderDraftRow({ currency, open, finished, mode = 'order', quo
       >
         <div className="flex flex-wrap items-center gap-x-3 gap-y-1 px-5 py-3">
           <span className="text-base font-semibold text-white">{title}</span>
-          {isQuote ? (
+          {pay.active ? null : isQuote ? (
             <span className={`rounded bg-violet-500/15 px-1.5 py-0.5 text-[11px] text-violet-700 dark:text-violet-300 ${quote ? 'font-mono' : ''}`}>
               {quote ? quote.number : t('orders.newOrder.draft')}
             </span>
           ) : (
             <span className="rounded bg-bambu-green/15 px-1.5 py-0.5 text-[11px] text-bambu-green">{t('orders.newOrder.draft')}</span>
           )}
-          <button type="button" onClick={requestClose} disabled={busy} className={`ml-auto inline-flex items-center gap-1 rounded-md px-1.5 py-1 text-xs text-bambu-gray hover:text-white ${focusRingCls}`}>
+          <button type="button" onClick={() => dismiss(requestClose)} disabled={busy || payDialog} className={`ml-auto inline-flex items-center gap-1 rounded-md px-1.5 py-1 text-xs text-bambu-gray hover:text-white ${focusRingCls}`}>
             <X aria-hidden="true" className="h-3.5 w-3.5" />
             {t('orders.newOrder.abandon')}
           </button>
@@ -246,7 +252,7 @@ export function NewOrderDraftRow({ currency, open, finished, mode = 'order', quo
               )}
             </section>
             {/* Sticks to the bottom of the viewport while a long cart scrolls the modal. */}
-            <section className="animate-rise sticky bottom-0 mt-auto space-y-4 rounded-b-xl bg-bambu-dark-secondary px-5 py-4 md:rounded-bl-none" style={{ animationDelay: '120ms' }}>
+            <section className={`animate-rise space-y-4 bg-bambu-dark-secondary px-5 py-4 ${selling ? '' : 'sticky bottom-0 mt-auto rounded-b-xl md:rounded-bl-none'}`} style={{ animationDelay: '120ms' }}>
               {selling && sale ? (
                 <CounterPayFlow
                   pay={pay}
@@ -260,6 +266,7 @@ export function NewOrderDraftRow({ currency, open, finished, mode = 'order', quo
                     setTried(false);
                   }}
                   onOpenOrder={openOrder}
+                  onDialog={setPayDialog}
                 />
               ) : (
                 <>

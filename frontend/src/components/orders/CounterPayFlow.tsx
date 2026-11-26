@@ -1,5 +1,6 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { Check, Loader2 } from 'lucide-react';
 import { ApiError, api } from '../../api/client';
@@ -24,7 +25,7 @@ const PANEL = 'animate-rise space-y-3 rounded-lg border border-bambu-dark-tertia
 type Dialog = { kind: 'terminal'; document: PaymentDocument; payment: AitoTerminalPayment | null } | { kind: 'manual'; document: PaymentDocument };
 
 /** The right column of a counter sale: a progress bar, the six steps, and the one panel the sale is waiting on. */
-export function CounterPayFlow({ pay, currency, total, email, isDefaultClient, onNewSale, onOpenOrder }: {
+export function CounterPayFlow({ pay, currency, total, email, isDefaultClient, onNewSale, onOpenOrder, onDialog }: {
   pay: ReturnType<typeof useCounterPay>;
   currency: string;
   total: number;
@@ -33,8 +34,15 @@ export function CounterPayFlow({ pay, currency, total, email, isDefaultClient, o
   isDefaultClient: boolean;
   onNewSale: () => void;
   onOpenOrder: (id: string) => void;
+  /** Told when a payment dialog opens or closes: the modal does not close behind one. */
+  onDialog?: (open: boolean) => void;
 }) {
   const { t } = useTranslation();
+  const panel = useRef<HTMLDivElement>(null);
+  // On a phone the panel sits below the fold: bring it into view when the sale asks for something.
+  useEffect(() => {
+    panel.current?.scrollIntoView?.({ block: 'nearest' });
+  }, [pay.step, pay.wait, pay.error]);
   const index = PAY_STEPS.indexOf(pay.step);
   const done = pay.step === 'done';
   const failed = !!pay.error;
@@ -78,6 +86,7 @@ export function CounterPayFlow({ pay, currency, total, email, isDefaultClient, o
           );
         })}
       </ol>
+      <div ref={panel}>
       {done ? (
         <Final pay={pay} currency={currency} email={email} onNewSale={onNewSale} onOpenOrder={onOpenOrder} />
       ) : failed ? (
@@ -90,7 +99,7 @@ export function CounterPayFlow({ pay, currency, total, email, isDefaultClient, o
           </div>
         </div>
       ) : pay.wait === 'payment' && pay.row ? (
-        <PaymentPanel pay={pay} orderId={pay.row.id} currency={currency} total={total} isDefaultClient={isDefaultClient} onOpenOrder={onOpenOrder} />
+        <PaymentPanel pay={pay} orderId={pay.row.id} currency={currency} total={total} isDefaultClient={isDefaultClient} onOpenOrder={onOpenOrder} onDialog={onDialog} />
       ) : pay.wait === 'stock' && pay.question ? (
         <div className={PANEL}>
           <p>{t('orders.counterPay.stockAsk', { name: pay.question.name, n: pay.question.remaining - pay.question.packed_waiting })}</p>
@@ -106,17 +115,19 @@ export function CounterPayFlow({ pay, currency, total, email, isDefaultClient, o
           <button type="button" disabled={pay.busy} onClick={pay.handOver} className={PRIMARY}>{t('orders.counterPay.handed')}</button>
         </div>
       ) : null}
+      </div>
     </div>
   );
 }
 
-function PaymentPanel({ pay, orderId, currency, total, isDefaultClient, onOpenOrder }: {
+function PaymentPanel({ pay, orderId, currency, total, isDefaultClient, onOpenOrder, onDialog }: {
   pay: ReturnType<typeof useCounterPay>;
   orderId: string;
   currency: string;
   total: number;
   isDefaultClient: boolean;
   onOpenOrder: (id: string) => void;
+  onDialog?: (open: boolean) => void;
 }) {
   const { t } = useTranslation();
   const { showToast } = useToast();
@@ -131,6 +142,26 @@ function PaymentPanel({ pay, orderId, currency, total, isDefaultClient, onOpenOr
     setDialog(null);
     pay.settle(amount);
   };
+  // A paid charge whose booking is still pending is "open": the invoice would not find the payment yet.
+  const paidAndBooked = (p: AitoTerminalPayment | null | undefined): p is AitoTerminalPayment => p?.status === 'paid' && !isTerminalOpen(p);
+  useEffect(() => {
+    onDialog?.(!!dialog);
+  }, [dialog, onDialog]);
+  useEffect(() => () => onDialog?.(false), [onDialog]);
+  // The order's current charge, as `Collect` polls it: a card paid behind a closed dialog still settles the sale.
+  const charge = useQuery({
+    queryKey: ['order-terminal-current', orderId],
+    queryFn: () => api.getOrderTerminalPayment(orderId),
+    refetchInterval: q => (isTerminalOpen(q.state.data) ? 3000 : false),
+    retry: false,
+    staleTime: 0,
+  });
+  const latest = useRef(settle);
+  latest.current = settle;
+  useEffect(() => {
+    const p = charge.data;
+    if (paidAndBooked(p)) latest.current(p.amount_confirmed ?? p.amount);
+  }, [charge.data]);
   // The same document `Collect` builds on the order card: the server picks what the charge lands on.
   const open = async (kind: 'terminal' | 'manual') => {
     setOpening(true);
@@ -141,6 +172,11 @@ function PaymentPanel({ pay, orderId, currency, total, isDefaultClient, onOpenOr
       const document: PaymentDocument = { kind: 'invoice', id: target.document_id, number: target.number ?? '', due: due > 0 ? due : null, currency };
       // A charge still in flight reopens on its waiting screen rather than offering a second one.
       const payment = kind === 'terminal' ? await api.getOrderTerminalPayment(orderId) : null;
+      // Already paid and booked behind a closed dialog: settle, never offer a second charge.
+      if (paidAndBooked(payment)) {
+        settle(payment.amount_confirmed ?? payment.amount);
+        return;
+      }
       setDialog(kind === 'terminal' ? { kind, document, payment: isTerminalOpen(payment) ? payment : null } : { kind, document });
     } catch {
       showToast(t('common.errorLoading'), 'error');
@@ -177,6 +213,7 @@ function PaymentPanel({ pay, orderId, currency, total, isDefaultClient, onOpenOr
       {dialog?.kind === 'manual' && (
         <ManualPaymentModal
           document={dialog.document}
+          initialMode="cash"
           onClose={() => setDialog(null)}
           onRecord={async (body) => {
             await api.recordOrderManualPayment(orderId, body);
@@ -188,7 +225,10 @@ function PaymentPanel({ pay, orderId, currency, total, isDefaultClient, onOpenOr
         <TerminalPaymentDialog
           document={dialog.document}
           initialPayment={dialog.payment}
-          onClose={() => setDialog(null)}
+          onClose={() => {
+            setDialog(null);
+            void charge.refetch();
+          }}
           pollKey={['order-terminal-payment', orderId]}
           onStart={(amount) => api.startOrderTerminalPayment(orderId, amount)}
           recover={(e) =>
@@ -205,9 +245,8 @@ function PaymentPanel({ pay, orderId, currency, total, isDefaultClient, onOpenOr
             if (!row) throw new Error(t('common.errorLoading'));
             return row;
           }}
-          // A paid charge whose booking is still pending is "open": the invoice would not find the payment yet.
           onSeen={(payment) => {
-            if (payment.status === 'paid' && !isTerminalOpen(payment)) settle(payment.amount_confirmed ?? payment.amount);
+            if (paidAndBooked(payment)) settle(payment.amount_confirmed ?? payment.amount);
           }}
         />
       )}
@@ -248,10 +287,10 @@ function Final({ pay, currency, email, onNewSale, onOpenOrder }: {
       {pay.handedLate.length > 0 && line(t('orders.counterPay.late', { names: pay.handedLate.join(', ') }))}
       {pay.forced.length > 0 && line(t('orders.counterPay.fixStock', { names: pay.forced.join(', ') }))}
       <button type="button" onClick={onNewSale} className={PRIMARY}>{t('orders.counterPay.newSale')}</button>
-      <div className="flex gap-2">
-        <button type="button" onClick={() => pay.row && onOpenOrder(pay.row.id)} className={GHOST}>{t('orders.counterPay.openOrder')}</button>
-        {invoice && (
+      {invoice && (
+        <div className="flex">
           <SplitButton
+            menuBelow
             label={t('orders.counterPay.printInvoice')}
             menuLabel={t('orders.counterPay.more')}
             busy={busy}
@@ -265,8 +304,9 @@ function Final({ pay, currency, email, onNewSale, onOpenOrder }: {
               onSelect: () => setEmailing(true),
             }]}
           />
-        )}
-      </div>
+        </div>
+      )}
+      <button type="button" onClick={() => pay.row && onOpenOrder(pay.row.id)} className={`${GHOST} text-bambu-gray`}>{t('orders.counterPay.openOrder')}</button>
       {emailing && invoice && <OrderInvoiceEmailModal invoice={invoice} onClose={() => setEmailing(false)} />}
     </div>
   );

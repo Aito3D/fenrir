@@ -558,6 +558,8 @@ describe('NewOrderDraftRow', () => {
       renderRow();
       await user.click(payBtn());
       expect(await screen.findByTestId('counter-pay')).toBeInTheDocument();
+      expect(screen.queryByText('Draft')).not.toBeInTheDocument();
+      await waitFor(() => expect(JSON.parse(localStorage.getItem(DRAFT_KEY) ?? '{}').clientRef).not.toBe('11111111-1111-4111-8111-111111111111'));
       expect(screen.queryByTestId('draft-total')).not.toBeInTheDocument();
       expect(screen.queryByRole('button', { name: /^Pay\s\d/ })).not.toBeInTheDocument();
       expect(screen.queryByRole('button', { name: /Reset draft/ })).not.toBeInTheDocument();
@@ -567,10 +569,11 @@ describe('NewOrderDraftRow', () => {
 
     it('a failed order creation leaves the draft editable', async () => {
       const user = userEvent.setup();
-      server.use(http.post('/api/v1/order-board/orders', () => HttpResponse.json({ detail: 'no' }, { status: 500 })));
+      server.use(http.post('/api/v1/order-board/orders', () => HttpResponse.json({ detail: 'create_failed' }, { status: 400 })));
       seed([{ item: item(), quantity: 2, discount: '' }]);
       renderRow();
       await user.click(payBtn());
+      expect(await screen.findByText(/Order not created: Zoho Books did not confirm/)).toBeInTheDocument();
       await waitFor(() => expect(payBtn()).not.toHaveAttribute('aria-disabled'));
       expect(screen.queryByTestId('counter-pay')).not.toBeInTheDocument();
       expect(lineTotal()).toBeInTheDocument();
@@ -589,6 +592,79 @@ describe('NewOrderDraftRow', () => {
       await user.keyboard('{Escape}');
       await new Promise(r => setTimeout(r, 300));
       expect(onClose).not.toHaveBeenCalled();
+    });
+
+    describe('leaving a sale', () => {
+      const target = () => server.use(
+        http.get('/api/v1/order-board/orders/9/payment-target', () =>
+          HttpResponse.json({ kind: 'salesorder', document_id: '9', number: 'SO-9', max_amount: 2000, left: 2000, link: null })),
+        http.get('/api/v1/order-board/orders/9/terminal-payment', () => HttpResponse.json(null)),
+      );
+      const sale = async () => {
+        const user = userEvent.setup();
+        payOrder();
+        target();
+        seed([{ item: item(), quantity: 2, discount: '' }]);
+        const onCreated = vi.fn();
+        const onClose = vi.fn();
+        // The board page observes the board query; without an observer the cache entry is dropped at once.
+        const Board = () => { useQuery({ queryKey: ['order-board'], queryFn: () => new Promise(() => {}) }); return null; };
+        render(<><Board /><NewOrderDraftRow currency="XPF" open={[]} finished={[]} onCreated={onCreated} onClose={onClose} /></>);
+        await user.click(payBtn());
+        await screen.findByText('Card (terminal)');
+        await waitFor(() => expect(screen.getByRole('button', { name: 'Abandon' })).toBeEnabled());
+        return { user, onCreated, onClose };
+      };
+      const opened = (onCreated: ReturnType<typeof vi.fn>) =>
+        expect(onCreated).toHaveBeenCalledWith(expect.objectContaining({ salesorder_id: '9' }));
+
+      it('Escape and the X open the created order when nothing is writing', async () => {
+        const { user, onCreated, onClose } = await sale();
+        await user.keyboard('{Escape}');
+        opened(onCreated);
+        expect(onClose).not.toHaveBeenCalled();
+        onCreated.mockClear();
+        await user.click(screen.getByRole('button', { name: 'Abandon' }));
+        opened(onCreated);
+      });
+
+      it('Escape and the X do nothing while a payment dialog is open', async () => {
+        const { user, onCreated } = await sale();
+        await user.click(screen.getByRole('button', { name: 'Cash or cheque' }));
+        await screen.findByRole('radio', { name: 'Cash' }, { timeout: 3000 });
+        expect(screen.getByRole('button', { name: 'Abandon' })).toBeDisabled();
+        await user.keyboard('{Escape}');
+        await new Promise(r => setTimeout(r, 300));
+        expect(onCreated).not.toHaveBeenCalled();
+        expect(screen.getByRole('dialog', { name: 'New order' })).toBeInTheDocument();
+      });
+
+      it('the X is disabled while a step is writing', async () => {
+        server.use(http.post('/api/v1/order-board/orders', async () => {
+          await new Promise(r => setTimeout(r, 400));
+          return HttpResponse.json({ board: { rows: [row], computed_at: null, stock_loaded_at: null, sync: {} }, row, salesorder_id: '9' });
+        }));
+        const user = userEvent.setup();
+        seed([{ item: item(), quantity: 2, discount: '' }]);
+        const { onCreated } = renderRow();
+        await user.click(payBtn());
+        expect(screen.getByRole('button', { name: 'Abandon' })).toBeDisabled();
+        await screen.findByText('Card (terminal)');
+        expect(onCreated).not.toHaveBeenCalled();
+      });
+
+      it('leaving from an error opens the order too', async () => {
+        const { user, onCreated } = await sale();
+        server.use(
+          http.post('/api/v1/order-board/orders/9/manual-payment', () => HttpResponse.json({ board: { rows: [] } })),
+          http.post('/api/v1/order-board/orders/9/invoice', () => HttpResponse.json({ detail: 'zoho_down' }, { status: 502 })),
+        );
+        await user.click(screen.getByRole('button', { name: 'Cash or cheque' }));
+        await user.click(await screen.findByRole('button', { name: /^Record|^Save|^Confirm/i }, { timeout: 3000 }));
+        await screen.findByRole('button', { name: 'Retry' }, { timeout: 3000 });
+        await user.keyboard('{Escape}');
+        opened(onCreated);
+      });
     });
   });
 });

@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, afterEach } from 'vitest';
+import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
 import { screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { http, HttpResponse } from 'msw';
@@ -7,6 +7,16 @@ import { render } from '../../utils';
 
 const print = vi.fn();
 vi.mock('../../../components/aito/usePrintBlob', () => ({ usePrintBlob: () => ({ print, busy: false }) }));
+
+// The real dialog polls every 3 s: a stand-in that reports what the test tells it to.
+vi.mock('../../../components/aito/payment/TerminalPaymentModal', () => ({
+  TerminalPaymentDialog: ({ onSeen, onClose }: { onSeen: (p: unknown) => void; onClose: () => void }) => (
+    <div data-testid="terminal-dialog">
+      <button type="button" onClick={() => onSeen({ id: 1, status: 'paid', booking_status: 'booked', amount: 12400, amount_confirmed: 12400 })}>seen-paid</button>
+      <button type="button" onClick={onClose}>close-dialog</button>
+    </div>
+  ),
+}));
 
 import { CounterPayFlow } from '../../../components/orders/CounterPayFlow';
 import type { useCounterPay } from '../../../components/orders/useCounterPay';
@@ -28,6 +38,16 @@ const flow = (pay: Pay, o: Partial<Parameters<typeof CounterPayFlow>[0]> = {}) =
 const invoice = (balance: number) => ({ id: 'inv1', number: 'FAC-1', date: '', due_date: '', total: 12400, balance, status: 'sent', url: null });
 const done = (o: Record<string, unknown> = {}) => mkPay({ step: 'done', wait: null, invoice: invoice(0), ...o });
 
+const charge = (status: string, booking_status: string | null = 'booked') => ({
+  id: 1, document_kind: 'invoice', document_number: 'SO-9', status, amount: 12400, amount_confirmed: 12400, booking_status,
+  booking_error: null, sync_error: null, created_at: '', settled_at: null,
+});
+const TERMINAL = '/api/v1/order-board/orders/so1/terminal-payment';
+const currentCharge = (row: unknown) => server.use(http.get(TERMINAL, () => HttpResponse.json(row)));
+const target = () => server.use(http.get('/api/v1/order-board/orders/so1/payment-target', () =>
+  HttpResponse.json({ kind: 'salesorder', document_id: 'so1', number: 'SO-9', max_amount: 12400, left: 12400, link: null })));
+
+beforeEach(() => currentCharge(null));
 afterEach(() => {
   server.resetHandlers();
   print.mockClear();
@@ -83,9 +103,10 @@ describe('CounterPayFlow', () => {
     const pay = mkPay();
     flow(pay);
     await user.click(screen.getByRole('button', { name: 'Cash or cheque' }));
+    expect(await screen.findByRole('radio', { name: 'Cash' }, { timeout: 3000 })).toHaveAttribute('aria-checked', 'true');
     await user.click(await screen.findByRole('button', { name: /^Record|^Save|^Confirm/i }, { timeout: 3000 }));
     await vi.waitFor(() => expect(pay.settle).toHaveBeenCalledWith(12400));
-    expect(recorded).toMatchObject({ amount: 12400 });
+    expect(recorded).toMatchObject({ amount: 12400, mode: 'cash' });
     expect(pay.settle).toHaveBeenCalledTimes(1);
   });
 
@@ -172,5 +193,83 @@ describe('CounterPayFlow', () => {
     expect(pay.retry).toHaveBeenCalledOnce();
     await userEvent.click(screen.getByRole('button', { name: 'Open the order' }));
     expect(onOpenOrder).toHaveBeenCalledWith('so1');
+  });
+
+  describe('a card paid behind a closed dialog', () => {
+    it('onSeen fired three times with the same paid, booked charge settles once', async () => {
+      const user = userEvent.setup();
+      target();
+      const pay = mkPay();
+      flow(pay);
+      await user.click(screen.getByRole('button', { name: 'Card (terminal)' }));
+      const seen = await screen.findByRole('button', { name: 'seen-paid' });
+      await user.click(seen);
+      await user.click(seen);
+      await user.click(seen);
+      expect(pay.settle).toHaveBeenCalledTimes(1);
+      expect(pay.settle).toHaveBeenCalledWith(12400);
+    });
+
+    it('the polled current charge settles once it is paid and booked, after the dialog was closed', async () => {
+      const user = userEvent.setup();
+      target();
+      const pay = mkPay();
+      flow(pay);
+      await user.click(screen.getByRole('button', { name: 'Card (terminal)' }));
+      await screen.findByTestId('terminal-dialog');
+      currentCharge(charge('paid'));
+      await user.click(screen.getByRole('button', { name: 'close-dialog' }));
+      await vi.waitFor(() => expect(pay.settle).toHaveBeenCalledWith(12400));
+      expect(pay.settle).toHaveBeenCalledTimes(1);
+    });
+
+    it('a paid charge whose booking is pending does not settle yet', async () => {
+      currentCharge(charge('paid', 'pending'));
+      const pay = mkPay();
+      flow(pay);
+      await new Promise(r => setTimeout(r, 150));
+      expect(pay.settle).not.toHaveBeenCalled();
+    });
+
+    it.each(['failed', 'cancelled', 'expired', 'needs_attention'])('a %s charge never settles', async (status) => {
+      currentCharge(charge(status, null));
+      const pay = mkPay();
+      flow(pay);
+      await new Promise(r => setTimeout(r, 150));
+      expect(pay.settle).not.toHaveBeenCalled();
+    });
+
+    it('Card while the current charge is already paid and booked settles instead of offering a new charge', async () => {
+      const user = userEvent.setup();
+      target();
+      const pay = mkPay();
+      flow(pay);
+      // The mount poll saw nothing yet; the click reads the charge afresh.
+      currentCharge(charge('paid'));
+      await user.click(screen.getByRole('button', { name: 'Card (terminal)' }));
+      await vi.waitFor(() => expect(pay.settle).toHaveBeenCalledWith(12400));
+      expect(screen.queryByTestId('terminal-dialog')).not.toBeInTheDocument();
+    });
+  });
+
+  it('brings the active panel into view when the step changes', () => {
+    const scroll = vi.fn();
+    Element.prototype.scrollIntoView = scroll;
+    flow(mkPay());
+    expect(scroll).toHaveBeenCalledWith({ block: 'nearest' });
+    // @ts-expect-error test cleanup
+    delete Element.prototype.scrollIntoView;
+  });
+
+  it('reports a payment dialog opening and closing', async () => {
+    const user = userEvent.setup();
+    target();
+    const onDialog = vi.fn();
+    flow(mkPay(), { onDialog });
+    await user.click(screen.getByRole('button', { name: 'Card (terminal)' }));
+    await screen.findByTestId('terminal-dialog');
+    expect(onDialog).toHaveBeenLastCalledWith(true);
+    await user.click(screen.getByRole('button', { name: 'close-dialog' }));
+    expect(onDialog).toHaveBeenLastCalledWith(false);
   });
 });
