@@ -190,8 +190,9 @@ minute of the current month, then one table each.
   A warning marks the accounts the page already counts elsewhere (`60` purchases, `64` staff, `68` depreciation
   charges); the share stays free. Reading takes `view_margin`, saving and refreshing `view_margin` +
   `manage_targets`. « Actualiser depuis Zoho » re-reads every month since mid-2025 and the account list; opening the
-  page re-reads the months since the last read (so a month that closed meanwhile is completed) and reloads only when
-  an amount moved. A failed read keeps the cache; an account gone from Zoho keeps its share and stays listed.
+  page re-reads the running month, the three before it (late entries) and any month since the last read, and reloads
+  only when an amount moved; a failed re-read says so and keeps the cache. Each bucket also carries `fixedGoods`, the
+  goods' part of its fixed costs, which the journal keeps out of what the service lines share. A failed read keeps the cache; an account gone from Zoho keeps its share and stays listed.
 - **Depreciation** comes from Zoho Books' fixed assets (`GET /fixedassets`, read on the first opening and on
   « Actualiser depuis Zoho », stored with the selection in the `revenue_depreciation` row of `settings`). Nothing is
   selected by default; a switch per asset and per Zoho asset type chooses what 3D printing bears. A selected asset
