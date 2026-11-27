@@ -16,7 +16,7 @@ if TYPE_CHECKING:
 
 _CUSTOMER_KEYS = frozenset({"bySegment", "bySegmentTtc", "topOverdue", "byCustomer", "customerMovers"})
 _MARGIN_KEYS = frozenset(
-    {"cost", "costedHt", "marginByBrand", "marginByNature", "marginSplit", "costParts", "printHours"}
+    {"cost", "costedHt", "marginByBrand", "marginByNature", "marginSplit", "costParts", "fixedGoods", "printHours"}
 )
 
 

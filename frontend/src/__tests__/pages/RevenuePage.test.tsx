@@ -184,6 +184,46 @@ describe('RevenuePage — waiting states', () => {
   });
 });
 
+describe('RevenuePage — fixed costs follow the books', () => {
+  beforeEach(() => vi.useFakeTimers());
+  const refreshCalls = () => fetchMock.mock.calls.filter(([u, init]) => u === '/api/v1/revenue/fixed-accounts/refresh?scope=current' && init?.method === 'POST');
+  const open = async (answer: () => Response) => {
+    stubFetch(payload());
+    const base = fetchMock.getMockImplementation()!;
+    fetchMock.mockImplementation(async (url: string, init?: RequestInit) => (url.startsWith('/api/v1/revenue/fixed-accounts/refresh') ? answer() : base(url, init)));
+    renderPage();
+    await flush();
+    await flush();
+  };
+
+  it('re-reads the running month from Zoho when the page opens, and reloads only when the books moved', async () => {
+    granted = new Set([...ALL, 'revenue:view_margin', 'revenue:manage_targets']);
+    await open(() => json({ changed: true }));
+    expect(refreshCalls()).toHaveLength(1);
+    expect(seriesCalls()).toHaveLength(2);
+  });
+
+  it('leaves the page alone when Zoho had nothing new, and says so when it could not be read', async () => {
+    granted = new Set([...ALL, 'revenue:view_margin', 'revenue:manage_targets']);
+    await open(() => json({ changed: false }));
+    expect(refreshCalls()).toHaveLength(1);
+    expect(seriesCalls()).toHaveLength(1);
+    vi.unstubAllGlobals();
+    document.body.innerHTML = '';
+    await open(() => json({ detail: 'Zoho could not be read' }, 502));
+    expect(seriesCalls()).toHaveLength(1);
+    // Not silent: the figures on screen are then older than the books.
+    expect(screen.getByText('Zoho could not be read')).toBeInTheDocument();
+  });
+
+  it('asks nothing of Zoho without the right to manage the charges', async () => {
+    granted = new Set([...ALL, 'revenue:view_margin']);
+    await open(() => json({ changed: true }));
+    expect(refreshCalls()).toHaveLength(0);
+    expect(seriesCalls()).toHaveLength(1);
+  });
+});
+
 describe('RevenuePage — view tabs and tax switch', () => {
   beforeEach(() => vi.useFakeTimers());
 

@@ -170,15 +170,29 @@ Reads: `GET /api/v1/revenue/pipeline` (`revenue:read`):
 
 ## Result and break-even
 
-« Résultat d'exploitation » in Évolution (unfiltered page, `revenue:view_margin`). Zero Zoho calls, except the
-fixed-asset refresh the operator asks for.
+« Résultat d'exploitation » in Évolution (unfiltered page, `revenue:view_margin`). Zoho is called for the fixed
+costs (the running month when the page opens, at most every 15 minutes) and on the refreshes the operator asks for.
 
 The three charges (labour, fixed costs, depreciation) are set under ⋯ → « Charges »: a summary per month and per
 minute of the current month, then one table each.
 
-- **Fixed costs** are typed by hand in the « Charges fixes » table (`{label, monthly}`, the `revenue_fixed_costs` row of
-  `settings`). Type the 3D part only: the Zoho org is shared with the sailing business. Reading takes `view_margin`,
-  saving `view_margin` + `manage_targets`, like labour.
+- **Fixed costs** come from Zoho's expense accounts, every account whose code starts with `6` (`GET /chartofaccounts`).
+  The books are shared with the other activities, so each account gets a share that is 3D printing's (`percent`, 0 by
+  default), a type and a goods/services split (`goodsShare`), saved in the `revenue_fixed_accounts` row of `settings`
+  as `{account id: {percent, type, goodsShare}}`. Accounts are keyed by Zoho's id: its codes are not unique. Amounts
+  are one `GET /reports/profitandloss` per month (accrual, each account's own `total`), cached in the
+  `revenue_fixed_accounts_cache` row; a share and a refresh never overwrite each other. A month's charge per type:
+  - `monthly` (rent, electricity): what the books hold for that month. In the **running month only**, a usual amount
+    not entered yet is projected: `max(0, mean of the 3 closed months before − entered)`, months without an entry
+    counting 0. The projection is always carried apart (`fixedEstimated`), never inside `fixed`.
+  - `annual` (insurance): the 12 months ending with that month ÷ 12, always real.
+  - `one_off` (equipment): what the books hold for that month, never projected.
+  A warning marks the accounts the page already counts elsewhere (`60` purchases, `64` staff, `68` depreciation
+  charges); the share stays free. Reading takes `view_margin`, saving and refreshing `view_margin` +
+  `manage_targets`. « Actualiser depuis Zoho » re-reads every month since mid-2025 and the account list; opening the
+  page re-reads the running month, the three before it (late entries) and any month since the last read, and reloads
+  only when an amount moved; a failed re-read says so and keeps the cache. Each bucket also carries `fixedGoods`, the
+  goods' part of its fixed costs, which the journal keeps out of what the service lines share. A failed read keeps the cache; an account gone from Zoho keeps its share and stays listed.
 - **Depreciation** comes from Zoho Books' fixed assets (`GET /fixedassets`, read on the first opening and on
   « Actualiser depuis Zoho », stored with the selection in the `revenue_depreciation` row of `settings`). Nothing is
   selected by default; a switch per asset and per Zoho asset type chooses what 3D printing bears. A selected asset
@@ -188,14 +202,22 @@ minute of the current month, then one table each.
   day's costs**: the calculator's usage wear and the books' depreciation are the same machines. The calculator and
   quotes keep their wear. A failed refresh keeps the stored list and selection; an asset gone from Zoho leaves the
   selection.
-- **Per month** (last 12): `result = HT − variable − labour − fixed − depreciation`. `variable` is the bucket's item costs plus the
+- **Per month** (last 12): `result = HT − variable − labour − fixed − fixedEstimated − depreciation`, and
+  `resultReal` is the same without the estimate (equal on a closed month); the panel shows both for the running
+  month as soon as something is estimated. Each row carries its own month's fixed costs. `variable` is the bucket's item costs plus the
   print log's filament, energy and wear; `labour` is the labour list. The current month counts fixed costs up to
   this minute.
 - **Per day.** A month's fixed costs are spread evenly over its days and grow by the minute during today. Labour
   weighs on worked days only; today it grows over the 08:00–17:00 window (org time). Both sit in every bucket's
-  `costParts` (`fixed`, `labor`, and `depreciation` likewise) and so in the margin of the charts and the table, from the print log's first day.
+  `costParts` (`fixed`, `fixedEstimated`, `labor`, and `depreciation` likewise) and so in the margin of the charts and the table, from the print log's first day.
+  No chart draws the cost parts: the estimate shows as its own « ≈ » line of the margin breakdown.
+- **Goods / services filter.** Without a filter a bucket carries both parts of the fixed costs. `kind=services` keeps
+  their services part with every other production cost; `kind=goods` carries their goods part and nothing else; an
+  item, brand or segment filter carries none. In the margin split the goods part weighs on « Biens » (on the
+  unallocated key of the other splits), the rest is shared among the service lines as before.
   Responses to margin viewers are rebuilt at most once a minute while any of the three is non-empty.
-- **Break-even** of the current month: `(fixed + labour + depreciation of the full month) ÷ rate`, with
+- **Break-even** of the current month: `(fixed + fixedEstimated + labour + depreciation of the full month) ÷ rate`
+  (a one-off counts as soon as it is entered in Zoho), with
   `rate = (HT − variable) ÷ HT`. Labour of the full month is the labour list over every working day of the month, days
   to come included (scaling the days gone would swing with week-ends). A month with no sale yet borrows the rate of the three closed months before. `breakEven` is `null` when the rate
   is zero or negative (costs above sales) or when there is no charge at all.
@@ -205,21 +227,25 @@ minute of the current month, then one table each.
 - **What the result does not know.** Print and labour costs exist since `costsSince` (the print log's first day,
   July 2026): earlier months are `partial` and the panel prints no result for them, since their services would count
   at full margin. `coverage` is the share of a month's HT whose cost is known; goods without a Zoho cost count at full
-  margin too, so a low coverage means an optimistic result. Fixed costs have no start date: today's list is charged
-  to all twelve months.
+  margin too, so a low coverage means an optimistic result. The shares have no history: today's share, type and split apply to every month shown.
+  A closed month is never projected: a usual charge entered late leaves it too good until it is entered. Zoho posts
+  by entry date, so an entry dated in the wrong month lands in the wrong month here too.
 - **Depreciation limits.** An asset sold or written off in Zoho stops counting for past months too (the list has no
   disposal date). The per-day spread matches Zoho's monthly total but a first partial month can differ by a few
   francs. Repairs, which the wear rate carried, are no longer in the result once depreciation is on: type them as a
   fixed cost if they matter.
 
-Reads: `GET /api/v1/revenue/result`, `GET|PUT /api/v1/revenue/fixed-costs`, `GET|PUT /api/v1/revenue/depreciation`
+Reads: `GET /api/v1/revenue/result`, `GET|PUT /api/v1/revenue/fixed-accounts`
+(`{month, readAt, accounts: [{id, code, name, active, flag, month, year, usual, percent, type, goodsShare}]}`; PUT takes
+`{accounts: {id: {percent, type, goodsShare}}}`), `POST /api/v1/revenue/fixed-accounts/refresh?scope=current|all`
+(the same shape plus `changed`), `GET|PUT /api/v1/revenue/depreciation`
 (`{assets, selected, readAt}`; PUT takes `{selected: [id]}`), `POST /api/v1/revenue/depreciation/refresh`.
 
 ```
 {"fixedMonthly": n,
- "charges": {"labor": n, "fixed": n, "depreciation": n},
- "months": [{"month": "2026-11", "ht": n, "variable": n, "labor": n, "fixed": n, "depreciation": n, "result": n,
-             "coverage": 0.82 | null, "partial": false}],
+ "charges": {"labor": n, "fixed": n, "fixedEstimated": n, "depreciation": n},
+ "months": [{"month": "2026-11", "ht": n, "variable": n, "labor": n, "fixed": n, "fixedEstimated": n,
+             "depreciation": n, "result": n, "resultReal": n, "coverage": 0.82 | null, "partial": false}],
  "costsSince": "2026-07-01" | null,
  "breakEven": {"amount": n, "reached": 0.6, "day": "2026-11-25" | null, "projected": true} | null}
 ```

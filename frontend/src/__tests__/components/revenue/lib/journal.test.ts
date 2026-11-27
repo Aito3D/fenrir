@@ -62,6 +62,11 @@ describe("withProductionCost", () => {
     expect(out.map((r) => [r.cost, r.costedHt, r.shared])).toEqual([[3_200, 8_000, true], [800, 2_000, true]]);
   });
 
+  it("keeps the goods' part of the fixed costs out of what the services share", () => {
+    const bucket = { costedHt: 10_000, costParts: { filament: 1_500, fixed: 900, fixedEstimated: 100 }, fixedGoods: 500 };
+    expect(withProductionCost([print, model], bucket).map((r) => r.cost)).toEqual([1_600, 400]);
+  });
+
   it("leaves the rows alone without a bucket, without a pool, or under rounding noise", () => {
     expect(withProductionCost([print, model], null)).toEqual([print, model]);
     expect(withProductionCost([goods, print], { costedHt: 12_000, costParts: { items: 9_000, filament: 700 } })).toEqual([goods, print]);

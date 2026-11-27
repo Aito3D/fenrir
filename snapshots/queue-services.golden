@@ -1,0 +1,962 @@
+### exit: 0
+### stdout:
+{
+ "queue_announcements": {
+  "a tuple of ids": {
+   "calls": [
+    {
+     "call": "relay",
+     "filename": "lid.gcode.3mf",
+     "job_id": 5,
+     "printer_id": 1,
+     "printer_name": "Zulu"
+    },
+    {
+     "call": "relay",
+     "filename": "body.3mf",
+     "job_id": 6,
+     "printer_id": 1,
+     "printer_name": "Zulu"
+    },
+    {
+     "call": "notify",
+     "job_name": "2 jobs (lid, body)",
+     "printer_id": 1,
+     "printer_name": "Zulu",
+     "target": "Zulu"
+    }
+   ],
+   "ids": [
+    5,
+    6
+   ],
+   "returned": null
+  },
+  "any printer of a model": {
+   "calls": [
+    {
+     "call": "relay",
+     "filename": "lid.gcode.3mf",
+     "job_id": 19,
+     "printer_id": null,
+     "printer_name": null
+    },
+    {
+     "call": "notify",
+     "job_name": "lid",
+     "printer_id": null,
+     "printer_name": null,
+     "target": "Any X1C"
+    }
+   ],
+   "ids": [
+    19
+   ],
+   "returned": null
+  },
+  "any printer of two models": {
+   "calls": [
+    {
+     "call": "relay",
+     "filename": "lid.gcode.3mf",
+     "job_id": 20,
+     "printer_id": null,
+     "printer_name": null
+    },
+    {
+     "call": "relay",
+     "filename": "lid.gcode.3mf",
+     "job_id": 21,
+     "printer_id": null,
+     "printer_name": null
+    },
+    {
+     "call": "relay",
+     "filename": "lid.gcode.3mf",
+     "job_id": 22,
+     "printer_id": null,
+     "printer_name": null
+    },
+    {
+     "call": "notify",
+     "job_name": "lid ×3",
+     "printer_id": null,
+     "printer_name": null,
+     "target": "Any X1C / P1S"
+    }
+   ],
+   "ids": [
+    20,
+    21,
+    22
+   ],
+   "returned": null
+  },
+  "archive wins over library file": {
+   "calls": [
+    {
+     "call": "relay",
+     "filename": "body.3mf",
+     "job_id": 25,
+     "printer_id": 1,
+     "printer_name": "Zulu"
+    },
+    {
+     "call": "notify",
+     "job_name": "body",
+     "printer_id": 1,
+     "printer_name": "Zulu",
+     "target": "Zulu"
+    }
+   ],
+   "ids": [
+    25
+   ],
+   "returned": null
+  },
+  "both channels failing": {
+   "calls": [
+    {
+     "call": "relay (raises)",
+     "job_id": 15
+    },
+    {
+     "call": "relay (raises)",
+     "job_id": 16
+    },
+    {
+     "call": "relay (raises)",
+     "job_id": 17
+    },
+    {
+     "call": "relay (raises)",
+     "job_id": 18
+    },
+    {
+     "call": "notify (raises)",
+     "job_name": "lid ×2",
+     "target": "Alpha"
+    },
+    {
+     "call": "notify (raises)",
+     "job_name": "body",
+     "target": "Zulu"
+    },
+    {
+     "call": "notify (raises)",
+     "job_name": "cap.stl",
+     "target": "Unassigned"
+    }
+   ],
+   "returned": null
+  },
+  "empty file name": {
+   "calls": [
+    {
+     "call": "relay",
+     "filename": "",
+     "job_id": 27,
+     "printer_id": 1,
+     "printer_name": "Zulu"
+    },
+    {
+     "call": "notify",
+     "job_name": "Job #27",
+     "printer_id": 1,
+     "printer_name": "Zulu",
+     "target": "Zulu"
+    }
+   ],
+   "ids": [
+    27
+   ],
+   "returned": null
+  },
+  "exactly three files": {
+   "calls": [
+    {
+     "call": "relay",
+     "filename": "cap.stl",
+     "job_id": 12,
+     "printer_id": 1,
+     "printer_name": "Zulu"
+    },
+    {
+     "call": "relay",
+     "filename": "body.3mf",
+     "job_id": 13,
+     "printer_id": 1,
+     "printer_name": "Zulu"
+    },
+    {
+     "call": "relay",
+     "filename": "base.3mf.3mf",
+     "job_id": 14,
+     "printer_id": 1,
+     "printer_name": "Zulu"
+    },
+    {
+     "call": "notify",
+     "job_name": "3 jobs (cap.stl, body, base)",
+     "printer_id": 1,
+     "printer_name": "Zulu",
+     "target": "Zulu"
+    }
+   ],
+   "ids": [
+    12,
+    13,
+    14
+   ],
+   "returned": null
+  },
+  "four files, one twice (listed up to three)": {
+   "calls": [
+    {
+     "call": "relay",
+     "filename": "lid.gcode.3mf",
+     "job_id": 7,
+     "printer_id": 1,
+     "printer_name": "Zulu"
+    },
+    {
+     "call": "relay",
+     "filename": "body.3mf",
+     "job_id": 8,
+     "printer_id": 1,
+     "printer_name": "Zulu"
+    },
+    {
+     "call": "relay",
+     "filename": "cap.stl",
+     "job_id": 9,
+     "printer_id": 1,
+     "printer_name": "Zulu"
+    },
+    {
+     "call": "relay",
+     "filename": "ring.gcode.3mf",
+     "job_id": 10,
+     "printer_id": 1,
+     "printer_name": "Zulu"
+    },
+    {
+     "call": "relay",
+     "filename": "lid.gcode.3mf",
+     "job_id": 11,
+     "printer_id": 1,
+     "printer_name": "Zulu"
+    },
+    {
+     "call": "notify",
+     "job_name": "5 jobs (lid, body, cap.stl, …)",
+     "printer_id": 1,
+     "printer_name": "Zulu",
+     "target": "Zulu"
+    }
+   ],
+   "ids": [
+    7,
+    8,
+    9,
+    10,
+    11
+   ],
+   "returned": null
+  },
+  "ids given in reverse": {
+   "calls": [
+    {
+     "call": "relay",
+     "filename": "lid.gcode.3mf",
+     "job_id": 5,
+     "printer_id": 1,
+     "printer_name": "Zulu"
+    },
+    {
+     "call": "relay",
+     "filename": "body.3mf",
+     "job_id": 6,
+     "printer_id": 1,
+     "printer_name": "Zulu"
+    },
+    {
+     "call": "notify",
+     "job_name": "2 jobs (lid, body)",
+     "printer_id": 1,
+     "printer_name": "Zulu",
+     "target": "Zulu"
+    }
+   ],
+   "ids": [
+    6,
+    5
+   ],
+   "returned": null
+  },
+  "known and unknown": {
+   "calls": [
+    {
+     "call": "relay",
+     "filename": "lid.gcode.3mf",
+     "job_id": 1,
+     "printer_id": 1,
+     "printer_name": "Zulu"
+    },
+    {
+     "call": "notify",
+     "job_name": "lid",
+     "printer_id": 1,
+     "printer_name": "Zulu",
+     "target": "Zulu"
+    }
+   ],
+   "ids": [
+    1,
+    9999
+   ],
+   "returned": null
+  },
+  "library file": {
+   "calls": [
+    {
+     "call": "relay",
+     "filename": "shelf.gcode.3mf",
+     "job_id": 24,
+     "printer_id": 1,
+     "printer_name": "Zulu"
+    },
+    {
+     "call": "notify",
+     "job_name": "shelf",
+     "printer_id": 1,
+     "printer_name": "Zulu",
+     "target": "Zulu"
+    }
+   ],
+   "ids": [
+    24
+   ],
+   "returned": null
+  },
+  "no file at all (cross-model job)": {
+   "calls": [
+    {
+     "call": "relay",
+     "filename": "",
+     "job_id": 26,
+     "printer_id": null,
+     "printer_name": null
+    },
+    {
+     "call": "notify",
+     "job_name": "Job #26",
+     "printer_id": null,
+     "printer_name": null,
+     "target": "Any X1C"
+    }
+   ],
+   "ids": [
+    26
+   ],
+   "returned": null
+  },
+  "no ids": {
+   "calls": [],
+   "ids": [],
+   "returned": null
+  },
+  "one job on a printer": {
+   "calls": [
+    {
+     "call": "relay",
+     "filename": "lid.gcode.3mf",
+     "job_id": 1,
+     "printer_id": 1,
+     "printer_name": "Zulu"
+    },
+    {
+     "call": "notify",
+     "job_name": "lid",
+     "printer_id": 1,
+     "printer_name": "Zulu",
+     "target": "Zulu"
+    }
+   ],
+   "ids": [
+    1
+   ],
+   "returned": null
+  },
+  "position order, not id order": {
+   "calls": [
+    {
+     "call": "relay",
+     "filename": "body.3mf",
+     "job_id": 29,
+     "printer_id": 1,
+     "printer_name": "Zulu"
+    },
+    {
+     "call": "relay",
+     "filename": "lid.gcode.3mf",
+     "job_id": 28,
+     "printer_id": 1,
+     "printer_name": "Zulu"
+    },
+    {
+     "call": "notify",
+     "job_name": "2 jobs (body, lid)",
+     "printer_id": 1,
+     "printer_name": "Zulu",
+     "target": "Zulu"
+    }
+   ],
+   "ids": [
+    28,
+    29
+   ],
+   "returned": null
+  },
+  "query failing": {
+   "calls": [],
+   "returned": null
+  },
+  "the same id twice": {
+   "calls": [
+    {
+     "call": "relay",
+     "filename": "lid.gcode.3mf",
+     "job_id": 1,
+     "printer_id": 1,
+     "printer_name": "Zulu"
+    },
+    {
+     "call": "notify",
+     "job_name": "lid",
+     "printer_id": 1,
+     "printer_name": "Zulu",
+     "target": "Zulu"
+    }
+   ],
+   "ids": [
+    1,
+    1
+   ],
+   "returned": null
+  },
+  "three copies of one file": {
+   "calls": [
+    {
+     "call": "relay",
+     "filename": "lid.gcode.3mf",
+     "job_id": 2,
+     "printer_id": 1,
+     "printer_name": "Zulu"
+    },
+    {
+     "call": "relay",
+     "filename": "lid.gcode.3mf",
+     "job_id": 3,
+     "printer_id": 1,
+     "printer_name": "Zulu"
+    },
+    {
+     "call": "relay",
+     "filename": "lid.gcode.3mf",
+     "job_id": 4,
+     "printer_id": 1,
+     "printer_name": "Zulu"
+    },
+    {
+     "call": "notify",
+     "job_name": "lid ×3",
+     "printer_id": 1,
+     "printer_name": "Zulu",
+     "target": "Zulu"
+    }
+   ],
+   "ids": [
+    2,
+    3,
+    4
+   ],
+   "returned": null
+  },
+  "two files": {
+   "calls": [
+    {
+     "call": "relay",
+     "filename": "lid.gcode.3mf",
+     "job_id": 5,
+     "printer_id": 1,
+     "printer_name": "Zulu"
+    },
+    {
+     "call": "relay",
+     "filename": "body.3mf",
+     "job_id": 6,
+     "printer_id": 1,
+     "printer_name": "Zulu"
+    },
+    {
+     "call": "notify",
+     "job_name": "2 jobs (lid, body)",
+     "printer_id": 1,
+     "printer_name": "Zulu",
+     "target": "Zulu"
+    }
+   ],
+   "ids": [
+    5,
+    6
+   ],
+   "returned": null
+  },
+  "two printers and unassigned in one add": {
+   "calls": [
+    {
+     "call": "relay",
+     "filename": "lid.gcode.3mf",
+     "job_id": 15,
+     "printer_id": 2,
+     "printer_name": "Alpha"
+    },
+    {
+     "call": "relay",
+     "filename": "body.3mf",
+     "job_id": 16,
+     "printer_id": 1,
+     "printer_name": "Zulu"
+    },
+    {
+     "call": "relay",
+     "filename": "cap.stl",
+     "job_id": 17,
+     "printer_id": null,
+     "printer_name": null
+    },
+    {
+     "call": "relay",
+     "filename": "lid.gcode.3mf",
+     "job_id": 18,
+     "printer_id": 2,
+     "printer_name": "Alpha"
+    },
+    {
+     "call": "notify",
+     "job_name": "lid ×2",
+     "printer_id": 2,
+     "printer_name": "Alpha",
+     "target": "Alpha"
+    },
+    {
+     "call": "notify",
+     "job_name": "body",
+     "printer_id": 1,
+     "printer_name": "Zulu",
+     "target": "Zulu"
+    },
+    {
+     "call": "notify",
+     "job_name": "cap.stl",
+     "printer_id": null,
+     "printer_name": null,
+     "target": "Unassigned"
+    }
+   ],
+   "ids": [
+    15,
+    16,
+    17,
+    18
+   ],
+   "returned": null
+  },
+  "unassigned without a model": {
+   "calls": [
+    {
+     "call": "relay",
+     "filename": "lid.gcode.3mf",
+     "job_id": 23,
+     "printer_id": null,
+     "printer_name": null
+    },
+    {
+     "call": "notify",
+     "job_name": "lid",
+     "printer_id": null,
+     "printer_name": null,
+     "target": "Unassigned"
+    }
+   ],
+   "ids": [
+    23
+   ],
+   "returned": null
+  },
+  "unknown ids": {
+   "calls": [],
+   "ids": [
+    9998,
+    9999
+   ],
+   "returned": null
+  }
+ },
+ "queue_events": {
+  "PENDING_UPLOADS_CHANGED": {
+   "type": "pending_uploads_changed"
+  },
+  "QUEUE_CHANGED": {
+   "type": "queue_changed"
+  },
+  "constants_after": [
+   {
+    "type": "queue_changed"
+   },
+   {
+    "type": "pending_uploads_changed"
+   }
+  ],
+  "failing_socket": [
+   null,
+   null
+  ],
+  "returns": [
+   null,
+   null,
+   null
+  ],
+  "sent": [
+   {
+    "type": "queue_changed"
+   },
+   {
+    "type": "pending_uploads_changed"
+   },
+   {
+    "type": "queue_changed"
+   }
+  ]
+ },
+ "queue_item_printer": {
+  "PRINTER_RESOLVED_DEFAULTS": {
+   "ams_mapping": null,
+   "nozzle_mapping": null,
+   "nozzle_rack_choice": null,
+   "skip_filament_check": false
+  },
+  "drop": {
+   "(nothing)": {
+    "item": {
+     "ams_mapping": null,
+     "filament_overrides": "[]",
+     "nozzle_mapping": null,
+     "nozzle_rack_choice": null,
+     "plate_id": 3,
+     "skip_filament_check": false,
+     "use_ams": false
+    },
+    "returned": null
+   },
+   "ams_mapping": {
+    "item": {
+     "ams_mapping": "[1,2]",
+     "filament_overrides": "[]",
+     "nozzle_mapping": null,
+     "nozzle_rack_choice": null,
+     "plate_id": 3,
+     "skip_filament_check": false,
+     "use_ams": false
+    },
+    "returned": null
+   },
+   "ams_mapping,skip_filament_check,nozzle_mapping,nozzle_rack_choice": {
+    "item": {
+     "ams_mapping": "[1,2]",
+     "filament_overrides": "[]",
+     "nozzle_mapping": "[0]",
+     "nozzle_rack_choice": "{\"0\": 1}",
+     "plate_id": 3,
+     "skip_filament_check": true,
+     "use_ams": false
+    },
+    "returned": null
+   },
+   "item without the fields": {
+    "ams_mapping": null,
+    "nozzle_mapping": null,
+    "nozzle_rack_choice": null,
+    "skip_filament_check": false
+   },
+   "iterator": {
+    "item": {
+     "ams_mapping": "[1,2]",
+     "filament_overrides": "[]",
+     "nozzle_mapping": null,
+     "nozzle_rack_choice": null,
+     "plate_id": 3,
+     "skip_filament_check": false,
+     "use_ams": false
+    },
+    "returned": null
+   },
+   "nozzle_rack_choice,unknown": {
+    "item": {
+     "ams_mapping": null,
+     "filament_overrides": "[]",
+     "nozzle_mapping": null,
+     "nozzle_rack_choice": "{\"0\": 1}",
+     "plate_id": 3,
+     "skip_filament_check": false,
+     "use_ams": false
+    },
+    "returned": null
+   },
+   "skip_filament_check,nozzle_mapping": {
+    "item": {
+     "ams_mapping": null,
+     "filament_overrides": "[]",
+     "nozzle_mapping": "[0]",
+     "nozzle_rack_choice": null,
+     "plate_id": 3,
+     "skip_filament_check": true,
+     "use_ams": false
+    },
+    "returned": null
+   }
+  }
+ },
+ "queue_position": {
+  "QUEUE_POSITION_LOCK_KEY": 0,
+  "lock_statements": {
+   "mysql": [],
+   "postgresql": [
+    {
+     "params": {
+      "k": 0
+     },
+     "sql": "SELECT pg_advisory_xact_lock(1625, :k)"
+    }
+   ],
+   "sqlite": []
+  },
+  "next_on_postgresql": {
+   "next": 42,
+   "statements": [
+    "SELECT pg_advisory_xact_lock(1625, :k)",
+    "SELECT max(print_queue.position) AS max_1  FROM print_queue  WHERE print_queue.status IN (__[POSTCOMPILE_status_1])"
+   ]
+  },
+  "states": [
+   {
+    "after": "empty queue",
+    "lock": null,
+    "max": 0,
+    "next": 1
+   },
+   {
+    "after": "completed at 10",
+    "lock": null,
+    "max": 0,
+    "next": 1
+   },
+   {
+    "after": "pending at 3",
+    "lock": null,
+    "max": 3,
+    "next": 4
+   },
+   {
+    "after": "printing at 8",
+    "lock": null,
+    "max": 3,
+    "next": 4
+   },
+   {
+    "after": "slicing at 5",
+    "lock": null,
+    "max": 5,
+    "next": 6
+   },
+   {
+    "after": "slice_failed at 7",
+    "lock": null,
+    "max": 7,
+    "next": 8
+   },
+   {
+    "after": "cancelled at 99",
+    "lock": null,
+    "max": 7,
+    "next": 8
+   },
+   {
+    "after": "pending at 0",
+    "lock": null,
+    "max": 7,
+    "next": 8
+   },
+   {
+    "after": "pending at 7 again",
+    "lock": null,
+    "max": 7,
+    "next": 8
+   }
+  ]
+ },
+ "queue_trace_summary": {
+  "empty_list": null,
+  "returned": null,
+  "rows": [
+   {
+    "aito_board_column": null,
+    "aito_client_name": null,
+    "aito_due_date": null,
+    "aito_quantity": null,
+    "aito_task_id": null,
+    "aito_task_title": null,
+    "project_code": null,
+    "project_name": null,
+    "revision_id": null,
+    "revision_item_name": null,
+    "revision_number": null,
+    "revision_status": null,
+    "slice_job_id": null,
+    "status": "pending"
+   },
+   {
+    "aito_board_column": "print",
+    "aito_client_name": "Teva Marchand",
+    "aito_due_date": "2026-10-18",
+    "aito_quantity": 6,
+    "aito_task_id": 1,
+    "aito_task_title": "Porte-canettes ×6",
+    "project_code": "PRJ-0142",
+    "project_name": "Monster can holders",
+    "revision_id": 1,
+    "revision_item_name": "Can holder lid",
+    "revision_number": 3,
+    "revision_status": "valide",
+    "slice_job_id": null,
+    "status": "pending"
+   },
+   {
+    "aito_board_column": null,
+    "aito_client_name": null,
+    "aito_due_date": null,
+    "aito_quantity": null,
+    "aito_task_id": null,
+    "aito_task_title": null,
+    "project_code": "PRJ-0142",
+    "project_name": "Monster can holders",
+    "revision_id": 1,
+    "revision_item_name": "Can holder lid",
+    "revision_number": 3,
+    "revision_status": "valide",
+    "slice_job_id": 77,
+    "status": "slicing"
+   },
+   {
+    "aito_board_column": null,
+    "aito_client_name": null,
+    "aito_due_date": null,
+    "aito_quantity": null,
+    "aito_task_id": null,
+    "aito_task_title": null,
+    "project_code": "PRJ-0142",
+    "project_name": "Monster can holders",
+    "revision_id": 1,
+    "revision_item_name": "Can holder lid",
+    "revision_number": 3,
+    "revision_status": "valide",
+    "slice_job_id": null,
+    "status": "slice_failed"
+   },
+   {
+    "aito_board_column": "done",
+    "aito_client_name": null,
+    "aito_due_date": null,
+    "aito_quantity": null,
+    "aito_task_id": 2,
+    "aito_task_title": "Autre",
+    "project_code": "PRJ-0200",
+    "project_name": "Second project",
+    "revision_id": 2,
+    "revision_item_name": "Body",
+    "revision_number": 1,
+    "revision_status": "brouillon",
+    "slice_job_id": null,
+    "status": "pending"
+   },
+   {
+    "aito_board_column": "print",
+    "aito_client_name": "Teva Marchand",
+    "aito_due_date": "2026-10-18",
+    "aito_quantity": 6,
+    "aito_task_id": 1,
+    "aito_task_title": "Porte-canettes ×6",
+    "project_code": null,
+    "project_name": null,
+    "revision_id": null,
+    "revision_item_name": null,
+    "revision_number": null,
+    "revision_status": null,
+    "slice_job_id": null,
+    "status": "pending"
+   },
+   {
+    "aito_board_column": null,
+    "aito_client_name": null,
+    "aito_due_date": null,
+    "aito_quantity": null,
+    "aito_task_id": 9999,
+    "aito_task_title": null,
+    "project_code": null,
+    "project_name": null,
+    "revision_id": 9999,
+    "revision_item_name": null,
+    "revision_number": null,
+    "revision_status": null,
+    "slice_job_id": null,
+    "status": "pending"
+   },
+   {
+    "aito_board_column": "print",
+    "aito_client_name": "Teva Marchand",
+    "aito_due_date": "2026-10-18",
+    "aito_quantity": 6,
+    "aito_task_id": 1,
+    "aito_task_title": "Porte-canettes ×6",
+    "project_code": null,
+    "project_name": "kept as given",
+    "revision_id": 9999,
+    "revision_item_name": null,
+    "revision_number": null,
+    "revision_status": null,
+    "slice_job_id": 5,
+    "status": "pending"
+   },
+   {
+    "aito_board_column": null,
+    "aito_client_name": null,
+    "aito_due_date": null,
+    "aito_quantity": null,
+    "aito_task_id": 9999,
+    "aito_task_title": null,
+    "project_code": "PRJ-0142",
+    "project_name": "Monster can holders",
+    "revision_id": 1,
+    "revision_item_name": "Can holder lid",
+    "revision_number": 3,
+    "revision_status": "valide",
+    "slice_job_id": null,
+    "status": "completed"
+   }
+  ]
+ }
+}
+
+### stderr:
+

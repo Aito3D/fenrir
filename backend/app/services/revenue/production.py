@@ -17,6 +17,7 @@ from backend.app.models.printer import Printer
 from backend.app.models.settings import Settings
 from backend.app.services.revenue.config import ORG_TIME_ZONE
 from backend.app.services.revenue.dates import _org_day_of, add_days, all_days, days_in_month
+from backend.app.services.revenue.fixed_accounts import Charge, charges_by_month
 
 _Json = TypeVar("_Json", list[dict], dict)
 
@@ -26,10 +27,15 @@ COSTS_START = "2026-07-01"
 MAX_RUN_SECONDS = 72 * 3600
 # Settings row holding the labour list: [{"name", "hourlyRate", "hoursPerDay", "daysPerWeek", "since"}].
 LABOR_KEY = "revenue_labor"
-FIXED_COSTS_KEY = "revenue_fixed_costs"
 # Settings row: {"assets": [{"id", "number", "name", "type", "cost", "start", "months", "status"}], "selected": [id],
 # "readAt"}: Zoho's fixed assets as last read, and the ones the operator charges to 3D printing.
 DEPRECIATION_KEY = "revenue_depreciation"
+# Settings row: {account id: {"percent", "type", "goodsShare"}}: the share of each Zoho class 6 account that is 3D's.
+FIXED_ACCOUNTS_KEY = "revenue_fixed_accounts"
+# Settings row: {"accounts": [{"id", "code", "name", "active"}], "months": {"YYYY-MM": {account id: total}},
+# "readAt", "currentReadAt"}: Zoho's expense accounts and their monthly totals as last read. A row of its own, so a
+# refresh and a save of the shares never overwrite each other.
+FIXED_ACCOUNTS_CACHE_KEY = "revenue_fixed_accounts_cache"
 
 
 @dataclass(frozen=True)
@@ -58,6 +64,8 @@ class ProductionCosts:
     by_day: dict[str, dict[str, float]]  # day -> part (PARTS) -> cost
     first_day: str | None  # services sold before the print log began have no known cost
     hours_by_day: dict[str, float] = field(default_factory=dict)  # day -> printer hours of the runs started that day
+    # day -> the goods' part of that day's `fixed` and `fixedEstimated` (already inside `by_day`)
+    fixed_goods_by_day: dict[str, dict[str, float]] = field(default_factory=dict)
 
 
 def _add(by_day: dict[str, dict[str, float]], day: str, parts: dict[str, float]) -> None:
@@ -186,17 +194,27 @@ def labor_by_day(
     return by_day
 
 
-def fixed_by_day(monthly: float, today: str, since: str = COSTS_START, today_share: float = 0.0) -> dict[str, float]:
-    """The monthly fixed charges spread evenly over each month's days: whole days up to yesterday, then
-    `today_share` of today, so they grow by the minute."""
-    if monthly <= 0:
-        return {}
-    by_day = {}
+def fixed_by_day(
+    charges: dict[str, Charge], today: str, since: str = COSTS_START, today_share: float = 0.0
+) -> tuple[dict[str, dict[str, float]], dict[str, dict[str, float]]]:
+    """Each month's fixed charge spread evenly over its days: whole days up to yesterday, then `today_share` of
+    today, so it grows by the minute. Two maps, day -> {"fixed": entered in the books, "fixedEstimated": usual
+    charges the running month still misses}: every charge, and the goods' part of it."""
+    every: dict[str, dict[str, float]] = {}
+    goods: dict[str, dict[str, float]] = {}
     for day in all_days(since, today):
-        cost = monthly / days_in_month(int(day[:4]), int(day[5:7])) * (today_share if day == today else 1.0)
-        if cost:
-            by_day[day] = cost
-    return by_day
+        charge = charges.get(day[:7])
+        if charge is None:
+            continue
+        share = (today_share if day == today else 1.0) / days_in_month(int(day[:4]), int(day[5:7]))
+        for by_day, real, estimated in (
+            (every, charge.real, charge.estimated),
+            (goods, charge.real_goods, charge.est_goods),
+        ):
+            parts = {k: v * share for k, v in (("fixed", real), ("fixedEstimated", estimated)) if v * share}
+            if parts:
+                by_day[day] = parts
+    return every, goods
 
 
 def _life_end(start: str, months: int) -> str:
@@ -253,15 +271,6 @@ async def save_labor(db, providers: list[dict]) -> list[dict]:
     return await _save_json(db, LABOR_KEY, providers)
 
 
-async def read_fixed_costs(conn: AsyncConnection) -> list[dict]:
-    """Monthly fixed charges typed by hand, `{label, monthly}`: the 3D part only (the Zoho org is shared)."""
-    return await _read_json(conn, FIXED_COSTS_KEY)
-
-
-async def save_fixed_costs(db, costs: list[dict]) -> list[dict]:
-    return await _save_json(db, FIXED_COSTS_KEY, costs)
-
-
 async def read_depreciation(conn: AsyncConnection) -> dict:
     raw = (await conn.execute(select(Settings.value).where(Settings.key == DEPRECIATION_KEY))).scalar_one_or_none()
     return json.loads(raw) if raw else {"assets": [], "selected": [], "readAt": None}
@@ -271,8 +280,26 @@ async def save_depreciation(db, value: dict) -> dict:
     return await _save_json(db, DEPRECIATION_KEY, value)
 
 
-def fixed_monthly(costs: Iterable[dict]) -> float:
-    return sum((c["monthly"] for c in costs), 0.0)
+async def read_fixed_accounts(conn: AsyncConnection) -> dict[str, dict]:
+    return cast(dict, await _read_json(conn, FIXED_ACCOUNTS_KEY)) or {}
+
+
+async def save_fixed_accounts(db, config: dict[str, dict]) -> dict[str, dict]:
+    return await _save_json(db, FIXED_ACCOUNTS_KEY, config)
+
+
+async def read_fixed_cache(conn: AsyncConnection) -> dict:
+    cache = cast(dict, await _read_json(conn, FIXED_ACCOUNTS_CACHE_KEY))
+    return cache or {"accounts": [], "months": {}, "readAt": None, "currentReadAt": None}
+
+
+async def save_fixed_cache(db, cache: dict) -> dict:
+    return await _save_json(db, FIXED_ACCOUNTS_CACHE_KEY, cache)
+
+
+async def read_fixed_charges(conn: AsyncConnection, today: str) -> dict[str, Charge]:
+    """What each month charges to 3D printing, from the shares set on Zoho's expense accounts."""
+    return charges_by_month(await read_fixed_accounts(conn), await read_fixed_cache(conn), today)
 
 
 async def read_production_costs(conn: AsyncConnection, today: str, now: datetime | None = None) -> ProductionCosts:
@@ -322,9 +349,9 @@ async def read_production_costs(conn: AsyncConnection, today: str, now: datetime
     by_day = costs.by_day
     for day, cost in labor_by_day(await read_labor(conn), today, today_share=work_share).items():
         _add(by_day, day, {"labor": cost})
-    fixed = fixed_monthly(await read_fixed_costs(conn))
-    for day, cost in fixed_by_day(fixed, today, today_share=day_share).items():
-        _add(by_day, day, {"fixed": cost})
+    fixed, fixed_goods = fixed_by_day(await read_fixed_charges(conn, today), today, today_share=day_share)
+    for day, parts in fixed.items():
+        _add(by_day, day, parts)
     assets = selected_assets(await read_depreciation(conn))
     if assets:
         # The books' depreciation replaces the calculator's usage wear: counting both would charge the machines twice.
@@ -332,4 +359,9 @@ async def read_production_costs(conn: AsyncConnection, today: str, now: datetime
             parts.pop("wear", None)
         for day, cost in depreciation_by_day(assets, today, today_share=day_share).items():
             _add(by_day, day, {"depreciation": cost})
-    return ProductionCosts(by_day=by_day, first_day=min(by_day, default=None), hours_by_day=costs.hours_by_day)
+    return ProductionCosts(
+        by_day=by_day,
+        first_day=min(by_day, default=None),
+        hours_by_day=costs.hours_by_day,
+        fixed_goods_by_day=fixed_goods,
+    )

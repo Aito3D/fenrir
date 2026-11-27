@@ -3,9 +3,11 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { ReactNode } from 'react';
+import { ApiError } from '../../../api/client';
 import type { OrderBoardResponse } from '../../../api/client';
 
-vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (k: string) => k }) }));
+const tSpy = vi.hoisted(() => vi.fn((k: string, _o?: unknown) => k));
+vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: tSpy }) }));
 vi.mock('../../../api/client', async (orig) => {
   const mod = await orig<typeof import('../../../api/client')>();
   const fn = () => vi.fn();
@@ -47,7 +49,10 @@ const toPayment = async (r: ReturnType<typeof setup>) => {
   await waitFor(() => expect(r.result.current.step).toBe('payment'));
 };
 
-beforeEach(() => vi.resetAllMocks());
+beforeEach(() => {
+  vi.resetAllMocks();
+  tSpy.mockImplementation((k: string) => k);
+});
 
 describe('useCounterPay', () => {
   it('runs create, then waits for the payment', async () => {
@@ -102,7 +107,64 @@ describe('useCounterPay', () => {
     await waitFor(() => expect(r.result.current.step).toBe('handover'));
     expect(m.createOrderInvoice).toHaveBeenCalledTimes(1);
     expect(m.applyOrderCredit).toHaveBeenCalledTimes(1);
-    expect(m.applyOrderCredit).toHaveBeenCalledWith('so1', 'inv1');
+    expect(m.applyOrderCredit).toHaveBeenCalledWith('so1', 'inv1', 12400);
+  });
+
+  it('a partly paid sale retries the credit capped at what the invoice does not hold yet', async () => {
+    arrange(mkRow(), 12400);
+    m.createOrderInvoice.mockResolvedValue({ board: boardOf(mkRow({}, 12400)), outcome: created } as never);
+    // 2000 taken, 500 already applied: balance 11900 on a 12400 invoice.
+    m.getOrderBoard.mockResolvedValue(boardOf(mkRow({}, 11900)));
+    m.applyOrderCredit.mockResolvedValue({ applied: 1500, board: boardOf(mkRow({}, 10400)) } as never);
+    const r = setup();
+    await toPayment(r);
+    await act(async () => r.result.current.settle(2000));
+    await waitFor(() => expect(r.result.current.error).toBe('orders.counterPay.notAttributed'));
+    await act(async () => r.result.current.retry());
+    await waitFor(() => expect(r.result.current.step).toBe('handover'));
+    expect(m.applyOrderCredit).toHaveBeenCalledWith('so1', 'inv1', 1500);
+  });
+
+  describe('the apply-credit retry words its refusals', () => {
+    // First pass fails on the unpaid invoice; the retry re-reads it unpaid and applies the credit.
+    const toRetry = async (refusal: unknown) => {
+      arrange(mkRow(), 12400);
+      m.getOrderBoard.mockResolvedValue(boardOf(mkRow({}, 12400)));
+      m.applyOrderCredit.mockRejectedValue(refusal);
+      const r = setup();
+      await toPayment(r);
+      await act(async () => r.result.current.settle(12400));
+      await waitFor(() => expect(r.result.current.error).toBe('orders.counterPay.notAttributed'));
+      await act(async () => r.result.current.retry());
+      await waitFor(() => expect(m.applyOrderCredit).toHaveBeenCalledTimes(1));
+      await waitFor(() => expect(r.result.current.busy).toBe(false));
+      return r;
+    };
+
+    it.each([['a coded detail', new ApiError('x', 400, 'no_credit')], ['a plain-string detail', new ApiError('no_credit', 400)]])(
+      'a 400 no_credit (%s) says the payment is not on the invoice yet', async (_n, e) => {
+        const r = await toRetry(e);
+        expect(r.result.current).toMatchObject({ step: 'invoice', error: 'orders.counterPay.notAttributed' });
+      });
+
+    it('a 409 says the shop is busy', async () => {
+      const r = await toRetry(new ApiError('Another action', 409));
+      expect(r.result.current).toMatchObject({ step: 'invoice', error: 'orders.busy' });
+    });
+
+    it('another 400 code keeps the generic wording', async () => {
+      const r = await toRetry(new ApiError('version', 400, 'other_code'));
+      expect(r.result.current.error).toBe('orders.parcel.stale');
+    });
+
+    it('a 409 on a step that is not the retry keeps the generic wording', async () => {
+      arrange(mkRow());
+      m.createOrderInvoice.mockRejectedValue(new ApiError('Another action', 409));
+      const r = setup();
+      await toPayment(r);
+      await act(async () => r.result.current.settle(12400));
+      await waitFor(() => expect(r.result.current.error).toBe('orders.parcel.stale'));
+    });
   });
 
   describe('invoice retry re-reads the board first', () => {
@@ -137,7 +199,7 @@ describe('useCounterPay', () => {
       await act(async () => r.result.current.retry());
       await waitFor(() => expect(r.result.current.step).toBe('handover'));
       expect(m.applyOrderCredit).toHaveBeenCalledTimes(1);
-      expect(m.applyOrderCredit).toHaveBeenCalledWith('so1', 'inv1');
+      expect(m.applyOrderCredit).toHaveBeenCalledWith('so1', 'inv1', 12400);
     });
 
     it('an invoice still missing on the re-read stays an error and never calls the API with an empty id', async () => {
@@ -150,6 +212,22 @@ describe('useCounterPay', () => {
       await waitFor(() => expect(r.result.current.busy).toBe(false));
       expect(r.result.current.error).toBe('orders.counterPay.notAttributed');
       expect(m.applyOrderCredit).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      ['a board without the order', () => boardOf(mkRow({ id: 'other' }, 12400))],
+      ['a row holding only another invoice', () => boardOf(mkRow({ payment: { invoices: [{ id: 'inv9', number: 'FAC-9', total: 12400, balance: 0 }] } }))],
+    ])('a re-read answered with %s stays notAttributed: no credit, no second invoice', async (_n, board) => {
+      lacking();
+      m.getOrderBoard.mockResolvedValue(board());
+      const r = setup();
+      await toError(r);
+      await act(async () => r.result.current.retry());
+      await waitFor(() => expect(m.getOrderBoard).toHaveBeenCalledTimes(1));
+      await waitFor(() => expect(r.result.current.busy).toBe(false));
+      expect(r.result.current).toMatchObject({ step: 'invoice', error: 'orders.counterPay.notAttributed', invoice: null });
+      expect(m.applyOrderCredit).not.toHaveBeenCalled();
+      expect(m.createOrderInvoice).toHaveBeenCalledTimes(1);
     });
 
     it('a lost apply-credit answer: the next retry sees the invoice paid and does not apply again', async () => {
@@ -200,6 +278,38 @@ describe('useCounterPay', () => {
     expect(r.result.current.step).toBe('invoice');
   });
 
+  describe('an invoice answer that is not a clean created', () => {
+    const answered = async (outcome: Record<string, unknown>) => {
+      arrange(mkRow());
+      m.createOrderInvoice.mockResolvedValue({ board: boardOf(mkRow()), outcome: { ...created, ...outcome } } as never);
+      const r = setup();
+      await toPayment(r);
+      await act(async () => r.result.current.settle(12400));
+      await waitFor(() => expect(r.result.current.error).toBeTruthy());
+      return r;
+    };
+
+    it('a draft left by a failed "mark sent" names the draft and its number, not the discount text', async () => {
+      const r = await answered({ invoice: 'draft', invoice_number: 'FAC-7', manual_reason: null, failed_step: 'sent', error: 'timeout' });
+      expect(r.result.current).toMatchObject({ step: 'invoice', error: 'orders.handover.manualDraft' });
+      expect(tSpy).toHaveBeenCalledWith('orders.handover.manualDraft', { number: 'FAC-7' });
+      expect(tSpy).not.toHaveBeenCalledWith('orders.handover.manual', expect.anything());
+      expect(m.createOrderInvoice).toHaveBeenCalledTimes(1);
+    });
+
+    it('a manual outcome with reason draft keeps the draft text', async () => {
+      const r = await answered({ invoice: 'manual', invoice_number: 'FAC-8', manual_reason: 'draft' });
+      expect(r.result.current).toMatchObject({ step: 'invoice', error: 'orders.handover.manualDraft' });
+      expect(tSpy).toHaveBeenCalledWith('orders.handover.manualDraft', { number: 'FAC-8' });
+    });
+
+    it('a manual outcome with another reason keeps the discount-or-charge text', async () => {
+      const r = await answered({ invoice: 'manual', invoice_number: null, manual_reason: 'discount' });
+      expect(r.result.current).toMatchObject({ step: 'invoice', error: 'orders.handover.manual' });
+      expect(tSpy).toHaveBeenCalledWith('orders.handover.manual', { number: '' });
+    });
+  });
+
   it('a partial payment passes the invoice step', async () => {
     arrange(mkRow({ lines: [line({ stock_available: 0, shortfall: 2 })] }), 2400);
     const r = setup();
@@ -234,6 +344,8 @@ describe('useCounterPay', () => {
     await act(async () => r.result.current.settle(12400));
     await waitFor(() => expect(r.result.current.error).toBe('nope'));
     expect(r.result.current.step).toBe('parcel');
+    // The retry re-reads the board for a parcel to adopt: none there, so it posts again.
+    m.getOrderBoard.mockResolvedValue(boardOf(mkRow({}, 0)));
     await act(async () => r.result.current.retry());
     await waitFor(() => expect(r.result.current.step).toBe('handover'));
     expect(m.createOrderPicklist).toHaveBeenCalledTimes(1);
@@ -318,6 +430,57 @@ describe('useCounterPay', () => {
     await waitFor(() => expect(m.createOrderInvoice).toHaveBeenCalledTimes(2));
   });
 
+  describe('a lost invoice answer (outcome none): which live invoice is adopted', () => {
+    const iv = (id: string, number: string, date: string | undefined, status: string) => ({ id, number, date, status, total: 12400, balance: 0 });
+    const adopt = async (invoices: unknown[]) => {
+      arrange(mkRow());
+      m.createOrderInvoice.mockResolvedValue({ board: boardOf(mkRow({ payment: { invoices } })), outcome: { ...created, invoice: 'none', invoice_number: null } } as never);
+      const r = setup();
+      await toPayment(r);
+      await act(async () => r.result.current.settle(12400));
+      await waitFor(() => expect(r.result.current.step).toBe('handover'));
+      return r;
+    };
+
+    it('takes the newest live invoice, skipping a newer void one and a newer draft', async () => {
+      const r = await adopt([
+        iv('i1', 'FAC-1', '2026-01-01', 'paid'), iv('i2', 'FAC-2', '2026-03-01', 'sent'),
+        iv('i3', 'FAC-3', '2026-05-01', 'void'), iv('i4', 'FAC-4', '2026-06-01', 'draft'),
+      ]);
+      expect(r.result.current.invoice).toMatchObject({ id: 'i2', number: 'FAC-2' });
+    });
+
+    it('with equal dates the later one on the row wins', async () => {
+      const r = await adopt([iv('i1', 'FAC-1', '2026-03-01', 'sent'), iv('i2', 'FAC-2', '2026-03-01', 'sent')]);
+      expect(r.result.current.invoice).toMatchObject({ id: 'i2' });
+    });
+
+    it('ODDITY: an invoice with no date, met first, is never replaced by a dated one', async () => {
+      const r = await adopt([iv('i1', 'FAC-1', undefined, 'sent'), iv('i2', 'FAC-2', '2026-03-01', 'sent')]);
+      expect(r.result.current.invoice).toMatchObject({ id: 'i1' });
+    });
+
+    it('only void and draft invoices on the row is the no-invoice error', async () => {
+      arrange(mkRow());
+      m.createOrderInvoice.mockResolvedValue({ board: boardOf(mkRow({ payment: { invoices: [iv('i3', 'FAC-3', '2026-05-01', 'void'), iv('i4', 'FAC-4', '2026-06-01', 'draft')] } })), outcome: { ...created, invoice: 'none', invoice_number: null } } as never);
+      const r = setup();
+      await toPayment(r);
+      await act(async () => r.result.current.settle(12400));
+      await waitFor(() => expect(r.result.current.error).toBe('orders.counterPay.noInvoice'));
+    });
+  });
+
+  it('a failed invoice outcome with no failed_step falls back to the invoice wording', async () => {
+    arrange(mkRow());
+    m.createOrderInvoice.mockResolvedValue({ board: boardOf(mkRow()), outcome: { ...created, invoice: 'failed', invoice_number: null, failed_step: null, error: 'zoho 500' } } as never);
+    const r = setup();
+    await toPayment(r);
+    await act(async () => r.result.current.settle(12400));
+    await waitFor(() => expect(r.result.current.error).toBe('orders.handover.invoiceFailed'));
+    expect(tSpy).toHaveBeenCalledWith('orders.handover.invoiceFailed', { reason: 'zoho 500' });
+    expect(r.result.current.step).toBe('invoice');
+  });
+
   it('a failed invoice outcome is worded, never empty', async () => {
     arrange(mkRow());
     m.createOrderInvoice.mockResolvedValue({ board: boardOf(mkRow()), outcome: { ...created, invoice: 'failed', invoice_number: null, failed_step: 'invoice', error: 'zoho 500' } } as never);
@@ -340,6 +503,66 @@ describe('useCounterPay', () => {
     await act(async () => r.result.current.retry());
     await waitFor(() => expect(r.result.current.step).toBe('done'));
     expect(m.handOverOrderParcel).toHaveBeenCalledTimes(2);
+  });
+
+  it('a thrown createOrderInvoice is a worded error; the retry posts a second invoice call and adopts the one on the board', async () => {
+    arrange(mkRow(), 0);
+    m.createOrderInvoice.mockRejectedValueOnce(new Error('timeout'))
+      .mockResolvedValueOnce({ board: boardOf(mkRow({}, 0)), outcome: { ...created, invoice: 'none', invoice_number: null } } as never);
+    const r = setup();
+    await toPayment(r);
+    await act(async () => r.result.current.settle(12400));
+    await waitFor(() => expect(r.result.current.error).toBe('timeout'));
+    expect(r.result.current.step).toBe('invoice');
+    expect(r.result.current.busy).toBe(false);
+    await act(async () => r.result.current.retry());
+    await waitFor(() => expect(r.result.current.step).toBe('handover'));
+    expect(m.createOrderInvoice).toHaveBeenCalledTimes(2);
+    expect(m.applyOrderCredit).not.toHaveBeenCalled();
+    expect(r.result.current.invoice?.id).toBe('inv1');
+    expect(r.result.current.error).toBeNull();
+  });
+
+  it('a thrown hand-over is a worded error, and retry hands over again to done', async () => {
+    arrange(mkRow());
+    m.handOverOrderParcel.mockRejectedValueOnce(new Error('timeout'));
+    const r = setup();
+    await toPayment(r);
+    await act(async () => r.result.current.settle(12400));
+    await waitFor(() => expect(r.result.current.step).toBe('handover'));
+    await act(async () => r.result.current.handOver());
+    await waitFor(() => expect(r.result.current.error).toBe('timeout'));
+    expect(r.result.current.step).toBe('handover');
+    await act(async () => r.result.current.retry());
+    await waitFor(() => expect(r.result.current.step).toBe('done'));
+    expect(m.handOverOrderParcel).toHaveBeenCalledTimes(2);
+    expect(m.createOrderInvoice).toHaveBeenCalledTimes(1);
+    expect(m.createOrderParcel).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([['an empty-message Error', new Error('')], ['a non-Error rejection', 'plain string']])('%s still leaves a non-empty error and a callable retry', async (_n, reason) => {
+    arrange(mkRow());
+    m.createOrderParcel.mockRejectedValueOnce(reason);
+    const r = setup();
+    await toPayment(r);
+    await act(async () => r.result.current.settle(12400));
+    await waitFor(() => expect(r.result.current.error).toBe('orders.handover.failed'));
+    expect(r.result.current.step).toBe('parcel');
+    // The retry re-reads the board for a parcel to adopt: none there, so it posts again.
+    m.getOrderBoard.mockResolvedValue(boardOf(mkRow({}, 0)));
+    await act(async () => r.result.current.retry());
+    await waitFor(() => expect(r.result.current.step).toBe('handover'));
+    expect(m.createOrderParcel).toHaveBeenCalledTimes(2);
+  });
+
+  it('retry with no error makes no API call', async () => {
+    arrange(mkRow());
+    const r = setup();
+    await toPayment(r);
+    await act(async () => r.result.current.retry());
+    expect(r.result.current).toMatchObject({ step: 'payment', busy: false, error: null });
+    for (const f of Object.values(m)) if (f !== m.createCounterOrder) expect(f).not.toHaveBeenCalled();
+    expect(m.createCounterOrder).toHaveBeenCalledTimes(1);
   });
 
   it('board answers invalidate the finished list and the events', async () => {
@@ -372,6 +595,195 @@ describe('useCounterPay', () => {
     await waitFor(() => expect(r.result.current.step).toBe('handover'));
     expect(m.createOrderPicklist).toHaveBeenCalledTimes(1);
     expect(m.createOrderParcel).toHaveBeenCalledWith('so1', 'plX', [{ line_id: 'l1', quantity: 2 }]);
+  });
+
+  describe('a parcel answer lost to a timeout', () => {
+    const pk = (id: string, number: string, status = 'not_shipped') => ({ id, number, status });
+    const lost = async (r: ReturnType<typeof setup>) => {
+      await toPayment(r);
+      await act(async () => r.result.current.settle(12400));
+      await waitFor(() => expect(r.result.current.error).toBe('timeout'));
+    };
+
+    it('a retry adopts the one not-shipped parcel and hands over without posting again', async () => {
+      arrange(mkRow());
+      m.createOrderParcel.mockRejectedValueOnce(new Error('timeout'));
+      const r = setup();
+      await lost(r);
+      m.getOrderBoard.mockResolvedValue(boardOf(mkRow({ packages: [pk('pkX', 'PKG-9')] }, 0)));
+      await act(async () => r.result.current.retry());
+      await waitFor(() => expect(r.result.current.step).toBe('handover'));
+      expect(m.createOrderParcel).toHaveBeenCalledTimes(1);
+      await act(async () => r.result.current.handOver());
+      await waitFor(() => expect(r.result.current.step).toBe('done'));
+      expect(m.handOverOrderParcel).toHaveBeenCalledWith('so1', 'pkX', { mode: 'pickup', apply_credit: false });
+    });
+
+    it('a retry posts again when the board shows no parcel to adopt', async () => {
+      arrange(mkRow());
+      m.createOrderParcel.mockRejectedValueOnce(new Error('timeout'));
+      const r = setup();
+      await lost(r);
+      m.getOrderBoard.mockResolvedValue(boardOf(mkRow({ packages: [pk('pkS', 'PKG-0', 'shipped')] }, 0)));
+      await act(async () => r.result.current.retry());
+      await waitFor(() => expect(r.result.current.step).toBe('handover'));
+      expect(m.createOrderParcel).toHaveBeenCalledTimes(2);
+    });
+
+    it('a retry does not guess between two not-shipped parcels and posts again', async () => {
+      arrange(mkRow());
+      m.createOrderParcel.mockRejectedValueOnce(new Error('timeout'));
+      const r = setup();
+      await lost(r);
+      m.getOrderBoard.mockResolvedValue(boardOf(mkRow({ packages: [pk('pkA', 'PKG-8'), pk('pkB', 'PKG-9')] }, 0)));
+      await act(async () => r.result.current.retry());
+      await waitFor(() => expect(r.result.current.step).toBe('handover'));
+      expect(m.createOrderParcel).toHaveBeenCalledTimes(2);
+    });
+
+    it('the first attempt never re-reads the board to adopt', async () => {
+      arrange(mkRow());
+      m.getOrderBoard.mockResolvedValue(boardOf(mkRow({ packages: [pk('pkX', 'PKG-9')] }, 0)));
+      const r = setup();
+      await toPayment(r);
+      await act(async () => r.result.current.settle(12400));
+      await waitFor(() => expect(r.result.current.step).toBe('handover'));
+      expect(m.getOrderBoard).not.toHaveBeenCalled();
+      expect(m.createOrderParcel).toHaveBeenCalledTimes(1);
+    });
+
+    it('reset clears the flag: the next sale posts its first parcel without a re-read', async () => {
+      arrange(mkRow());
+      m.createOrderParcel.mockRejectedValueOnce(new Error('timeout'));
+      const r = setup();
+      await lost(r);
+      m.getOrderBoard.mockResolvedValue(boardOf(mkRow({ packages: [pk('pkX', 'PKG-9')] }, 0)));
+      act(() => r.result.current.reset());
+      await toPayment(r);
+      await act(async () => r.result.current.settle(12400));
+      await waitFor(() => expect(r.result.current.step).toBe('handover'));
+      expect(m.createOrderParcel).toHaveBeenCalledTimes(2);
+      expect(m.getOrderBoard).not.toHaveBeenCalled();
+    });
+
+    describe('a re-post refused after the server refreshed its copy', () => {
+      const refused = (code = 'too_many') => new ApiError(code, 400);
+      const text = (code: string) => `orders.err.${code}`;
+      it.each(['too_many', 'nothing_to_pack'])('%s: one re-read adopts the one waiting parcel and hands over', async (code) => {
+        arrange(mkRow());
+        m.createOrderParcel.mockRejectedValueOnce(new Error('timeout'));
+        const r = setup();
+        await lost(r);
+        m.createOrderParcel.mockRejectedValueOnce(refused(code));
+        m.getOrderBoard.mockResolvedValueOnce(boardOf(mkRow({ packages: [] }, 0)));
+        m.getOrderBoard.mockResolvedValueOnce(boardOf(mkRow({ packages: [pk('pkX', 'PKG-9')] }, 0)));
+        await act(async () => r.result.current.retry());
+        await waitFor(() => expect(r.result.current.step).toBe('handover'));
+        expect(r.result.current.error).toBeNull();
+        expect(m.createOrderParcel).toHaveBeenCalledTimes(2);
+        expect(m.getOrderBoard).toHaveBeenCalledTimes(2);
+        await act(async () => r.result.current.handOver());
+        await waitFor(() => expect(r.result.current.step).toBe('done'));
+        expect(m.handOverOrderParcel).toHaveBeenCalledWith('so1', 'pkX', { mode: 'pickup', apply_credit: false });
+      });
+
+      it.each([
+        ['none', [] as ReturnType<typeof pk>[]],
+        ['two', [pk('pkA', 'PKG-8'), pk('pkB', 'PKG-9')]],
+      ])('the re-read shows %s waiting: the refusal is shown and retry stays available', async (_n, packages) => {
+        arrange(mkRow());
+        m.createOrderParcel.mockRejectedValueOnce(new Error('timeout'));
+        const r = setup();
+        await lost(r);
+        m.createOrderParcel.mockRejectedValueOnce(refused());
+        m.getOrderBoard.mockResolvedValueOnce(boardOf(mkRow({ packages: [] }, 0)));
+        m.getOrderBoard.mockResolvedValueOnce(boardOf(mkRow({ packages }, 0)));
+        await act(async () => r.result.current.retry());
+        await waitFor(() => expect(r.result.current.error).toBe(text('too_many')));
+        expect(r.result.current.step).toBe('parcel');
+        expect(m.getOrderBoard).toHaveBeenCalledTimes(2);
+        expect(m.createOrderParcel).toHaveBeenCalledTimes(2);
+      });
+
+      it('a first attempt refused too_many shows the refusal without any adoption re-read', async () => {
+        arrange(mkRow());
+        m.createOrderParcel.mockRejectedValueOnce(refused());
+        m.getOrderBoard.mockResolvedValue(boardOf(mkRow({ packages: [pk('pkX', 'PKG-9')] }, 0)));
+        const r = setup();
+        await toPayment(r);
+        await act(async () => r.result.current.settle(12400));
+        await waitFor(() => expect(r.result.current.error).toBe(text('too_many')));
+        expect(m.getOrderBoard).not.toHaveBeenCalled();
+        expect(r.result.current.step).toBe('parcel');
+      });
+
+      it('another 400 code keeps today text and does not adopt', async () => {
+        arrange(mkRow());
+        m.createOrderParcel.mockRejectedValueOnce(new Error('timeout'));
+        const r = setup();
+        await lost(r);
+        m.getOrderBoard.mockResolvedValue(boardOf(mkRow({ packages: [pk('pkX', 'PKG-9')] }, 0)));
+        m.getOrderBoard.mockResolvedValueOnce(boardOf(mkRow({ packages: [] }, 0)));
+        m.createOrderParcel.mockRejectedValueOnce(refused('picklist_open'));
+        await act(async () => r.result.current.retry());
+        await waitFor(() => expect(r.result.current.error).toBe(text('picklist_open')));
+        expect(m.getOrderBoard).toHaveBeenCalledTimes(1);
+      });
+
+      it('a 409 keeps today text and does not adopt', async () => {
+        arrange(mkRow());
+        m.createOrderParcel.mockRejectedValueOnce(new Error('timeout'));
+        const r = setup();
+        await lost(r);
+        m.getOrderBoard.mockResolvedValueOnce(boardOf(mkRow({ packages: [] }, 0)));
+        m.createOrderParcel.mockRejectedValueOnce(new ApiError('too_many', 409));
+        await act(async () => r.result.current.retry());
+        await waitFor(() => expect(r.result.current.error).toBe('orders.parcel.stale'));
+        expect(m.getOrderBoard).toHaveBeenCalledTimes(1);
+      });
+
+      it('a failed re-read surfaces the original refusal, not the re-read error', async () => {
+        arrange(mkRow());
+        m.createOrderParcel.mockRejectedValueOnce(new Error('timeout'));
+        const r = setup();
+        await lost(r);
+        m.createOrderParcel.mockRejectedValueOnce(refused());
+        m.getOrderBoard.mockResolvedValueOnce(boardOf(mkRow({ packages: [] }, 0)));
+        m.getOrderBoard.mockRejectedValueOnce(new Error('offline'));
+        await act(async () => r.result.current.retry());
+        await waitFor(() => expect(r.result.current.error).toBe(text('too_many')));
+        expect(r.result.current.step).toBe('parcel');
+      });
+
+      it('reset clears the flag: a first-attempt refusal in the next sale is not adopted', async () => {
+        arrange(mkRow());
+        m.createOrderParcel.mockRejectedValueOnce(new Error('timeout'));
+        const r = setup();
+        await lost(r);
+        act(() => r.result.current.reset());
+        m.createOrderParcel.mockRejectedValueOnce(refused());
+        m.getOrderBoard.mockResolvedValue(boardOf(mkRow({ packages: [pk('pkX', 'PKG-9')] }, 0)));
+        await toPayment(r);
+        await act(async () => r.result.current.settle(12400));
+        await waitFor(() => expect(r.result.current.error).toBe(text('too_many')));
+        expect(m.getOrderBoard).not.toHaveBeenCalled();
+      });
+    });
+
+    it('a failed re-read shows the error and keeps the retry available', async () => {
+      arrange(mkRow());
+      m.createOrderParcel.mockRejectedValueOnce(new Error('timeout'));
+      const r = setup();
+      await lost(r);
+      m.getOrderBoard.mockRejectedValueOnce(new Error('offline'));
+      await act(async () => r.result.current.retry());
+      await waitFor(() => expect(r.result.current.error).toBe('offline'));
+      expect(m.createOrderParcel).toHaveBeenCalledTimes(1);
+      m.getOrderBoard.mockResolvedValue(boardOf(mkRow({ packages: [pk('pkX', 'PKG-9')] }, 0)));
+      await act(async () => r.result.current.retry());
+      await waitFor(() => expect(r.result.current.step).toBe('handover'));
+      expect(m.createOrderParcel).toHaveBeenCalledTimes(1);
+    });
   });
 
   it('a package missing from the row refetches the board once', async () => {
@@ -424,5 +836,107 @@ describe('useCounterPay', () => {
     await waitFor(() => expect(r.result.current.busy).toBe(true));
     act(() => r.result.current.reset());
     expect(r.result.current).toMatchObject({ active: true, step: 'invoice', busy: true });
+  });
+
+  it('the retry credit cap is rounded to the cent (no float residue sent to Books)', async () => {
+    // 100.3 - 100.1 = 0.19999999999999574 held on the invoice, so 0.3 - that = 0.10000000000000426 unrounded.
+    const money = (balance: number) => mkRow({ payment: { invoices: [{ id: 'inv1', number: 'FAC-1', total: 100.3, balance }] } });
+    arrange(mkRow(), 12400);
+    m.createOrderInvoice.mockResolvedValue({ board: boardOf(money(100.3)), outcome: created } as never);
+    m.getOrderBoard.mockResolvedValue(boardOf(money(100.1)));
+    m.applyOrderCredit.mockResolvedValue({ applied: 0.1, board: boardOf(money(100.2)) } as never);
+    const r = setup();
+    await toPayment(r);
+    await act(async () => r.result.current.settle(0.3));
+    await waitFor(() => expect(r.result.current.error).toBe('orders.counterPay.notAttributed'));
+    await act(async () => r.result.current.retry());
+    await waitFor(() => expect(m.applyOrderCredit).toHaveBeenCalledTimes(1));
+    expect(m.applyOrderCredit).toHaveBeenCalledWith('so1', 'inv1', 0.1);
+  });
+
+  describe('re-entry guards', () => {
+    const toHandover = async (r: ReturnType<typeof setup>) => {
+      await toPayment(r);
+      await act(async () => r.result.current.settle(12400));
+      await waitFor(() => expect(r.result.current.step).toBe('handover'));
+    };
+
+    it('a second start() while the first runs creates one order', async () => {
+      arrange(mkRow());
+      const r = setup();
+      await act(async () => {
+        void r.result.current.start(body);
+        void r.result.current.start(body);
+      });
+      await waitFor(() => expect(r.result.current.step).toBe('payment'));
+      expect(m.createCounterOrder).toHaveBeenCalledTimes(1);
+    });
+
+    it('a second handOver() while the hand-over write is in flight posts once', async () => {
+      arrange(mkRow());
+      let release: (v: unknown) => void = () => {};
+      m.handOverOrderParcel.mockReturnValue(new Promise((res) => { release = res; }) as never);
+      const r = setup();
+      await toHandover(r);
+      await act(async () => {
+        r.result.current.handOver();
+        r.result.current.handOver();
+      });
+      expect(m.handOverOrderParcel).toHaveBeenCalledTimes(1);
+      await act(async () => r.result.current.handOver());
+      expect(m.handOverOrderParcel).toHaveBeenCalledTimes(1);
+      await act(async () => release({ board: boardOf(mkRow({}, 0)), outcome: created }));
+      await waitFor(() => expect(r.result.current.step).toBe('done'));
+    });
+
+    it('handOver() outside the hand-over step does nothing', async () => {
+      arrange(mkRow());
+      const r = setup();
+      await toPayment(r);
+      await act(async () => r.result.current.handOver());
+      expect(m.handOverOrderParcel).not.toHaveBeenCalled();
+      expect(r.result.current.step).toBe('payment');
+    });
+
+    it('handOver() with an error on screen does nothing (retry is the way)', async () => {
+      arrange(mkRow());
+      m.handOverOrderParcel.mockResolvedValueOnce({ board: boardOf(mkRow({}, 0)), outcome: { ...created, failed_step: 'delivered', error: 'x' } } as never);
+      const r = setup();
+      await toHandover(r);
+      await act(async () => r.result.current.handOver());
+      await waitFor(() => expect(r.result.current.error).toBeTruthy());
+      await act(async () => r.result.current.handOver());
+      expect(m.handOverOrderParcel).toHaveBeenCalledTimes(1);
+    });
+
+    it('cancelPayment() while a write is running keeps the sale active', async () => {
+      arrange(mkRow());
+      m.createOrderInvoice.mockReturnValue(new Promise(() => {}) as never);
+      const r = setup();
+      await toPayment(r);
+      // Same render closure: step is still 'payment' when the second call runs, the ref says a write started.
+      act(() => {
+        r.result.current.settle(12400);
+        r.result.current.cancelPayment();
+      });
+      await waitFor(() => expect(r.result.current.busy).toBe(true));
+      expect(r.result.current).toMatchObject({ active: true, wait: null });
+    });
+
+    it('cancelPayment() after the payment step keeps the sale active', async () => {
+      arrange(mkRow());
+      const r = setup();
+      await toHandover(r);
+      act(() => r.result.current.cancelPayment());
+      expect(r.result.current).toMatchObject({ active: true, step: 'handover', wait: 'handover' });
+    });
+
+    it('cancelPayment() on the payment step with nothing running ends the sale', async () => {
+      arrange(mkRow());
+      const r = setup();
+      await toPayment(r);
+      act(() => r.result.current.cancelPayment());
+      expect(r.result.current).toMatchObject({ active: false, wait: null });
+    });
   });
 });

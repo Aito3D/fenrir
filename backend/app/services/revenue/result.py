@@ -1,4 +1,4 @@
-"""Monthly operating result and break-even, from the month buckets of the series and the fixed costs typed by hand.
+"""Monthly operating result and break-even, from the month buckets of the series and each month's fixed costs.
 
 A bucket's `costParts` already holds the item costs, the print log's filament/energy/wear, the labour and the daily
 share of the fixed costs and of the depreciation; those three are charges here, everything else is variable.
@@ -16,7 +16,8 @@ def _split(bucket: dict) -> tuple[float, float, float, float]:
     """(revenue HT, variable costs, labour, depreciation) of a month bucket."""
     parts = bucket.get("costParts") or {}
     labor, depreciation = parts.get("labor", 0), parts.get("depreciation", 0)
-    return bucket["ht"], sum(parts.values()) - labor - parts.get("fixed", 0) - depreciation, labor, depreciation
+    fixed = parts.get("fixed", 0) + parts.get("fixedEstimated", 0)
+    return bucket["ht"], sum(parts.values()) - labor - fixed - depreciation, labor, depreciation
 
 
 def _break_even(months: list[dict], day_buckets: list[dict], charges: float, gone: int, total: int) -> dict | None:
@@ -48,7 +49,7 @@ def _break_even(months: list[dict], day_buckets: list[dict], charges: float, gon
 def build_result(
     month_buckets: list[dict],
     day_buckets: list[dict],
-    fixed_monthly: float,
+    fixed_by_month: dict[str, tuple[float, float]],
     today: str,
     month_labor: float,
     costs_since: str | None,
@@ -57,7 +58,8 @@ def build_result(
 ) -> dict:
     """`month_buckets`: oldest first, the last one is today's month; `day_buckets`: that month's days.
 
-    `month_labor` is the labour of the whole current month (worked days are not spread evenly, so scaling the days
+    `fixed_by_month` is each month's whole fixed costs as (entered in the books, usual charges the running month
+    still misses): the estimate is always given apart, `fixed` is real only. `month_labor` is the labour of the whole current month (worked days are not spread evenly, so scaling the days
     gone would swing). `costs_since` is the first day print and labour costs exist: months before it are `partial`,
     their result would count services at full margin. `day_share` is the part of today already gone: fixed costs
     grow by the minute. `month_depreciation` is the whole current month's, for the break-even; a row's own comes
@@ -69,7 +71,9 @@ def build_result(
     rows = []
     for b in month_buckets:
         ht, variable, labor, depreciation = _split(b)
-        fixed = fixed_monthly * (gone + day_share) / total if b["key"] == today[:7] else fixed_monthly
+        share = (gone + day_share) / total if b["key"] == today[:7] else 1.0
+        fixed, estimated = (v * share for v in fixed_by_month.get(b["key"], (0.0, 0.0)))
+        real = ht - variable - labor - fixed - depreciation
         rows.append(
             {
                 "month": b["key"],
@@ -77,18 +81,24 @@ def build_result(
                 "variable": js_round(variable),
                 "labor": js_round(labor),
                 "fixed": js_round(fixed),
+                "fixedEstimated": js_round(estimated),
                 "depreciation": js_round(depreciation),
-                "result": js_round(ht - variable - labor - fixed - depreciation),
+                "result": js_round(real - estimated),
+                # Without the estimate: what the books say today.
+                "resultReal": js_round(real),
                 "coverage": round(b.get("costedHt", 0) / ht, 2) if ht > 0 else None,
                 "partial": costs_since is None or b["key"] < costs_since[:7],
             }
         )
     current = bool(month_buckets) and month_buckets[-1]["key"] == today[:7]
+    month_fixed, month_estimated = fixed_by_month.get(today[:7], (0.0, 0.0))
+    fixed_monthly = month_fixed + month_estimated
     return {
         "fixedMonthly": js_round(fixed_monthly),
         "charges": {
             "labor": js_round(month_labor),
-            "fixed": js_round(fixed_monthly),
+            "fixed": js_round(month_fixed),
+            "fixedEstimated": js_round(month_estimated),
             "depreciation": js_round(month_depreciation),
         },
         "months": rows,

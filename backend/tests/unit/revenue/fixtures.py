@@ -25,6 +25,7 @@ def bucket(**over: Any) -> dict[str, Any]:
         "costedHt": 0,
         "marginSplit": {"nature": {}, "brand": {}, "segment": {}, "kind": {}},
         "costParts": {"items": 0},
+        "fixedGoods": 0,
         "projection": None,
         "projectionMethod": None,
         "quantity": 0,

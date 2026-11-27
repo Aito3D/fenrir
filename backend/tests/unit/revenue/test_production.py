@@ -94,13 +94,26 @@ def test_labor_costs_each_provider_on_its_working_days_from_its_start_up_to_yest
     assert labor_by_day([{**alice, "since": "2026-12-01"}], today="2026-11-16") == {}
 
 
-def test_fixed_costs_are_spread_over_each_months_days_and_todays_share():
+def test_fixed_by_day_spreads_real_and_estimate():
+    from backend.app.services.revenue.fixed_accounts import Charge
     from backend.app.services.revenue.production import fixed_by_day
 
-    out = fixed_by_day(93000, today="2026-11-03", since="2026-10-30", today_share=0.5)
-    assert out == {"2026-10-30": 3000, "2026-10-31": 3000, "2026-11-01": 3100, "2026-11-02": 3100, "2026-11-03": 1550}
-    assert "2026-11-03" not in fixed_by_day(93000, today="2026-11-03", since="2026-10-30")
-    assert fixed_by_day(0, today="2026-11-03") == {}
+    charges = {"2026-10": Charge(31000, 62000), "2026-11": Charge(30000, 60000, 3000, 6000)}
+    every, goods = fixed_by_day(charges, today="2026-11-16", since="2026-10-30", today_share=0.5)
+    assert every["2026-10-31"] == {"fixed": 3000} and goods["2026-10-31"] == {"fixed": 1000}
+    assert every["2026-11-01"] == every["2026-11-15"] == {"fixed": 3000, "fixedEstimated": 300}
+    assert goods["2026-11-15"] == {"fixed": 1000, "fixedEstimated": 100}
+    assert every["2026-11-16"] == {"fixed": 1500, "fixedEstimated": 150}
+    assert sorted(every) == sorted(goods) and min(every) == "2026-10-30" and max(every) == "2026-11-16"
+    assert "2026-11-16" not in fixed_by_day(charges, today="2026-11-16", since="2026-10-30")[0]
+    # A month with services only has no goods part.
+    assert fixed_by_day({"2026-11": Charge(0, 30000)}, today="2026-11-02", since="2026-11-01")[1] == {}
+
+
+def test_no_cache_charges_nothing():
+    from backend.app.services.revenue.production import fixed_by_day
+
+    assert fixed_by_day({}, today="2026-11-03") == ({}, {})
 
 
 def test_day_shares_follow_the_org_clock_to_the_minute():
@@ -126,13 +139,6 @@ def test_filament_prices_take_the_cheapest_sheet_of_the_material_then_a_named_sh
     # Unknown or missing: the median (2400), not the mean the PPS-CF would drag up.
     assert prices.per_g("PA-CF") == prices.per_g(None) == 2.4
     assert FilamentPrices([]).per_g("PLA") is None
-
-
-def test_fixed_monthly_sums_the_list():
-    from backend.app.services.revenue.production import fixed_monthly
-
-    assert fixed_monthly([{"label": "a", "monthly": 100.0}, {"label": "b", "monthly": 50.5}]) == 150.5
-    assert fixed_monthly([]) == 0.0
 
 
 def _save(sync_conn, rows):

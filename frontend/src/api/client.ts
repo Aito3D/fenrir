@@ -11035,10 +11035,10 @@ export const api = {
   getOrderClientRating: (id: string) => request<AitoClientRating>(`/order-board/orders/${encodeURIComponent(id)}/client-rating`),
   editOrderContact: (id: string, body: { email: string; phone: string; phone_field: 'phone' | 'mobile' }) =>
     request<{ board: OrderBoardResponse }>(`/order-board/orders/${encodeURIComponent(id)}/contact`, { method: 'PUT', body: JSON.stringify(body) }),
-  applyOrderCredit: (id: string, invoiceId: string) =>
+  applyOrderCredit: (id: string, invoiceId: string, cap?: number) =>
     request<{ applied: number; board: OrderBoardResponse }>(
       `/order-board/orders/${encodeURIComponent(id)}/invoices/${encodeURIComponent(invoiceId)}/apply-credit`,
-      { method: 'POST' },
+      cap === undefined ? { method: 'POST' } : { method: 'POST', body: JSON.stringify({ cap }) },
     ),
   getOrderBoardSettings: () => request<OrderBoardSettings>('/order-board/settings'),
   updateOrderBoardSettings: (body: OrderBoardSettings) =>

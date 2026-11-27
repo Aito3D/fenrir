@@ -82,10 +82,12 @@ async def email_document(
         await _best_effort_refresh(db, salesorder_id, number)
 
 
-async def apply_credit(db: AsyncSession, salesorder_id: str, invoice_id: str, *, by: str | None = None) -> float:
+async def apply_credit(
+    db: AsyncSession, salesorder_id: str, invoice_id: str, *, cap: float | None = None, by: str | None = None
+) -> float:
     """Spend the customer's credit on one of the order's open invoices, by hand: what the hand-over's "apply credit"
     does at invoice time. Capped at the invoice's live balance and at the credit the board counts for this order
-    (its quote's deposits, then its advance). Returns the amount applied."""
+    (its quote's deposits, then its advance), and at `cap` when given. Returns the amount applied."""
     with writing(salesorder_id):
         order = (await confirm_stored_copy(db, salesorder_id)).detail or {}
         number = order.get("salesorder_number") or salesorder_id
@@ -94,11 +96,11 @@ async def apply_credit(db: AsyncSession, salesorder_id: str, invoice_id: str, *,
             raise OrderActionRefused("unknown_invoice")
         advance = _on_account(await order_row_any(db, salesorder_id))
         live = await zoho_service.get_invoice(db, invoice_id) or {}
-        cap = round(min(_num(live.get("balance")), advance), 2)
-        if cap < 0.01:
+        limit = round(min(_num(live.get("balance")), advance, float("inf") if cap is None else cap), 2)
+        if limit < 0.01:
             raise OrderActionRefused("no_credit")
         applied = await _credit(
-            db, salesorder_id, number, {"invoice_id": invoice_id}, order.get("customer_id") or "", cap
+            db, salesorder_id, number, {"invoice_id": invoice_id}, order.get("customer_id") or "", limit
         )
         if applied > 0:
             invoice_number = listed.get("invoice_number") or invoice_id

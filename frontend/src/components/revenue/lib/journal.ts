@@ -8,11 +8,11 @@ const ownCostedHt = (r: RevenueItemRow) => (r.cost == null ? 0 : (r.costedHt ?? 
 
 /**
  * Mirrors the server's bucket costing (series.py `_Acc`): services without a Zoho cost share the
- * period's production cost (filament, energy, wear, labour, fixed costs) pro rata of their HT.
+ * period's production cost (filament, energy, wear, labour, the services' part of the fixed costs) pro rata of their HT.
  * `bucket` is the series bucket of the shown period; without one, or without a pool, rows pass through.
  */
-export function withProductionCost(rows: readonly RevenueItemRow[], bucket: Pick<RevenueBucket, "costedHt" | "costParts"> | null | undefined): JournalRow[] {
-  const production = Object.entries(bucket?.costParts ?? {}).reduce((s, [part, v]) => (part === "items" ? s : s + (v ?? 0)), 0);
+export function withProductionCost(rows: readonly RevenueItemRow[], bucket: Pick<RevenueBucket, "costedHt" | "costParts" | "fixedGoods"> | null | undefined): JournalRow[] {
+  const production = Object.entries(bucket?.costParts ?? {}).reduce((s, [part, v]) => (part === "items" ? s : s + (v ?? 0)), 0) - (bucket?.fixedGoods ?? 0);
   const poolHt = (bucket?.costedHt ?? 0) - rows.reduce((s, r) => s + ownCostedHt(r), 0);
   // Under a franc is rounding, not a pool.
   if (poolHt < 1) return [...rows];

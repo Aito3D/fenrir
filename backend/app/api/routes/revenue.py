@@ -8,7 +8,7 @@ import re
 import time
 from collections.abc import Awaitable, Callable
 from datetime import datetime, timezone
-from typing import Any, TypeVar, cast
+from typing import Any, Literal, TypeVar, cast
 
 from fastapi import APIRouter, HTTPException, Query, Request, Response
 from pydantic import BaseModel, Field
@@ -22,6 +22,7 @@ from backend.app.services.revenue import (
     analysis,
     cash,
     cohorts,
+    fixed_accounts,
     insights,
     memo,
     pipeline,
@@ -95,7 +96,7 @@ async def _respond(
         if extra_stamp is not None:
             stamp += f"|{await extra_stamp(conn)}"
         if flags.margin and (
-            await production.read_fixed_costs(conn)
+            await production.read_fixed_accounts(conn)
             or await production.read_labor(conn)
             or production.selected_assets(await production.read_depreciation(conn))
         ):
@@ -649,13 +650,14 @@ class LaborBody(BaseModel):
     providers: list[LaborProvider] = Field(max_length=100)
 
 
-class FixedCost(BaseModel):
-    label: str = Field(min_length=1, max_length=80)
-    monthly: float = Field(ge=0, le=1e9)
+class FixedAccountShare(BaseModel):
+    percent: float = Field(ge=0, le=100)
+    type: Literal["monthly", "annual", "one_off"]
+    goodsShare: float = Field(ge=0, le=100)  # noqa: N815 - the page's camelCase
 
 
-class FixedCostsBody(BaseModel):
-    costs: list[FixedCost] = Field(max_length=50)
+class FixedAccountsBody(BaseModel):
+    accounts: dict[str, FixedAccountShare] = Field(max_length=500)
 
 
 class DepreciationBody(BaseModel):
@@ -776,7 +778,12 @@ async def get_result(
     start = max(f"{cash.last_months(today, 12)[0]}-01", REVENUE_HISTORY_START)
 
     async def stamp(conn) -> str:
-        keys = (production.FIXED_COSTS_KEY, production.LABOR_KEY, production.DEPRECIATION_KEY)
+        keys = (
+            production.FIXED_ACCOUNTS_KEY,
+            production.FIXED_ACCOUNTS_CACHE_KEY,
+            production.LABOR_KEY,
+            production.DEPRECIATION_KEY,
+        )
         return "|".join([str(await store.get_setting(conn, k)) for k in keys])
 
     async def build(conn, _now, _status):
@@ -794,7 +801,7 @@ async def get_result(
                 production=costs,
             )
 
-        fixed = production.fixed_monthly(await production.read_fixed_costs(conn))
+        fixed = {m: (c.real, c.estimated) for m, c in (await production.read_fixed_charges(conn, today)).items()}
         month_start = f"{today[:7]}-01"
         next_month = add_days(month_start, days_in_month(int(today[:4]), int(today[5:7])))
         # The whole month's labour, days still to come included.
@@ -812,29 +819,6 @@ async def get_result(
         )
 
     return await _respond(request, user, build, now=now, extra_stamp=stamp)
-
-
-@router.get("/fixed-costs")
-async def get_fixed_costs(
-    user: User | None = RequirePermissionIfAuthEnabled(Permission.REVENUE_READ, Permission.REVENUE_VIEW_MARGIN),
-):
-    async with store.snapshot() as conn:
-        return {"costs": await production.read_fixed_costs(conn)}
-
-
-@router.put("/fixed-costs")
-async def put_fixed_costs(
-    body: FixedCostsBody,
-    # Same rights as labour: charges are margin data.
-    user: User | None = RequirePermissionIfAuthEnabled(
-        Permission.REVENUE_VIEW_MARGIN, Permission.REVENUE_MANAGE_TARGETS
-    ),
-):
-    costs = [{"label": c.label.strip(), "monthly": c.monthly} for c in body.costs]
-    if any(not c["label"] for c in costs):
-        raise _unprocessable("label must not be blank")
-    async with _writer()() as db:
-        return {"costs": await production.save_fixed_costs(db, costs)}
 
 
 @router.get("/depreciation")
@@ -908,6 +892,100 @@ async def put_depreciation(
         raise _unprocessable("selected must be asset ids of the stored list")
     async with _writer()() as db:
         return await production.save_depreciation(db, {**dep, "selected": list(dict.fromkeys(body.selected))})
+
+
+# The running month is re-read at most this often when the page opens.
+_FIXED_CURRENT_MAX_AGE_S = 15 * 60
+_fixed_refresh_lock = asyncio.Lock()
+
+
+async def _fixed_accounts_view(conn) -> dict:
+    return fixed_accounts.view(
+        await production.read_fixed_accounts(conn),
+        await production.read_fixed_cache(conn),
+        org_today(datetime.now(timezone.utc))[:7],
+    )
+
+
+@router.get("/fixed-accounts")
+async def get_fixed_accounts(
+    user: User | None = RequirePermissionIfAuthEnabled(Permission.REVENUE_READ, Permission.REVENUE_VIEW_MARGIN),
+):
+    async with store.snapshot() as conn:
+        return await _fixed_accounts_view(conn)
+
+
+@router.put("/fixed-accounts")
+async def put_fixed_accounts(
+    body: FixedAccountsBody, user: User | None = RequirePermissionIfAuthEnabled(*_MANAGE_CHARGES)
+):
+    async with store.snapshot() as conn:
+        cache = await production.read_fixed_cache(conn)
+        before = await production.read_fixed_accounts(conn)
+    # An account Zoho no longer lists keeps the share it already has.
+    if not set(body.accounts) <= {a["id"] for a in cache["accounts"]} | set(before):
+        raise _unprocessable("accounts must be account ids of the stored list")
+    config = {i: share.model_dump() for i, share in body.accounts.items() if share.percent > 0}
+    async with _writer()() as db:
+        await production.save_fixed_accounts(db, config)
+    async with store.snapshot() as conn:
+        return await _fixed_accounts_view(conn)
+
+
+@router.post("/fixed-accounts/refresh")
+async def refresh_fixed_accounts(
+    scope: Literal["current", "all"] = "all", user: User | None = RequirePermissionIfAuthEnabled(*_MANAGE_CHARGES)
+):
+    """Re-read Zoho's expense accounts and their monthly totals. Everything is read before anything is stored: a
+    failure leaves the cache as it was. `current` is the page opening: the running month, the three before it and
+    any month since the last read, at most every 15 minutes."""
+    now = datetime.now(timezone.utc)
+    months = fixed_accounts.months_to_read(org_today(now), production.COSTS_START)
+    async with _fixed_refresh_lock, _writer()() as db:
+        async with store.snapshot() as conn:
+            cache = await production.read_fixed_cache(conn)
+            config = await production.read_fixed_accounts(conn)
+        last = cache["currentReadAt"]
+        partial = scope == "current" and bool(cache["readAt"] and last)
+        if partial and (now - datetime.fromisoformat(last)).total_seconds() < _FIXED_CURRENT_MAX_AGE_S:
+            return {**fixed_accounts.view(config, cache, months[-1]), "changed": False}
+        # Late entries are the rule: the three months before the running one are read again too (they also set
+        # what a monthly account "usually" costs), and every month since the last read.
+        since = min(months[-4], org_today(datetime.fromisoformat(last))[:7]) if partial else months[0]
+        wanted = [m for m in months if m >= since]
+        try:
+            accounts = cache["accounts"]
+            if not partial:
+                accounts = fixed_accounts.class6_accounts(await zoho_service.list_chart_of_accounts(db))
+                # An account with a share that Zoho deleted stays listed, inactive.
+                listed = {a["id"] for a in accounts}
+                accounts += [
+                    {**a, "active": False} for a in cache["accounts"] if a["id"] in config and a["id"] not in listed
+                ]
+            read = {}
+            for month in wanted:
+                last_day = days_in_month(int(month[:4]), int(month[5:7]))
+                report = await zoho_service.profit_and_loss(db, f"{month}-01", f"{month}-{last_day:02d}")
+                read[month] = fixed_accounts.class6_totals(report)
+        except ZohoNotConfiguredError:
+            raise HTTPException(status_code=409, detail="Zoho is not configured") from None
+        except ZohoUpstreamError as e:
+            # The upstream message can carry a URL with credentials: only its kind is logged or returned.
+            logger.warning("Fixed-account refresh failed: %s", type(e).__name__)
+            raise HTTPException(status_code=502, detail="Zoho could not be read") from None
+        kept = cache["months"] if partial else {}
+        fresh = await production.save_fixed_cache(
+            db,
+            {
+                "accounts": accounts,
+                "months": {**kept, **read},
+                "readAt": cache["readAt"] if partial else now.isoformat(),
+                "currentReadAt": now.isoformat(),
+            },
+        )
+        # `changed` tells the page whether the books moved: only then does it reload its figures.
+        changed = (fresh["accounts"], fresh["months"]) != (cache["accounts"], cache["months"])
+        return {**fixed_accounts.view(config, fresh, months[-1]), "changed": changed}
 
 
 @router.post("/annotations", status_code=201)

@@ -1,11 +1,12 @@
 import { useReducer, useRef } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
-import { api } from '../../api/client';
+import { ApiError, api } from '../../api/client';
 import type { CounterOrderLine, OrderBoardLine, OrderBoardResponse, OrderBoardRow, OrderInvoice, OrderPickLines } from '../../api/client';
 import { attributed, invoiceOf, pickLines, rowOf, shortLines } from './counterPay';
 import type { PayStep } from './counterPay';
 import { errorReason, failedStepText } from './orderErrors';
+import { waitingPackages } from './orderBoard';
 import { takeBoard } from './useOrderActions';
 
 export type PayWait = 'payment' | 'stock' | 'handover' | null;
@@ -28,6 +29,8 @@ const INITIAL: CounterPayState = {
   step: 'order', busy: false, wait: null, error: null, row: null, paid: 0, later: false, invoice: null, question: null, handedLate: [], forced: [], active: false,
 };
 
+const REPOST_REFUSALS = ['too_many', 'nothing_to_pack'];
+
 /** What a retry resumes at: each stage's write is skipped once it succeeded. */
 type Stage = 'invoice' | 'parcel' | 'handover';
 
@@ -39,7 +42,7 @@ export function useCounterPay(opts?: { onCreateError?: (e: unknown) => void }) {
   const running = useRef(false);
   const fresh = () => ({
     orderId: '', row: null as OrderBoardRow | null, paid: 0, invoiceNumber: null as string | null, invoiceId: '',
-    queue: [] as OrderBoardLine[], have: new Set<string>(), lines: null as OrderPickLines['lines'] | null, force: [] as string[], picklistPosted: false,
+    queue: [] as OrderBoardLine[], have: new Set<string>(), lines: null as OrderPickLines['lines'] | null, force: [] as string[], picklistPosted: false, parcelPosted: false,
     picklistId: '', packageNumber: '', packageId: '', stage: 'invoice' as Stage,
     asked: null as OrderBoardLine | null, forcedNames: [] as string[], lateNames: [] as string[],
   });
@@ -121,9 +124,31 @@ export function useCounterPay(opts?: { onCreateError?: (e: unknown) => void }) {
         c.picklistId = pl.picklist.id;
         await take(pl.board);
       }
-      const parcel = await api.createOrderParcel(c.orderId, c.picklistId, c.lines);
-      c.packageNumber = parcel.package_number;
-      await take(parcel.board);
+      // A parcel posted before a lost answer is already on the order: adopt it (only when it is the one not-shipped parcel).
+      if (c.parcelPosted) {
+        const waiting = waitingPackages((await take(await api.getOrderBoard())) ?? { packages: [] });
+        if (waiting.length === 1) c.packageNumber = waiting[0].number;
+      }
+      if (!c.packageNumber) {
+        const rePost = c.parcelPosted;
+        c.parcelPosted = true;
+        try {
+          const parcel = await api.createOrderParcel(c.orderId, c.picklistId, c.lines);
+          c.packageNumber = parcel.package_number;
+          await take(parcel.board);
+        } catch (e) {
+          // A re-post refused after the server refreshed its copy: the parcel is probably already there. One re-read, else the refusal stands.
+          if (!rePost || !(e instanceof ApiError && e.status === 400 && REPOST_REFUSALS.includes(e.code ?? e.message))) throw e;
+          let waiting;
+          try {
+            waiting = waitingPackages((await take(await api.getOrderBoard())) ?? { packages: [] });
+          } catch {
+            throw e;
+          }
+          if (waiting.length !== 1) throw e;
+          c.packageNumber = waiting[0].number;
+        }
+      }
     }
     let pkg = c.row?.packages.find((p) => p.number === c.packageNumber);
     if (!pkg) {
@@ -157,7 +182,7 @@ export function useCounterPay(opts?: { onCreateError?: (e: unknown) => void }) {
       const o = r.outcome;
       if (o.invoice === 'created' && o.invoice_number) c.invoiceNumber = o.invoice_number;
       else if (o.invoice === 'manual' || o.invoice === 'draft') {
-        fail('invoice', 'invoice', t(o.manual_reason === 'draft' ? 'orders.handover.manualDraft' : 'orders.handover.manual', { number: o.invoice_number ?? '' }));
+        fail('invoice', 'invoice', t(o.invoice === 'draft' || o.manual_reason === 'draft' ? 'orders.handover.manualDraft' : 'orders.handover.manual', { number: o.invoice_number ?? '' }));
         return;
       } else if (o.failed_step || o.invoice === 'failed') {
         fail('invoice', 'invoice', failedStepText(t, { ...o, failed_step: o.failed_step ?? 'invoice' }));
@@ -181,7 +206,19 @@ export function useCounterPay(opts?: { onCreateError?: (e: unknown) => void }) {
       // Created earlier: re-read first, the invoice may be paid already (lost answer) or missing from the answered board.
       let row = await take(await api.getOrderBoard());
       const invoice = invoiceOf(row ?? undefined, c.invoiceNumber);
-      if (invoice && !attributed(invoice, c.paid)) row = await take((await api.applyOrderCredit(c.orderId, invoice.id)).board);
+      // The cap: only what this sale took and the invoice does not hold yet, never the customer's other credit.
+      if (invoice && !attributed(invoice, c.paid)) {
+        try {
+          row = await take((await api.applyOrderCredit(c.orderId, invoice.id, Math.max(0, Math.round((c.paid - (invoice.total - invoice.balance)) * 100) / 100))).board);
+        } catch (e) {
+          // The payment is not on the stored board yet, or the first attempt is still writing: say that, not "quantities".
+          if (e instanceof ApiError && ((e.status === 400 && (e.code ?? e.message) === 'no_credit') || e.status === 409)) {
+            fail('invoice', 'invoice', t(e.status === 409 ? 'orders.busy' : 'orders.counterPay.notAttributed'));
+            return;
+          }
+          throw e;
+        }
+      }
       if (!checkInvoice(row)) return;
     }
     await toParcel();

@@ -685,3 +685,34 @@ def test_previous_total_is_the_whole_previous_bucket_on_the_first_column_only():
     two = series(lines=[line("2026-08-10", "pla", 400)], fetched_days=all_days("2026-08-01", "2026-10-15"))
     assert two[0]["previousTotal"]["ht"] == 400
     assert two[1]["previousTotal"] is None
+
+
+def test_fixed_costs_follow_the_goods_or_services_filter():
+    prod = ProductionCosts(
+        by_day={"2026-09-10": {"fixed": 900.0, "fixedEstimated": 90.0, "labor": 500.0}},
+        first_day="2026-09-10",
+        fixed_goods_by_day={"2026-09-10": {"fixed": 300.0, "fixedEstimated": 30.0}},
+    )
+    lines = [line("2026-09-20", "print", 2000), line("2026-09-21", "notax", 700)]
+    parts = lambda f=None: series(lines=lines, production=prod, filters=f)[0]  # noqa: E731
+    both = parts()
+    assert both["costParts"] == {"items": 0, "fixed": 900, "fixedEstimated": 90, "labor": 500}
+    assert both["cost"] == 1490
+    # Named apart: the journal must not share it among the service lines.
+    assert (both["fixedGoods"], parts(LineFilters(kind="services"))["fixedGoods"]) == (330, 0)
+    # The goods' share of the fixed costs weighs on the goods, the rest on the services sold.
+    assert both["marginSplit"]["kind"] == {"Biens": -330, "Services": 2000 - 1160}
+    services = parts(LineFilters(kind="services"))
+    assert services["costParts"] == {"items": 0, "fixed": 600, "fixedEstimated": 60, "labor": 500}
+    assert services["cost"] == 1160
+    goods = parts(LineFilters(kind="goods"))
+    assert goods["costParts"] == {"items": 0, "fixed": 300, "fixedEstimated": 30}
+    assert (goods["cost"], goods["costedHt"]) == (330, 0)
+    assert "printHours" not in goods
+    for f in (
+        LineFilters(brands=frozenset({"aito3d"})),
+        LineFilters(segment="pro"),
+        LineFilters(kind="goods", segment="pro"),
+    ):
+        sliced = parts(f)
+        assert sliced["cost"] == 0 and sliced["costParts"] == {"items": 0}

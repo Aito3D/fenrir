@@ -17,7 +17,7 @@ describe('RevenueCharges', () => {
     vi.stubGlobal('fetch', vi.fn(async (url: string) => {
       if (url.endsWith('/result')) return json({ fixedMonthly: 86_400, charges: { labor: 43_200, fixed: 86_400, depreciation: 129_600 }, months: [], costsSince: null, breakEven: null });
       if (url.endsWith('/labor')) return json({ providers: [] });
-      if (url.endsWith('/fixed-costs')) return json({ costs: [] });
+      if (url.endsWith('/fixed-accounts')) return json({ month: '2026-11', readAt: null, accounts: [] });
       return json({ assets: [], selected: [], readAt: '2026-11-25T10:00:00+00:00' });
     }));
     const onClose = vi.fn();
@@ -46,5 +46,28 @@ describe('RevenueCharges', () => {
     unmount();
     expect(document.body.style.overflow).toBe('');
     expect(returnFocus).toHaveBeenCalled();
+  });
+
+  it('counts the estimated fixed costs in the summary and says how much is estimated', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date(2026, 10, 15));
+    vi.stubGlobal('fetch', vi.fn(async (url: string) => {
+      if (url.endsWith('/result')) return json({ fixedMonthly: 86_400, charges: { labor: 0, fixed: 43_200, fixedEstimated: 43_200, depreciation: 0 }, months: [], costsSince: null, breakEven: null });
+      if (url.endsWith('/labor')) return json({ providers: [] });
+      if (url.endsWith('/fixed-accounts')) return json({ month: '2026-11', readAt: null, accounts: [] });
+      return json({ assets: [], selected: [], readAt: null });
+    }));
+    render(
+      <ToastProvider>
+        <RevenueCharges canManage={false} version={0} onChanged={vi.fn()} onClose={vi.fn()} returnFocus={vi.fn()} />
+      </ToastProvider>,
+    );
+    const summary = await screen.findByRole('table', { name: 'Costs' });
+    const row = (name: string) => within(summary).getByRole('row', { name: new RegExp(`^${name}`) });
+    expect(within(row('Fixed costs')).getByText('86.400 FCP')).toBeInTheDocument();
+    expect(within(row('Fixed costs')).getByText('2,0 FCP/min')).toBeInTheDocument();
+    expect(within(row('Fixed costs')).getByText('of which 43.200 FCP estimated')).toBeInTheDocument();
+    expect(within(row('Total')).getByText('86.400 FCP')).toBeInTheDocument();
+    expect(within(row('Labour')).queryByText(/estimated/)).toBeNull();
   });
 });

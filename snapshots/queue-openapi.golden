@@ -1,0 +1,4397 @@
+### exit: 0
+### stdout:
+{
+ "operations": {
+  "DELETE /api/v1/queue/batches/{batch_id}": {
+   "description": "Cancel all pending items in a batch and mark batch as cancelled.",
+   "operationId": "cancel_batch_api_v1_queue_batches__batch_id__delete",
+   "parameters": [
+    {
+     "in": "path",
+     "name": "batch_id",
+     "required": true,
+     "schema": {
+      "title": "Batch Id",
+      "type": "integer"
+     }
+    },
+    {
+     "in": "header",
+     "name": "X-API-Key",
+     "required": false,
+     "schema": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "X-Api-Key"
+     }
+    }
+   ],
+   "responses": {
+    "200": {
+     "content": {
+      "application/json": {
+       "schema": {}
+      }
+     },
+     "description": "Successful Response"
+    },
+    "422": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/HTTPValidationError"
+       }
+      }
+     },
+     "description": "Validation Error"
+    }
+   },
+   "security": [
+    {
+     "HTTPBearer": []
+    }
+   ],
+   "summary": "Cancel Batch",
+   "tags": [
+    "queue"
+   ]
+  },
+  "DELETE /api/v1/queue/{item_id}": {
+   "description": "Remove an item from the queue.\n\nAn order's last surviving run for a plate is cancelled instead of deleted\n(#2960). The row is what a later dispatch clones, so removing it would\nleave the order reporting work outstanding that nothing could ever\nproduce. A completed run is exempt: it is the record of something that was\nactually made, and rewriting it as cancelled would falsify the order's\nprogress.",
+   "operationId": "delete_queue_item_api_v1_queue__item_id__delete",
+   "parameters": [
+    {
+     "in": "path",
+     "name": "item_id",
+     "required": true,
+     "schema": {
+      "title": "Item Id",
+      "type": "integer"
+     }
+    },
+    {
+     "in": "header",
+     "name": "X-API-Key",
+     "required": false,
+     "schema": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "X-Api-Key"
+     }
+    }
+   ],
+   "responses": {
+    "200": {
+     "content": {
+      "application/json": {
+       "schema": {}
+      }
+     },
+     "description": "Successful Response"
+    },
+    "422": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/HTTPValidationError"
+       }
+      }
+     },
+     "description": "Validation Error"
+    }
+   },
+   "security": [
+    {
+     "HTTPBearer": []
+    }
+   ],
+   "summary": "Delete Queue Item",
+   "tags": [
+    "queue"
+   ]
+  },
+  "GET /api/v1/queue/": {
+   "description": "List all queue items, optionally filtered by printer or status.",
+   "operationId": "list_queue_api_v1_queue__get",
+   "parameters": [
+    {
+     "description": "Filter by printer (-1 for unassigned)",
+     "in": "query",
+     "name": "printer_id",
+     "required": false,
+     "schema": {
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "description": "Filter by printer (-1 for unassigned)",
+      "title": "Printer Id"
+     }
+    },
+    {
+     "description": "Filter by status; several may be given comma-separated",
+     "in": "query",
+     "name": "status",
+     "required": false,
+     "schema": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "description": "Filter by status; several may be given comma-separated",
+      "title": "Status"
+     }
+    },
+    {
+     "description": "Filter by target model (also includes model-based items when combined with printer_id)",
+     "in": "query",
+     "name": "target_model",
+     "required": false,
+     "schema": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "description": "Filter by target model (also includes model-based items when combined with printer_id)",
+      "title": "Target Model"
+     }
+    },
+    {
+     "in": "header",
+     "name": "X-API-Key",
+     "required": false,
+     "schema": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "X-Api-Key"
+     }
+    }
+   ],
+   "responses": {
+    "200": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "items": {
+         "$ref": "#/components/schemas/PrintQueueItemResponse"
+        },
+        "title": "Response List Queue Api V1 Queue  Get",
+        "type": "array"
+       }
+      }
+     },
+     "description": "Successful Response"
+    },
+    "422": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/HTTPValidationError"
+       }
+      }
+     },
+     "description": "Validation Error"
+    }
+   },
+   "security": [
+    {
+     "HTTPBearer": []
+    }
+   ],
+   "summary": "List Queue",
+   "tags": [
+    "queue"
+   ]
+  },
+  "GET /api/v1/queue/batches": {
+   "description": "List print batches with progress stats.\n\nBatches with neither queue items nor per-plate targets are omitted. Those\nare empty shells \u2014 a grouping whose items were deleted with their source\narchive, or a create that never got as far as adding any \u2014 and they carry\nnothing to show, track or dispatch. A brand-new order is still listed\nbefore its first dispatch, because its targets say what it owes.",
+   "operationId": "list_batches_api_v1_queue_batches_get",
+   "parameters": [
+    {
+     "description": "Filter by status (active, completed, cancelled)",
+     "in": "query",
+     "name": "status",
+     "required": false,
+     "schema": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "description": "Filter by status (active, completed, cancelled)",
+      "title": "Status"
+     }
+    },
+    {
+     "description": "Filter by the integration that created the batch",
+     "in": "query",
+     "name": "external_source",
+     "required": false,
+     "schema": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "description": "Filter by the integration that created the batch",
+      "title": "External Source"
+     }
+    },
+    {
+     "description": "Filter by the external record the batch fulfils",
+     "in": "query",
+     "name": "external_ref",
+     "required": false,
+     "schema": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "description": "Filter by the external record the batch fulfils",
+      "title": "External Ref"
+     }
+    },
+    {
+     "in": "header",
+     "name": "X-API-Key",
+     "required": false,
+     "schema": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "X-Api-Key"
+     }
+    }
+   ],
+   "responses": {
+    "200": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "items": {
+         "$ref": "#/components/schemas/PrintBatchResponse"
+        },
+        "title": "Response List Batches Api V1 Queue Batches Get",
+        "type": "array"
+       }
+      }
+     },
+     "description": "Successful Response"
+    },
+    "422": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/HTTPValidationError"
+       }
+      }
+     },
+     "description": "Validation Error"
+    }
+   },
+   "security": [
+    {
+     "HTTPBearer": []
+    }
+   ],
+   "summary": "List Batches",
+   "tags": [
+    "queue"
+   ]
+  },
+  "GET /api/v1/queue/batches/{batch_id}": {
+   "description": "Get a print batch with progress stats.",
+   "operationId": "get_batch_api_v1_queue_batches__batch_id__get",
+   "parameters": [
+    {
+     "in": "path",
+     "name": "batch_id",
+     "required": true,
+     "schema": {
+      "title": "Batch Id",
+      "type": "integer"
+     }
+    },
+    {
+     "in": "header",
+     "name": "X-API-Key",
+     "required": false,
+     "schema": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "X-Api-Key"
+     }
+    }
+   ],
+   "responses": {
+    "200": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/PrintBatchResponse"
+       }
+      }
+     },
+     "description": "Successful Response"
+    },
+    "422": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/HTTPValidationError"
+       }
+      }
+     },
+     "description": "Validation Error"
+    }
+   },
+   "security": [
+    {
+     "HTTPBearer": []
+    }
+   ],
+   "summary": "Get Batch",
+   "tags": [
+    "queue"
+   ]
+  },
+  "GET /api/v1/queue/history": {
+   "description": "Finished, failed, skipped and cancelled runs, one page at a time.\n\nThe Queue page used to load the whole queue, history included, every five\nseconds and page through it in the browser. On a farm that is thousands of\nrows, each enriched from its 3MF, and the request held up every other one\nfor over a minute.",
+   "operationId": "list_queue_history_api_v1_queue_history_get",
+   "parameters": [
+    {
+     "description": "Filter by printer (-1 for unassigned)",
+     "in": "query",
+     "name": "printer_id",
+     "required": false,
+     "schema": {
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "description": "Filter by printer (-1 for unassigned)",
+      "title": "Printer Id"
+     }
+    },
+    {
+     "description": "One of completed, failed, skipped, cancelled",
+     "in": "query",
+     "name": "status",
+     "required": false,
+     "schema": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "description": "One of completed, failed, skipped, cancelled",
+      "title": "Status"
+     }
+    },
+    {
+     "description": "Filter by location",
+     "in": "query",
+     "name": "location",
+     "required": false,
+     "schema": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "description": "Filter by location",
+      "title": "Location"
+     }
+    },
+    {
+     "in": "query",
+     "name": "sort_by",
+     "required": false,
+     "schema": {
+      "default": "date",
+      "enum": [
+       "date",
+       "name",
+       "printer"
+      ],
+      "title": "Sort By",
+      "type": "string"
+     }
+    },
+    {
+     "description": "Flip the default order (newest first, A to Z)",
+     "in": "query",
+     "name": "reverse",
+     "required": false,
+     "schema": {
+      "default": false,
+      "description": "Flip the default order (newest first, A to Z)",
+      "title": "Reverse",
+      "type": "boolean"
+     }
+    },
+    {
+     "in": "query",
+     "name": "limit",
+     "required": false,
+     "schema": {
+      "default": 50,
+      "maximum": 1000000,
+      "minimum": 1,
+      "title": "Limit",
+      "type": "integer"
+     }
+    },
+    {
+     "in": "query",
+     "name": "offset",
+     "required": false,
+     "schema": {
+      "default": 0,
+      "minimum": 0,
+      "title": "Offset",
+      "type": "integer"
+     }
+    },
+    {
+     "in": "header",
+     "name": "X-API-Key",
+     "required": false,
+     "schema": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "X-Api-Key"
+     }
+    }
+   ],
+   "responses": {
+    "200": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/PrintQueueHistoryResponse"
+       }
+      }
+     },
+     "description": "Successful Response"
+    },
+    "422": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/HTTPValidationError"
+       }
+      }
+     },
+     "description": "Validation Error"
+    }
+   },
+   "security": [
+    {
+     "HTTPBearer": []
+    }
+   ],
+   "summary": "List Queue History",
+   "tags": [
+    "queue"
+   ]
+  },
+  "GET /api/v1/queue/{item_id}": {
+   "description": "Get a specific queue item.",
+   "operationId": "get_queue_item_api_v1_queue__item_id__get",
+   "parameters": [
+    {
+     "in": "path",
+     "name": "item_id",
+     "required": true,
+     "schema": {
+      "title": "Item Id",
+      "type": "integer"
+     }
+    },
+    {
+     "in": "header",
+     "name": "X-API-Key",
+     "required": false,
+     "schema": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "X-Api-Key"
+     }
+    }
+   ],
+   "responses": {
+    "200": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/PrintQueueItemResponse"
+       }
+      }
+     },
+     "description": "Successful Response"
+    },
+    "422": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/HTTPValidationError"
+       }
+      }
+     },
+     "description": "Validation Error"
+    }
+   },
+   "security": [
+    {
+     "HTTPBearer": []
+    }
+   ],
+   "summary": "Get Queue Item",
+   "tags": [
+    "queue"
+   ]
+  },
+  "PATCH /api/v1/queue/batches/{batch_id}": {
+   "description": "Edit an order's header or its per-plate targets while it runs (#342).\n\nProduction requirements change mid-run, so targets are editable. Lowering a\ntarget below what has already been dispatched is allowed and simply leaves\n``remaining`` at zero \u2014 cancelling the surplus queue items is a separate,\nexplicit action, because silently deleting queued work on a number change\nwould be a nasty surprise.",
+   "operationId": "update_batch_api_v1_queue_batches__batch_id__patch",
+   "parameters": [
+    {
+     "in": "path",
+     "name": "batch_id",
+     "required": true,
+     "schema": {
+      "title": "Batch Id",
+      "type": "integer"
+     }
+    },
+    {
+     "in": "header",
+     "name": "X-API-Key",
+     "required": false,
+     "schema": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "X-Api-Key"
+     }
+    }
+   ],
+   "requestBody": {
+    "content": {
+     "application/json": {
+      "schema": {
+       "$ref": "#/components/schemas/PrintBatchUpdate"
+      }
+     }
+    },
+    "required": true
+   },
+   "responses": {
+    "200": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/PrintBatchResponse"
+       }
+      }
+     },
+     "description": "Successful Response"
+    },
+    "422": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/HTTPValidationError"
+       }
+      }
+     },
+     "description": "Validation Error"
+    }
+   },
+   "security": [
+    {
+     "HTTPBearer": []
+    }
+   ],
+   "summary": "Update Batch",
+   "tags": [
+    "queue"
+   ]
+  },
+  "PATCH /api/v1/queue/bulk": {
+   "description": "Bulk update multiple queue items with the same values.\n\nOnly pending items can be updated. Non-pending items are skipped.\nItems not owned by the user are also skipped (unless user has *_all permission).",
+   "operationId": "bulk_update_queue_items_api_v1_queue_bulk_patch",
+   "parameters": [
+    {
+     "in": "header",
+     "name": "X-API-Key",
+     "required": false,
+     "schema": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "X-Api-Key"
+     }
+    }
+   ],
+   "requestBody": {
+    "content": {
+     "application/json": {
+      "schema": {
+       "$ref": "#/components/schemas/PrintQueueBulkUpdate"
+      }
+     }
+    },
+    "required": true
+   },
+   "responses": {
+    "200": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/PrintQueueBulkUpdateResponse"
+       }
+      }
+     },
+     "description": "Successful Response"
+    },
+    "422": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/HTTPValidationError"
+       }
+      }
+     },
+     "description": "Validation Error"
+    }
+   },
+   "security": [
+    {
+     "HTTPBearer": []
+    }
+   ],
+   "summary": "Bulk Update Queue Items",
+   "tags": [
+    "queue"
+   ]
+  },
+  "PATCH /api/v1/queue/{item_id}": {
+   "description": "Update a queue item.",
+   "operationId": "update_queue_item_api_v1_queue__item_id__patch",
+   "parameters": [
+    {
+     "in": "path",
+     "name": "item_id",
+     "required": true,
+     "schema": {
+      "title": "Item Id",
+      "type": "integer"
+     }
+    },
+    {
+     "in": "header",
+     "name": "X-API-Key",
+     "required": false,
+     "schema": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "X-Api-Key"
+     }
+    }
+   ],
+   "requestBody": {
+    "content": {
+     "application/json": {
+      "schema": {
+       "$ref": "#/components/schemas/PrintQueueItemUpdate"
+      }
+     }
+    },
+    "required": true
+   },
+   "responses": {
+    "200": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/PrintQueueItemResponse"
+       }
+      }
+     },
+     "description": "Successful Response"
+    },
+    "422": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/HTTPValidationError"
+       }
+      }
+     },
+     "description": "Validation Error"
+    }
+   },
+   "security": [
+    {
+     "HTTPBearer": []
+    }
+   ],
+   "summary": "Update Queue Item",
+   "tags": [
+    "queue"
+   ]
+  },
+  "POST /api/v1/queue/": {
+   "description": "Add an item to the print queue.",
+   "operationId": "add_to_queue_api_v1_queue__post",
+   "parameters": [
+    {
+     "in": "header",
+     "name": "X-API-Key",
+     "required": false,
+     "schema": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "X-Api-Key"
+     }
+    }
+   ],
+   "requestBody": {
+    "content": {
+     "application/json": {
+      "schema": {
+       "$ref": "#/components/schemas/PrintQueueItemCreate"
+      }
+     }
+    },
+    "required": true
+   },
+   "responses": {
+    "200": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/PrintQueueItemResponse"
+       }
+      }
+     },
+     "description": "Successful Response"
+    },
+    "422": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/HTTPValidationError"
+       }
+      }
+     },
+     "description": "Validation Error"
+    }
+   },
+   "security": [
+    {
+     "HTTPBearer": []
+    }
+   ],
+   "summary": "Add To Queue",
+   "tags": [
+    "queue"
+   ]
+  },
+  "POST /api/v1/queue/batches": {
+   "description": "Create a batch.\n\nTwo modes:\n* ``item_ids`` provided: assign the listed pending queue items to a new\n  batch (\"Group as batch\" UI action).\n* ``item_ids`` omitted/empty: create an empty batch so the client can\n  pass the returned ``id`` on subsequent ``POST /queue/`` calls. Used by\n  the multi-plate auto-batch flow in PrintModal.\n\n``plates`` turns the batch into an order with per-plate targets (#342):\nprogress is then measured against what was asked for rather than against\nwhat happened to be queued, so a failed run still counts as owed. Omitting\nit keeps the pre-#342 behaviour exactly.",
+   "operationId": "create_batch_api_v1_queue_batches_post",
+   "parameters": [
+    {
+     "in": "header",
+     "name": "X-API-Key",
+     "required": false,
+     "schema": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "X-Api-Key"
+     }
+    }
+   ],
+   "requestBody": {
+    "content": {
+     "application/json": {
+      "schema": {
+       "$ref": "#/components/schemas/PrintBatchCreate"
+      }
+     }
+    },
+    "required": true
+   },
+   "responses": {
+    "200": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/PrintBatchResponse"
+       }
+      }
+     },
+     "description": "Successful Response"
+    },
+    "422": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/HTTPValidationError"
+       }
+      }
+     },
+     "description": "Validation Error"
+    }
+   },
+   "security": [
+    {
+     "HTTPBearer": []
+    }
+   ],
+   "summary": "Create Batch",
+   "tags": [
+    "queue"
+   ]
+  },
+  "POST /api/v1/queue/batches/{batch_id}/dispatch": {
+   "description": "Queue the runs this order still owes (#342).\n\nEach new item is cloned from the most recent item for the same plate in\nthis batch, so it inherits the printer/model target, AMS mapping, filament\noverrides and print options the user already chose \u2014 and the validation\nthose went through at creation time.",
+   "operationId": "dispatch_batch_api_v1_queue_batches__batch_id__dispatch_post",
+   "parameters": [
+    {
+     "in": "path",
+     "name": "batch_id",
+     "required": true,
+     "schema": {
+      "title": "Batch Id",
+      "type": "integer"
+     }
+    },
+    {
+     "in": "header",
+     "name": "X-API-Key",
+     "required": false,
+     "schema": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "X-Api-Key"
+     }
+    }
+   ],
+   "requestBody": {
+    "content": {
+     "application/json": {
+      "schema": {
+       "$ref": "#/components/schemas/PrintBatchDispatchRequest"
+      }
+     }
+    },
+    "required": true
+   },
+   "responses": {
+    "200": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/PrintBatchResponse"
+       }
+      }
+     },
+     "description": "Successful Response"
+    },
+    "422": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/HTTPValidationError"
+       }
+      }
+     },
+     "description": "Validation Error"
+    }
+   },
+   "security": [
+    {
+     "HTTPBearer": []
+    }
+   ],
+   "summary": "Dispatch Batch",
+   "tags": [
+    "queue"
+   ]
+  },
+  "POST /api/v1/queue/batches/{batch_id}/ungroup": {
+   "description": "Disband a batch: clear batch_id from all members and delete the batch row.\n\nItems stay in the queue. Only ungroups items the caller owns (unless they\nhold QUEUE_UPDATE_ALL). A batch with all members ungrouped is deleted.",
+   "operationId": "ungroup_batch_api_v1_queue_batches__batch_id__ungroup_post",
+   "parameters": [
+    {
+     "in": "path",
+     "name": "batch_id",
+     "required": true,
+     "schema": {
+      "title": "Batch Id",
+      "type": "integer"
+     }
+    },
+    {
+     "in": "header",
+     "name": "X-API-Key",
+     "required": false,
+     "schema": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "X-Api-Key"
+     }
+    }
+   ],
+   "responses": {
+    "200": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/PrintBatchUngroupResponse"
+       }
+      }
+     },
+     "description": "Successful Response"
+    },
+    "422": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/HTTPValidationError"
+       }
+      }
+     },
+     "description": "Validation Error"
+    }
+   },
+   "security": [
+    {
+     "HTTPBearer": []
+    }
+   ],
+   "summary": "Ungroup Batch",
+   "tags": [
+    "queue"
+   ]
+  },
+  "POST /api/v1/queue/duplicate": {
+   "description": "Queue another copy of each job in ``item_ids``, at the end of the queue (#3441).\n\nEach copy is cloned the way an order's remaining runs are\n(``add_queue_item_clone``): same file, plate, target, cross-model\ncandidates, project, mappings and print options, but a new run. On an\n\"any printer of a model\" job the printer the scheduler picked, and what\nwas worked out for it (tray mapping, \"Print Anyway\", nozzle choice), stay\nwith the original. Not copied either: the scheduled time, the batch (the\ncopy is an extra job, not one of the order's runs) and a ``manual_start``\nthe scheduler set (``held_by_scheduler``).\n\nGated like ``POST /queue/``: the caller must be able to see the job and to\nqueue its files, and the copy's target has to be in their printer scope.\nA job that fails any of that, is not queued or printing, or is a\nprinter-card upload whose file goes when the original dispatches (#2819),\ngets no copy and counts as skipped.",
+   "operationId": "duplicate_queue_items_api_v1_queue_duplicate_post",
+   "parameters": [
+    {
+     "in": "header",
+     "name": "X-API-Key",
+     "required": false,
+     "schema": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "X-Api-Key"
+     }
+    }
+   ],
+   "requestBody": {
+    "content": {
+     "application/json": {
+      "schema": {
+       "$ref": "#/components/schemas/PrintQueueDuplicateRequest"
+      }
+     }
+    },
+    "required": true
+   },
+   "responses": {
+    "200": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/PrintQueueDuplicateResponse"
+       }
+      }
+     },
+     "description": "Successful Response"
+    },
+    "422": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/HTTPValidationError"
+       }
+      }
+     },
+     "description": "Validation Error"
+    }
+   },
+   "security": [
+    {
+     "HTTPBearer": []
+    }
+   ],
+   "summary": "Duplicate Queue Items",
+   "tags": [
+    "queue"
+   ]
+  },
+  "POST /api/v1/queue/history/clear": {
+   "description": "Remove the history the Queue page shows under its current filters.\n\nThe page used to send one DELETE per history row. Each row goes through\nthe same rule as that DELETE: an order's last run for a plate is kept as\ncancelled rather than deleted (#2960). Rows are handled one at a time, in\none transaction, so each check sees the rows removed before it.\n\nReaches only rows the caller could both see and delete, as the page's\none-by-one DELETEs did: someone who may delete every run but read only\ntheir own clears only their own.",
+   "operationId": "clear_queue_history_api_v1_queue_history_clear_post",
+   "parameters": [
+    {
+     "description": "Filter by printer (-1 for unassigned)",
+     "in": "query",
+     "name": "printer_id",
+     "required": false,
+     "schema": {
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "description": "Filter by printer (-1 for unassigned)",
+      "title": "Printer Id"
+     }
+    },
+    {
+     "description": "One of completed, failed, skipped, cancelled",
+     "in": "query",
+     "name": "status",
+     "required": false,
+     "schema": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "description": "One of completed, failed, skipped, cancelled",
+      "title": "Status"
+     }
+    },
+    {
+     "description": "Filter by location",
+     "in": "query",
+     "name": "location",
+     "required": false,
+     "schema": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "description": "Filter by location",
+      "title": "Location"
+     }
+    },
+    {
+     "in": "header",
+     "name": "X-API-Key",
+     "required": false,
+     "schema": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "X-Api-Key"
+     }
+    }
+   ],
+   "responses": {
+    "200": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/PrintQueueHistoryClearResponse"
+       }
+      }
+     },
+     "description": "Successful Response"
+    },
+    "422": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/HTTPValidationError"
+       }
+      }
+     },
+     "description": "Validation Error"
+    }
+   },
+   "security": [
+    {
+     "HTTPBearer": []
+    }
+   ],
+   "summary": "Clear Queue History",
+   "tags": [
+    "queue"
+   ]
+  },
+  "POST /api/v1/queue/model/{model}/resume": {
+   "description": "Clear the previous-success gate on every printer of a model the caller may use.\n\nA job for any printer of a model waits, rather than being skipped, when the\nlast print failed on every free one; this is its Resume. Same effect per\nprinter as :func:`resume_queue_after_failure`, which has no skipped jobs to\nrestore here.",
+   "operationId": "resume_model_queue_after_failure_api_v1_queue_model__model__resume_post",
+   "parameters": [
+    {
+     "in": "path",
+     "name": "model",
+     "required": true,
+     "schema": {
+      "title": "Model",
+      "type": "string"
+     }
+    },
+    {
+     "in": "header",
+     "name": "X-API-Key",
+     "required": false,
+     "schema": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "X-Api-Key"
+     }
+    }
+   ],
+   "responses": {
+    "200": {
+     "content": {
+      "application/json": {
+       "schema": {}
+      }
+     },
+     "description": "Successful Response"
+    },
+    "422": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/HTTPValidationError"
+       }
+      }
+     },
+     "description": "Validation Error"
+    }
+   },
+   "security": [
+    {
+     "HTTPBearer": []
+    }
+   ],
+   "summary": "Resume Model Queue After Failure",
+   "tags": [
+    "queue"
+   ]
+  },
+  "POST /api/v1/queue/printer/{printer_id}/resume": {
+   "description": "Clear the previous-success gate for a printer and restore skipped items.\n\nSingle atomic op (#1818):\n\n* Sets ``gate_acknowledged=True`` on every ``failed`` / ``aborted`` queue\n  item for this printer that's still in the scheduler's lookback window,\n  so the next ``_check_previous_success`` call ignores them.\n* Restores ``skipped`` items whose ``error_message`` matches the\n  scheduler's exact \"Previous print failed or was aborted\" gate string\n  back to ``pending`` (clears ``error_message`` + ``completed_at``).\n\nReturns counts so the UI can render a precise toast. No-op endpoint\n(zero counts) when called against a printer with no gate to clear.",
+   "operationId": "resume_queue_after_failure_api_v1_queue_printer__printer_id__resume_post",
+   "parameters": [
+    {
+     "in": "path",
+     "name": "printer_id",
+     "required": true,
+     "schema": {
+      "title": "Printer Id",
+      "type": "integer"
+     }
+    },
+    {
+     "in": "header",
+     "name": "X-API-Key",
+     "required": false,
+     "schema": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "X-Api-Key"
+     }
+    }
+   ],
+   "responses": {
+    "200": {
+     "content": {
+      "application/json": {
+       "schema": {}
+      }
+     },
+     "description": "Successful Response"
+    },
+    "422": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/HTTPValidationError"
+       }
+      }
+     },
+     "description": "Validation Error"
+    }
+   },
+   "security": [
+    {
+     "HTTPBearer": []
+    }
+   ],
+   "summary": "Resume Queue After Failure",
+   "tags": [
+    "queue"
+   ]
+  },
+  "POST /api/v1/queue/reorder": {
+   "description": "Bulk update positions for queue items.",
+   "operationId": "reorder_queue_api_v1_queue_reorder_post",
+   "parameters": [
+    {
+     "in": "header",
+     "name": "X-API-Key",
+     "required": false,
+     "schema": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "X-Api-Key"
+     }
+    }
+   ],
+   "requestBody": {
+    "content": {
+     "application/json": {
+      "schema": {
+       "$ref": "#/components/schemas/PrintQueueReorder"
+      }
+     }
+    },
+    "required": true
+   },
+   "responses": {
+    "200": {
+     "content": {
+      "application/json": {
+       "schema": {}
+      }
+     },
+     "description": "Successful Response"
+    },
+    "422": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/HTTPValidationError"
+       }
+      }
+     },
+     "description": "Validation Error"
+    }
+   },
+   "security": [
+    {
+     "HTTPBearer": []
+    }
+   ],
+   "summary": "Reorder Queue",
+   "tags": [
+    "queue"
+   ]
+  },
+  "POST /api/v1/queue/{item_id}/cancel": {
+   "description": "Cancel a pending queue item.",
+   "operationId": "cancel_queue_item_api_v1_queue__item_id__cancel_post",
+   "parameters": [
+    {
+     "in": "path",
+     "name": "item_id",
+     "required": true,
+     "schema": {
+      "title": "Item Id",
+      "type": "integer"
+     }
+    },
+    {
+     "in": "header",
+     "name": "X-API-Key",
+     "required": false,
+     "schema": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "X-Api-Key"
+     }
+    }
+   ],
+   "responses": {
+    "200": {
+     "content": {
+      "application/json": {
+       "schema": {}
+      }
+     },
+     "description": "Successful Response"
+    },
+    "422": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/HTTPValidationError"
+       }
+      }
+     },
+     "description": "Validation Error"
+    }
+   },
+   "security": [
+    {
+     "HTTPBearer": []
+    }
+   ],
+   "summary": "Cancel Queue Item",
+   "tags": [
+    "queue"
+   ]
+  },
+  "POST /api/v1/queue/{item_id}/retry-slice": {
+   "description": "Fenrir: slice a ``slice_failed`` item's project revision again (design 2026-10-17).\n\nEvery item waiting on that revision goes back to ``slicing`` and follows the new slice.",
+   "operationId": "retry_queue_item_slice_api_v1_queue__item_id__retry_slice_post",
+   "parameters": [
+    {
+     "in": "path",
+     "name": "item_id",
+     "required": true,
+     "schema": {
+      "title": "Item Id",
+      "type": "integer"
+     }
+    },
+    {
+     "in": "header",
+     "name": "X-API-Key",
+     "required": false,
+     "schema": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "X-Api-Key"
+     }
+    }
+   ],
+   "responses": {
+    "200": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/PrintQueueItemResponse"
+       }
+      }
+     },
+     "description": "Successful Response"
+    },
+    "422": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/HTTPValidationError"
+       }
+      }
+     },
+     "description": "Validation Error"
+    }
+   },
+   "security": [
+    {
+     "HTTPBearer": []
+    }
+   ],
+   "summary": "Retry Queue Item Slice",
+   "tags": [
+    "queue"
+   ]
+  },
+  "POST /api/v1/queue/{item_id}/start": {
+   "description": "Manually start a staged (manual_start) queue item.\n\nOwnership-scoped (#1625-followup): callers with QUEUE_UPDATE_OWN can\nstart their own items + claim ownership of NULL-owner items (VP-uploaded\nitems arrive unattributed per #1670). Callers with QUEUE_UPDATE_ALL can\nstart any item. Pre-fix this required QUEUE_UPDATE_OWN with no ownership\ncheck, so _OWN holders could start anyone's queue items via direct API.\n\nClears the manual_start flag so the scheduler picks it up. When\n``skip_filament_check`` is false (the default) the live filament\ndeficit (#1496) is checked first \u2014 if the assigned spool can't satisfy\na slot's required grams, the route returns ``409`` with the deficit\npayload so the caller can show a confirm dialog and retry with\n``skip_filament_check=true``. The same goes for a filament the printer has\nno tray for at all (#2799): ``409`` with ``code=unmatched_filament`` and\nthe missing filaments.",
+   "operationId": "start_queue_item_api_v1_queue__item_id__start_post",
+   "parameters": [
+    {
+     "in": "path",
+     "name": "item_id",
+     "required": true,
+     "schema": {
+      "title": "Item Id",
+      "type": "integer"
+     }
+    },
+    {
+     "in": "query",
+     "name": "skip_filament_check",
+     "required": false,
+     "schema": {
+      "default": false,
+      "title": "Skip Filament Check",
+      "type": "boolean"
+     }
+    },
+    {
+     "in": "header",
+     "name": "X-API-Key",
+     "required": false,
+     "schema": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "X-Api-Key"
+     }
+    }
+   ],
+   "responses": {
+    "200": {
+     "content": {
+      "application/json": {
+       "schema": {}
+      }
+     },
+     "description": "Successful Response"
+    },
+    "422": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/HTTPValidationError"
+       }
+      }
+     },
+     "description": "Validation Error"
+    }
+   },
+   "security": [
+    {
+     "HTTPBearer": []
+    }
+   ],
+   "summary": "Start Queue Item",
+   "tags": [
+    "queue"
+   ]
+  },
+  "POST /api/v1/queue/{item_id}/stop": {
+   "description": "Stop an actively printing queue item.\n\nOwnership-scoped (#1625-followup): callers with QUEUE_UPDATE_OWN can stop\ntheir own items; callers with QUEUE_UPDATE_ALL can stop any item. Mirrors\nthe /cancel shape. Pre-fix this required QUEUE_UPDATE_ALL \u2014 Operators\nholding only _OWN saw the Stop button in the queue UI but got 403 on click.",
+   "operationId": "stop_queue_item_api_v1_queue__item_id__stop_post",
+   "parameters": [
+    {
+     "in": "path",
+     "name": "item_id",
+     "required": true,
+     "schema": {
+      "title": "Item Id",
+      "type": "integer"
+     }
+    },
+    {
+     "in": "header",
+     "name": "X-API-Key",
+     "required": false,
+     "schema": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "X-Api-Key"
+     }
+    }
+   ],
+   "responses": {
+    "200": {
+     "content": {
+      "application/json": {
+       "schema": {}
+      }
+     },
+     "description": "Successful Response"
+    },
+    "422": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/HTTPValidationError"
+       }
+      }
+     },
+     "description": "Validation Error"
+    }
+   },
+   "security": [
+    {
+     "HTTPBearer": []
+    }
+   ],
+   "summary": "Stop Queue Item",
+   "tags": [
+    "queue"
+   ]
+  }
+ },
+ "schemas": {
+  "ColorSubstitution": {
+   "description": "A slot sent with a spool of another colour than the file asked for (#3279).",
+   "properties": {
+    "got": {
+     "title": "Got",
+     "type": "string"
+    },
+    "slot_id": {
+     "title": "Slot Id",
+     "type": "integer"
+    },
+    "tray": {
+     "title": "Tray",
+     "type": "integer"
+    },
+    "type": {
+     "title": "Type",
+     "type": "string"
+    },
+    "wanted": {
+     "title": "Wanted",
+     "type": "string"
+    }
+   },
+   "required": [
+    "slot_id",
+    "type",
+    "wanted",
+    "got",
+    "tray"
+   ],
+   "title": "ColorSubstitution",
+   "type": "object"
+  },
+  "HTTPValidationError": {
+   "properties": {
+    "detail": {
+     "items": {
+      "$ref": "#/components/schemas/ValidationError"
+     },
+     "title": "Detail",
+     "type": "array"
+    }
+   },
+   "title": "HTTPValidationError",
+   "type": "object"
+  },
+  "PrintBatchCreate": {
+   "description": "Create a batch, either empty (multi-plate pre-batch flow) or by\nassigning existing pending queue items into it (manual \"Group as batch\").",
+   "properties": {
+    "archive_id": {
+     "anyOf": [
+      {
+       "type": "integer"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Archive Id"
+    },
+    "due_date": {
+     "anyOf": [
+      {
+       "format": "date-time",
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Due Date"
+    },
+    "external_ref": {
+     "anyOf": [
+      {
+       "maxLength": 255,
+       "minLength": 1,
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "External Ref"
+    },
+    "external_source": {
+     "anyOf": [
+      {
+       "maxLength": 32,
+       "minLength": 1,
+       "pattern": "^[a-z0-9_-]+$",
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "External Source"
+    },
+    "item_ids": {
+     "anyOf": [
+      {
+       "items": {
+        "type": "integer"
+       },
+       "type": "array"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Item Ids"
+    },
+    "library_file_id": {
+     "anyOf": [
+      {
+       "type": "integer"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Library File Id"
+    },
+    "name": {
+     "title": "Name",
+     "type": "string"
+    },
+    "notes": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Notes"
+    },
+    "plates": {
+     "anyOf": [
+      {
+       "items": {
+        "$ref": "#/components/schemas/PrintBatchPlateTarget"
+       },
+       "type": "array"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Plates"
+    },
+    "project_id": {
+     "anyOf": [
+      {
+       "type": "integer"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Project Id"
+    }
+   },
+   "required": [
+    "name"
+   ],
+   "title": "PrintBatchCreate",
+   "type": "object"
+  },
+  "PrintBatchDispatchRequest": {
+   "description": "Create queue items for the runs an order still owes.",
+   "properties": {
+    "limit": {
+     "anyOf": [
+      {
+       "maximum": 999.0,
+       "minimum": 1.0,
+       "type": "integer"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Limit"
+    },
+    "only_plate": {
+     "default": false,
+     "title": "Only Plate",
+     "type": "boolean"
+    },
+    "plate_id": {
+     "anyOf": [
+      {
+       "type": "integer"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Plate Id"
+    }
+   },
+   "title": "PrintBatchDispatchRequest",
+   "type": "object"
+  },
+  "PrintBatchPlateProgress": {
+   "description": "Per-plate progress within a batch.",
+   "properties": {
+    "actual_cost": {
+     "anyOf": [
+      {
+       "type": "number"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Actual Cost"
+    },
+    "can_dispatch": {
+     "default": false,
+     "title": "Can Dispatch",
+     "type": "boolean"
+    },
+    "cancelled_count": {
+     "default": 0,
+     "title": "Cancelled Count",
+     "type": "integer"
+    },
+    "completed_count": {
+     "default": 0,
+     "title": "Completed Count",
+     "type": "integer"
+    },
+    "dispatched": {
+     "default": 0,
+     "title": "Dispatched",
+     "type": "integer"
+    },
+    "estimated_remaining_cost": {
+     "anyOf": [
+      {
+       "type": "number"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Estimated Remaining Cost"
+    },
+    "failed_count": {
+     "default": 0,
+     "title": "Failed Count",
+     "type": "integer"
+    },
+    "filament_used_grams": {
+     "anyOf": [
+      {
+       "type": "number"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Filament Used Grams"
+    },
+    "pending_count": {
+     "default": 0,
+     "title": "Pending Count",
+     "type": "integer"
+    },
+    "plate_id": {
+     "anyOf": [
+      {
+       "type": "integer"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Plate Id"
+    },
+    "plate_name": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Plate Name"
+    },
+    "print_time_seconds": {
+     "default": 0,
+     "title": "Print Time Seconds",
+     "type": "integer"
+    },
+    "printing_count": {
+     "default": 0,
+     "title": "Printing Count",
+     "type": "integer"
+    },
+    "quantity_target": {
+     "default": 0,
+     "title": "Quantity Target",
+     "type": "integer"
+    },
+    "remaining": {
+     "default": 0,
+     "title": "Remaining",
+     "type": "integer"
+    },
+    "skipped_count": {
+     "default": 0,
+     "title": "Skipped Count",
+     "type": "integer"
+    }
+   },
+   "title": "PrintBatchPlateProgress",
+   "type": "object"
+  },
+  "PrintBatchPlateTarget": {
+   "description": "How many runs of one plate an order wants (#342).\n\n``plate_id`` is the plate index inside the source 3MF, or null for a\nsingle-plate file \u2014 matching ``PrintQueueItem.plate_id``. A target of 0 is\nlegal and means \"this plate is not required (yet)\".",
+   "properties": {
+    "plate_id": {
+     "anyOf": [
+      {
+       "type": "integer"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Plate Id"
+    },
+    "plate_name": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Plate Name"
+    },
+    "quantity_target": {
+     "default": 1,
+     "maximum": 999.0,
+     "minimum": 0.0,
+     "title": "Quantity Target",
+     "type": "integer"
+    },
+    "sort_order": {
+     "default": 0,
+     "title": "Sort Order",
+     "type": "integer"
+    }
+   },
+   "title": "PrintBatchPlateTarget",
+   "type": "object"
+  },
+  "PrintBatchResponse": {
+   "description": "Response for a print batch with progress stats.",
+   "properties": {
+    "actual_cost": {
+     "anyOf": [
+      {
+       "type": "number"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Actual Cost"
+    },
+    "archive_id": {
+     "anyOf": [
+      {
+       "type": "integer"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Archive Id"
+    },
+    "cancelled_count": {
+     "default": 0,
+     "title": "Cancelled Count",
+     "type": "integer"
+    },
+    "completed_at": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Completed At"
+    },
+    "completed_count": {
+     "default": 0,
+     "title": "Completed Count",
+     "type": "integer"
+    },
+    "created_at": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Created At"
+    },
+    "created_by_id": {
+     "anyOf": [
+      {
+       "type": "integer"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Created By Id"
+    },
+    "created_by_username": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Created By Username"
+    },
+    "dispatchable_count": {
+     "default": 0,
+     "title": "Dispatchable Count",
+     "type": "integer"
+    },
+    "due_date": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Due Date"
+    },
+    "estimated_remaining_cost": {
+     "anyOf": [
+      {
+       "type": "number"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Estimated Remaining Cost"
+    },
+    "external_ref": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "External Ref"
+    },
+    "external_source": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "External Source"
+    },
+    "failed_count": {
+     "default": 0,
+     "title": "Failed Count",
+     "type": "integer"
+    },
+    "filament_used_grams": {
+     "anyOf": [
+      {
+       "type": "number"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Filament Used Grams"
+    },
+    "has_targets": {
+     "default": false,
+     "title": "Has Targets",
+     "type": "boolean"
+    },
+    "id": {
+     "title": "Id",
+     "type": "integer"
+    },
+    "library_file_id": {
+     "anyOf": [
+      {
+       "type": "integer"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Library File Id"
+    },
+    "name": {
+     "title": "Name",
+     "type": "string"
+    },
+    "notes": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Notes"
+    },
+    "pending_count": {
+     "default": 0,
+     "title": "Pending Count",
+     "type": "integer"
+    },
+    "plates": {
+     "default": [],
+     "items": {
+      "$ref": "#/components/schemas/PrintBatchPlateProgress"
+     },
+     "title": "Plates",
+     "type": "array"
+    },
+    "print_time_seconds": {
+     "default": 0,
+     "title": "Print Time Seconds",
+     "type": "integer"
+    },
+    "printing_count": {
+     "default": 0,
+     "title": "Printing Count",
+     "type": "integer"
+    },
+    "project_id": {
+     "anyOf": [
+      {
+       "type": "integer"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Project Id"
+    },
+    "quantity": {
+     "title": "Quantity",
+     "type": "integer"
+    },
+    "remaining_count": {
+     "default": 0,
+     "title": "Remaining Count",
+     "type": "integer"
+    },
+    "skipped_count": {
+     "default": 0,
+     "title": "Skipped Count",
+     "type": "integer"
+    },
+    "status": {
+     "title": "Status",
+     "type": "string"
+    },
+    "target_count": {
+     "default": 0,
+     "title": "Target Count",
+     "type": "integer"
+    }
+   },
+   "required": [
+    "id",
+    "name",
+    "quantity",
+    "status",
+    "created_at"
+   ],
+   "title": "PrintBatchResponse",
+   "type": "object"
+  },
+  "PrintBatchUngroupResponse": {
+   "description": "Response after ungrouping a batch.",
+   "properties": {
+    "message": {
+     "title": "Message",
+     "type": "string"
+    },
+    "ungrouped_count": {
+     "title": "Ungrouped Count",
+     "type": "integer"
+    }
+   },
+   "required": [
+    "ungrouped_count",
+    "message"
+   ],
+   "title": "PrintBatchUngroupResponse",
+   "type": "object"
+  },
+  "PrintBatchUpdate": {
+   "description": "Edit an order's header or its per-plate targets while it runs.\n\nEvery field is optional; ``plates`` replaces the full target set when\ngiven, so a plate omitted from the list has its target row removed.",
+   "properties": {
+    "due_date": {
+     "anyOf": [
+      {
+       "format": "date-time",
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Due Date"
+    },
+    "name": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Name"
+    },
+    "notes": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Notes"
+    },
+    "plates": {
+     "anyOf": [
+      {
+       "items": {
+        "$ref": "#/components/schemas/PrintBatchPlateTarget"
+       },
+       "type": "array"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Plates"
+    },
+    "project_id": {
+     "anyOf": [
+      {
+       "type": "integer"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Project Id"
+    },
+    "status": {
+     "anyOf": [
+      {
+       "enum": [
+        "active",
+        "cancelled"
+       ],
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Status"
+    }
+   },
+   "title": "PrintBatchUpdate",
+   "type": "object"
+  },
+  "PrintQueueBulkUpdate": {
+   "description": "Bulk update multiple queue items with the same values.",
+   "properties": {
+    "auto_off_after": {
+     "anyOf": [
+      {
+       "type": "boolean"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Auto Off After"
+    },
+    "bed_levelling": {
+     "anyOf": [
+      {
+       "enum": [
+        "off",
+        "on",
+        "auto"
+       ],
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Bed Levelling"
+    },
+    "confirm_outcome": {
+     "anyOf": [
+      {
+       "type": "boolean"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Confirm Outcome"
+    },
+    "cost_center_id": {
+     "anyOf": [
+      {
+       "type": "integer"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Cost Center Id"
+    },
+    "estimated_cost": {
+     "anyOf": [
+      {
+       "type": "number"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Estimated Cost"
+    },
+    "flow_cali": {
+     "anyOf": [
+      {
+       "enum": [
+        "off",
+        "on",
+        "auto"
+       ],
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Flow Cali"
+    },
+    "gcode_injection": {
+     "anyOf": [
+      {
+       "type": "boolean"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Gcode Injection"
+    },
+    "item_ids": {
+     "items": {
+      "type": "integer"
+     },
+     "title": "Item Ids",
+     "type": "array"
+    },
+    "layer_inspect": {
+     "anyOf": [
+      {
+       "type": "boolean"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Layer Inspect"
+    },
+    "manual_start": {
+     "anyOf": [
+      {
+       "type": "boolean"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Manual Start"
+    },
+    "nozzle_offset_cali": {
+     "anyOf": [
+      {
+       "enum": [
+        "off",
+        "on",
+        "auto"
+       ],
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Nozzle Offset Cali"
+    },
+    "preheat_chamber_target_override": {
+     "anyOf": [
+      {
+       "maximum": 65.0,
+       "minimum": 0.0,
+       "type": "integer"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Preheat Chamber Target Override"
+    },
+    "preheat_override": {
+     "anyOf": [
+      {
+       "enum": [
+        "inherit",
+        "on",
+        "off"
+       ],
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Preheat Override"
+    },
+    "printer_id": {
+     "anyOf": [
+      {
+       "type": "integer"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Printer Id"
+    },
+    "require_previous_success": {
+     "anyOf": [
+      {
+       "type": "boolean"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Require Previous Success"
+    },
+    "scheduled_time": {
+     "anyOf": [
+      {
+       "format": "date-time",
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Scheduled Time"
+    },
+    "timelapse": {
+     "anyOf": [
+      {
+       "type": "boolean"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Timelapse"
+    },
+    "use_ams": {
+     "anyOf": [
+      {
+       "type": "boolean"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Use Ams"
+    },
+    "vibration_cali": {
+     "anyOf": [
+      {
+       "type": "boolean"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Vibration Cali"
+    }
+   },
+   "required": [
+    "item_ids"
+   ],
+   "title": "PrintQueueBulkUpdate",
+   "type": "object"
+  },
+  "PrintQueueBulkUpdateResponse": {
+   "description": "Response for bulk update operation.",
+   "properties": {
+    "message": {
+     "title": "Message",
+     "type": "string"
+    },
+    "skipped_count": {
+     "title": "Skipped Count",
+     "type": "integer"
+    },
+    "updated_count": {
+     "title": "Updated Count",
+     "type": "integer"
+    }
+   },
+   "required": [
+    "updated_count",
+    "skipped_count",
+    "message"
+   ],
+   "title": "PrintQueueBulkUpdateResponse",
+   "type": "object"
+  },
+  "PrintQueueDuplicateRequest": {
+   "description": "Queue another copy of each of these jobs (#3441).",
+   "properties": {
+    "item_ids": {
+     "items": {
+      "type": "integer"
+     },
+     "maxItems": 500,
+     "minItems": 1,
+     "title": "Item Ids",
+     "type": "array"
+    }
+   },
+   "required": [
+    "item_ids"
+   ],
+   "title": "PrintQueueDuplicateRequest",
+   "type": "object"
+  },
+  "PrintQueueDuplicateResponse": {
+   "description": "The copies made, in the order of the request, and how many jobs got none.",
+   "properties": {
+    "created_ids": {
+     "items": {
+      "type": "integer"
+     },
+     "title": "Created Ids",
+     "type": "array"
+    },
+    "skipped_count": {
+     "title": "Skipped Count",
+     "type": "integer"
+    }
+   },
+   "required": [
+    "created_ids",
+    "skipped_count"
+   ],
+   "title": "PrintQueueDuplicateResponse",
+   "type": "object"
+  },
+  "PrintQueueHistoryClearResponse": {
+   "properties": {
+    "cleared": {
+     "title": "Cleared",
+     "type": "integer"
+    },
+    "kept": {
+     "title": "Kept",
+     "type": "integer"
+    }
+   },
+   "required": [
+    "cleared",
+    "kept"
+   ],
+   "title": "PrintQueueHistoryClearResponse",
+   "type": "object"
+  },
+  "PrintQueueHistoryResponse": {
+   "description": "One page of the queue history, plus what the page needs around it.\n\n``items`` holds the page in display order, followed by any other history\nruns of the batches on that page, so a batch row can count all of its runs.",
+   "properties": {
+    "items": {
+     "items": {
+      "$ref": "#/components/schemas/PrintQueueItemResponse"
+     },
+     "title": "Items",
+     "type": "array"
+    },
+    "locations": {
+     "items": {
+      "type": "string"
+     },
+     "title": "Locations",
+     "type": "array"
+    },
+    "total": {
+     "title": "Total",
+     "type": "integer"
+    }
+   },
+   "required": [
+    "items",
+    "total",
+    "locations"
+   ],
+   "title": "PrintQueueHistoryResponse",
+   "type": "object"
+  },
+  "PrintQueueItemCreate": {
+   "properties": {
+    "aito_task_id": {
+     "anyOf": [
+      {
+       "type": "integer"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Aito Task Id"
+    },
+    "ams_mapping": {
+     "anyOf": [
+      {
+       "items": {
+        "type": "integer"
+       },
+       "type": "array"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Ams Mapping"
+    },
+    "archive_id": {
+     "anyOf": [
+      {
+       "type": "integer"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Archive Id"
+    },
+    "auto_off_after": {
+     "default": false,
+     "title": "Auto Off After",
+     "type": "boolean"
+    },
+    "batch_id": {
+     "anyOf": [
+      {
+       "type": "integer"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Batch Id"
+    },
+    "bed_levelling": {
+     "default": "auto",
+     "enum": [
+      "off",
+      "on",
+      "auto"
+     ],
+     "title": "Bed Levelling",
+     "type": "string"
+    },
+    "cleanup_library_after_dispatch": {
+     "default": false,
+     "title": "Cleanup Library After Dispatch",
+     "type": "boolean"
+    },
+    "confirm_outcome": {
+     "default": false,
+     "title": "Confirm Outcome",
+     "type": "boolean"
+    },
+    "cost_center_id": {
+     "anyOf": [
+      {
+       "type": "integer"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Cost Center Id"
+    },
+    "estimated_cost": {
+     "anyOf": [
+      {
+       "type": "number"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Estimated Cost"
+    },
+    "filament_overrides": {
+     "anyOf": [
+      {
+       "items": {
+        "additionalProperties": true,
+        "type": "object"
+       },
+       "type": "array"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Filament Overrides"
+    },
+    "flow_cali": {
+     "default": "auto",
+     "enum": [
+      "off",
+      "on",
+      "auto"
+     ],
+     "title": "Flow Cali",
+     "type": "string"
+    },
+    "gcode_injection": {
+     "default": false,
+     "title": "Gcode Injection",
+     "type": "boolean"
+    },
+    "insert_at_top": {
+     "default": false,
+     "title": "Insert At Top",
+     "type": "boolean"
+    },
+    "insert_position": {
+     "anyOf": [
+      {
+       "type": "integer"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Insert Position"
+    },
+    "layer_inspect": {
+     "default": false,
+     "title": "Layer Inspect",
+     "type": "boolean"
+    },
+    "library_file_id": {
+     "anyOf": [
+      {
+       "type": "integer"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Library File Id"
+    },
+    "manual_start": {
+     "default": false,
+     "title": "Manual Start",
+     "type": "boolean"
+    },
+    "nozzle_offset_cali": {
+     "default": "auto",
+     "enum": [
+      "off",
+      "on",
+      "auto"
+     ],
+     "title": "Nozzle Offset Cali",
+     "type": "string"
+    },
+    "nozzle_rack_choice": {
+     "anyOf": [
+      {
+       "additionalProperties": {
+        "type": "integer"
+       },
+       "type": "object"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Nozzle Rack Choice"
+    },
+    "plate_id": {
+     "anyOf": [
+      {
+       "type": "integer"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Plate Id"
+    },
+    "preheat_chamber_target_override": {
+     "anyOf": [
+      {
+       "maximum": 65.0,
+       "minimum": 0.0,
+       "type": "integer"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Preheat Chamber Target Override"
+    },
+    "preheat_override": {
+     "default": "inherit",
+     "enum": [
+      "inherit",
+      "on",
+      "off"
+     ],
+     "title": "Preheat Override",
+     "type": "string"
+    },
+    "printer_id": {
+     "anyOf": [
+      {
+       "type": "integer"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Printer Id"
+    },
+    "project_id": {
+     "anyOf": [
+      {
+       "type": "integer"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Project Id"
+    },
+    "quantity": {
+     "default": 1,
+     "maximum": 999.0,
+     "title": "Quantity",
+     "type": "integer"
+    },
+    "require_previous_success": {
+     "default": false,
+     "title": "Require Previous Success",
+     "type": "boolean"
+    },
+    "required_filament_types": {
+     "anyOf": [
+      {
+       "items": {
+        "type": "string"
+       },
+       "type": "array"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Required Filament Types"
+    },
+    "scheduled_time": {
+     "anyOf": [
+      {
+       "format": "date-time",
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Scheduled Time"
+    },
+    "skip_filament_check": {
+     "default": false,
+     "title": "Skip Filament Check",
+     "type": "boolean"
+    },
+    "target_location": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Target Location"
+    },
+    "target_model": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Target Model"
+    },
+    "timelapse": {
+     "default": false,
+     "title": "Timelapse",
+     "type": "boolean"
+    },
+    "use_ams": {
+     "default": true,
+     "title": "Use Ams",
+     "type": "boolean"
+    },
+    "variants": {
+     "anyOf": [
+      {
+       "items": {
+        "$ref": "#/components/schemas/QueueVariantCreate"
+       },
+       "type": "array"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Variants"
+    },
+    "vibration_cali": {
+     "default": true,
+     "title": "Vibration Cali",
+     "type": "boolean"
+    }
+   },
+   "title": "PrintQueueItemCreate",
+   "type": "object"
+  },
+  "PrintQueueItemResponse": {
+   "properties": {
+    "aito_board_column": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Aito Board Column"
+    },
+    "aito_client_name": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Aito Client Name"
+    },
+    "aito_due_date": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Aito Due Date"
+    },
+    "aito_quantity": {
+     "anyOf": [
+      {
+       "type": "integer"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Aito Quantity"
+    },
+    "aito_task_id": {
+     "anyOf": [
+      {
+       "type": "integer"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Aito Task Id"
+    },
+    "aito_task_title": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Aito Task Title"
+    },
+    "ams_mapping": {
+     "anyOf": [
+      {
+       "items": {
+        "type": "integer"
+       },
+       "type": "array"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Ams Mapping"
+    },
+    "archive_deleted": {
+     "default": false,
+     "title": "Archive Deleted",
+     "type": "boolean"
+    },
+    "archive_has_slicer_ams_mapping": {
+     "default": false,
+     "title": "Archive Has Slicer Ams Mapping",
+     "type": "boolean"
+    },
+    "archive_id": {
+     "anyOf": [
+      {
+       "type": "integer"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Archive Id"
+    },
+    "archive_name": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Archive Name"
+    },
+    "archive_thumbnail": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Archive Thumbnail"
+    },
+    "auto_off_after": {
+     "title": "Auto Off After",
+     "type": "boolean"
+    },
+    "batch_id": {
+     "anyOf": [
+      {
+       "type": "integer"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Batch Id"
+    },
+    "batch_name": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Batch Name"
+    },
+    "bed_levelling": {
+     "default": "auto",
+     "enum": [
+      "off",
+      "on",
+      "auto"
+     ],
+     "title": "Bed Levelling",
+     "type": "string"
+    },
+    "bed_type": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Bed Type"
+    },
+    "been_jumped": {
+     "default": false,
+     "title": "Been Jumped",
+     "type": "boolean"
+    },
+    "cleanup_library_after_dispatch": {
+     "default": false,
+     "title": "Cleanup Library After Dispatch",
+     "type": "boolean"
+    },
+    "color_substitutions": {
+     "anyOf": [
+      {
+       "items": {
+        "$ref": "#/components/schemas/ColorSubstitution"
+       },
+       "type": "array"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Color Substitutions"
+    },
+    "completed_at": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Completed At"
+    },
+    "confirm_outcome": {
+     "default": false,
+     "title": "Confirm Outcome",
+     "type": "boolean"
+    },
+    "cost_center_id": {
+     "anyOf": [
+      {
+       "type": "integer"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Cost Center Id"
+    },
+    "created_at": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Created At"
+    },
+    "created_by_id": {
+     "anyOf": [
+      {
+       "type": "integer"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Created By Id"
+    },
+    "created_by_username": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Created By Username"
+    },
+    "error_message": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Error Message"
+    },
+    "estimated_cost": {
+     "anyOf": [
+      {
+       "type": "number"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Estimated Cost"
+    },
+    "filament_color": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Filament Color"
+    },
+    "filament_overrides": {
+     "anyOf": [
+      {
+       "items": {
+        "additionalProperties": true,
+        "type": "object"
+       },
+       "type": "array"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Filament Overrides"
+    },
+    "filament_short": {
+     "default": false,
+     "title": "Filament Short",
+     "type": "boolean"
+    },
+    "filament_type": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Filament Type"
+    },
+    "filament_used_grams": {
+     "anyOf": [
+      {
+       "type": "number"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Filament Used Grams"
+    },
+    "flow_cali": {
+     "default": "auto",
+     "enum": [
+      "off",
+      "on",
+      "auto"
+     ],
+     "title": "Flow Cali",
+     "type": "string"
+    },
+    "gcode_injection": {
+     "default": false,
+     "title": "Gcode Injection",
+     "type": "boolean"
+    },
+    "id": {
+     "title": "Id",
+     "type": "integer"
+    },
+    "layer_height": {
+     "anyOf": [
+      {
+       "type": "number"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Layer Height"
+    },
+    "layer_inspect": {
+     "default": false,
+     "title": "Layer Inspect",
+     "type": "boolean"
+    },
+    "library_file_id": {
+     "anyOf": [
+      {
+       "type": "integer"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Library File Id"
+    },
+    "library_file_name": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Library File Name"
+    },
+    "library_file_thumbnail": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Library File Thumbnail"
+    },
+    "manual_start": {
+     "title": "Manual Start",
+     "type": "boolean"
+    },
+    "nozzle_diameter": {
+     "anyOf": [
+      {
+       "type": "number"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Nozzle Diameter"
+    },
+    "nozzle_mapping": {
+     "anyOf": [
+      {
+       "items": {
+        "type": "integer"
+       },
+       "type": "array"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Nozzle Mapping"
+    },
+    "nozzle_offset_cali": {
+     "default": "auto",
+     "enum": [
+      "off",
+      "on",
+      "auto"
+     ],
+     "title": "Nozzle Offset Cali",
+     "type": "string"
+    },
+    "nozzle_rack_choice": {
+     "anyOf": [
+      {
+       "additionalProperties": {
+        "type": "integer"
+       },
+       "type": "object"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Nozzle Rack Choice"
+    },
+    "plate_id": {
+     "anyOf": [
+      {
+       "type": "integer"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Plate Id"
+    },
+    "position": {
+     "title": "Position",
+     "type": "integer"
+    },
+    "preheat_chamber_target_override": {
+     "anyOf": [
+      {
+       "type": "integer"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Preheat Chamber Target Override"
+    },
+    "preheat_override": {
+     "default": "inherit",
+     "enum": [
+      "inherit",
+      "on",
+      "off"
+     ],
+     "title": "Preheat Override",
+     "type": "string"
+    },
+    "print_time_seconds": {
+     "anyOf": [
+      {
+       "type": "integer"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Print Time Seconds"
+    },
+    "printer_id": {
+     "anyOf": [
+      {
+       "type": "integer"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Printer Id"
+    },
+    "printer_name": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Printer Name"
+    },
+    "project_code": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Project Code"
+    },
+    "project_name": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Project Name"
+    },
+    "require_previous_success": {
+     "title": "Require Previous Success",
+     "type": "boolean"
+    },
+    "required_filament_types": {
+     "anyOf": [
+      {
+       "items": {
+        "type": "string"
+       },
+       "type": "array"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Required Filament Types"
+    },
+    "revision_id": {
+     "anyOf": [
+      {
+       "type": "integer"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Revision Id"
+    },
+    "revision_item_name": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Revision Item Name"
+    },
+    "revision_number": {
+     "anyOf": [
+      {
+       "type": "integer"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Revision Number"
+    },
+    "revision_status": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Revision Status"
+    },
+    "scheduled_time": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Scheduled Time"
+    },
+    "skip_filament_check": {
+     "default": false,
+     "title": "Skip Filament Check",
+     "type": "boolean"
+    },
+    "slice_job_id": {
+     "anyOf": [
+      {
+       "type": "integer"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Slice Job Id"
+    },
+    "sliced_for_model": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Sliced For Model"
+    },
+    "slicer_ams_mapping": {
+     "anyOf": [
+      {
+       "items": {
+        "type": "integer"
+       },
+       "type": "array"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Slicer Ams Mapping"
+    },
+    "started_at": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Started At"
+    },
+    "status": {
+     "enum": [
+      "pending",
+      "printing",
+      "completed",
+      "failed",
+      "skipped",
+      "cancelled",
+      "slicing",
+      "slice_failed"
+     ],
+     "title": "Status",
+     "type": "string"
+    },
+    "target_location": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Target Location"
+    },
+    "target_model": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Target Model"
+    },
+    "timelapse": {
+     "default": false,
+     "title": "Timelapse",
+     "type": "boolean"
+    },
+    "use_ams": {
+     "default": true,
+     "title": "Use Ams",
+     "type": "boolean"
+    },
+    "variants": {
+     "default": [],
+     "items": {
+      "$ref": "#/components/schemas/QueueVariantSummary"
+     },
+     "title": "Variants",
+     "type": "array"
+    },
+    "vibration_cali": {
+     "default": true,
+     "title": "Vibration Cali",
+     "type": "boolean"
+    },
+    "waiting_reason": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Waiting Reason"
+    }
+   },
+   "required": [
+    "id",
+    "printer_id",
+    "archive_id",
+    "library_file_id",
+    "position",
+    "scheduled_time",
+    "require_previous_success",
+    "auto_off_after",
+    "manual_start",
+    "status",
+    "started_at",
+    "completed_at",
+    "error_message",
+    "created_at"
+   ],
+   "title": "PrintQueueItemResponse",
+   "type": "object"
+  },
+  "PrintQueueItemUpdate": {
+   "properties": {
+    "add_copies": {
+     "default": 0,
+     "maximum": 998.0,
+     "minimum": 0.0,
+     "title": "Add Copies",
+     "type": "integer"
+    },
+    "ams_mapping": {
+     "anyOf": [
+      {
+       "items": {
+        "type": "integer"
+       },
+       "type": "array"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Ams Mapping"
+    },
+    "auto_off_after": {
+     "anyOf": [
+      {
+       "type": "boolean"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Auto Off After"
+    },
+    "bed_levelling": {
+     "anyOf": [
+      {
+       "enum": [
+        "off",
+        "on",
+        "auto"
+       ],
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Bed Levelling"
+    },
+    "confirm_outcome": {
+     "anyOf": [
+      {
+       "type": "boolean"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Confirm Outcome"
+    },
+    "cost_center_id": {
+     "anyOf": [
+      {
+       "type": "integer"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Cost Center Id"
+    },
+    "estimated_cost": {
+     "anyOf": [
+      {
+       "type": "number"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Estimated Cost"
+    },
+    "filament_overrides": {
+     "anyOf": [
+      {
+       "items": {
+        "additionalProperties": true,
+        "type": "object"
+       },
+       "type": "array"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Filament Overrides"
+    },
+    "flow_cali": {
+     "anyOf": [
+      {
+       "enum": [
+        "off",
+        "on",
+        "auto"
+       ],
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Flow Cali"
+    },
+    "gcode_injection": {
+     "anyOf": [
+      {
+       "type": "boolean"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Gcode Injection"
+    },
+    "layer_inspect": {
+     "anyOf": [
+      {
+       "type": "boolean"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Layer Inspect"
+    },
+    "manual_start": {
+     "anyOf": [
+      {
+       "type": "boolean"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Manual Start"
+    },
+    "nozzle_mapping": {
+     "anyOf": [
+      {
+       "items": {
+        "type": "integer"
+       },
+       "type": "array"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Nozzle Mapping"
+    },
+    "nozzle_offset_cali": {
+     "anyOf": [
+      {
+       "enum": [
+        "off",
+        "on",
+        "auto"
+       ],
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Nozzle Offset Cali"
+    },
+    "nozzle_rack_choice": {
+     "anyOf": [
+      {
+       "additionalProperties": {
+        "type": "integer"
+       },
+       "type": "object"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Nozzle Rack Choice"
+    },
+    "plate_id": {
+     "anyOf": [
+      {
+       "type": "integer"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Plate Id"
+    },
+    "preheat_chamber_target_override": {
+     "anyOf": [
+      {
+       "maximum": 65.0,
+       "minimum": 0.0,
+       "type": "integer"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Preheat Chamber Target Override"
+    },
+    "preheat_override": {
+     "anyOf": [
+      {
+       "enum": [
+        "inherit",
+        "on",
+        "off"
+       ],
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Preheat Override"
+    },
+    "printer_id": {
+     "anyOf": [
+      {
+       "type": "integer"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Printer Id"
+    },
+    "require_previous_success": {
+     "anyOf": [
+      {
+       "type": "boolean"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Require Previous Success"
+    },
+    "scheduled_time": {
+     "anyOf": [
+      {
+       "format": "date-time",
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Scheduled Time"
+    },
+    "skip_filament_check": {
+     "anyOf": [
+      {
+       "type": "boolean"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Skip Filament Check"
+    },
+    "target_location": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Target Location"
+    },
+    "target_model": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Target Model"
+    },
+    "timelapse": {
+     "anyOf": [
+      {
+       "type": "boolean"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Timelapse"
+    },
+    "use_ams": {
+     "anyOf": [
+      {
+       "type": "boolean"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Use Ams"
+    },
+    "vibration_cali": {
+     "anyOf": [
+      {
+       "type": "boolean"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Vibration Cali"
+    }
+   },
+   "title": "PrintQueueItemUpdate",
+   "type": "object"
+  },
+  "PrintQueueReorder": {
+   "properties": {
+    "items": {
+     "items": {
+      "$ref": "#/components/schemas/PrintQueueReorderItem"
+     },
+     "title": "Items",
+     "type": "array"
+    }
+   },
+   "required": [
+    "items"
+   ],
+   "title": "PrintQueueReorder",
+   "type": "object"
+  },
+  "PrintQueueReorderItem": {
+   "properties": {
+    "id": {
+     "title": "Id",
+     "type": "integer"
+    },
+    "position": {
+     "title": "Position",
+     "type": "integer"
+    }
+   },
+   "required": [
+    "id",
+    "position"
+   ],
+   "title": "PrintQueueReorderItem",
+   "type": "object"
+  },
+  "QueueVariantCreate": {
+   "description": "One candidate file for a cross-model queue item (#671).\n\nPer-file rather than per-item because the settings genuinely differ between\ncandidates: an H2C slice is dual-nozzle and will not share slot count, AMS\nmapping or nozzle mapping with the H2S slice of the same model.\n\n``target_model`` is normally omitted and read from the file's own\n``sliced_for_model``; supply it only for a legacy 3MF that declares none.",
+   "properties": {
+    "ams_mapping": {
+     "anyOf": [
+      {
+       "items": {
+        "type": "integer"
+       },
+       "type": "array"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Ams Mapping"
+    },
+    "filament_overrides": {
+     "anyOf": [
+      {
+       "items": {
+        "additionalProperties": true,
+        "type": "object"
+       },
+       "type": "array"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Filament Overrides"
+    },
+    "library_file_id": {
+     "title": "Library File Id",
+     "type": "integer"
+    },
+    "nozzle_mapping": {
+     "anyOf": [
+      {
+       "items": {
+        "type": "integer"
+       },
+       "type": "array"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Nozzle Mapping"
+    },
+    "nozzle_rack_choice": {
+     "anyOf": [
+      {
+       "additionalProperties": {
+        "type": "integer"
+       },
+       "type": "object"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Nozzle Rack Choice"
+    },
+    "plate_id": {
+     "anyOf": [
+      {
+       "type": "integer"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Plate Id"
+    },
+    "target_model": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Target Model"
+    }
+   },
+   "required": [
+    "library_file_id"
+   ],
+   "title": "QueueVariantCreate",
+   "type": "object"
+  },
+  "QueueVariantSummary": {
+   "description": "One candidate on a cross-model queue item, for display (#671).",
+   "properties": {
+    "filename": {
+     "title": "Filename",
+     "type": "string"
+    },
+    "library_file_id": {
+     "title": "Library File Id",
+     "type": "integer"
+    },
+    "position": {
+     "title": "Position",
+     "type": "integer"
+    },
+    "target_model": {
+     "title": "Target Model",
+     "type": "string"
+    }
+   },
+   "required": [
+    "library_file_id",
+    "filename",
+    "target_model",
+    "position"
+   ],
+   "title": "QueueVariantSummary",
+   "type": "object"
+  },
+  "ValidationError": {
+   "properties": {
+    "ctx": {
+     "title": "Context",
+     "type": "object"
+    },
+    "input": {
+     "title": "Input"
+    },
+    "loc": {
+     "items": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "integer"
+       }
+      ]
+     },
+     "title": "Location",
+     "type": "array"
+    },
+    "msg": {
+     "title": "Message",
+     "type": "string"
+    },
+    "type": {
+     "title": "Error Type",
+     "type": "string"
+    }
+   },
+   "required": [
+    "loc",
+    "msg",
+    "type"
+   ],
+   "title": "ValidationError",
+   "type": "object"
+  }
+ }
+}
+
+### stderr:
+

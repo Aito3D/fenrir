@@ -36,7 +36,9 @@ export interface RevenueBucket {
   /** Gross margin HT per key, services' print + labour costs shared pro rata of their HT; same stripping as cost. */
   marginSplit?: { nature: Record<string, number>; brand: Record<string, number>; segment?: Record<string, number>; kind: Record<string, number> };
   /** What `cost` is made of: Zoho item costs (`items`), then the services' filament, energy, wear, labour and the share of the fixed costs. */
-  costParts?: Partial<Record<'items' | 'filament' | 'energy' | 'wear' | 'labor' | 'fixed' | 'depreciation', number>>;
+  costParts?: Partial<Record<'items' | 'filament' | 'energy' | 'wear' | 'labor' | 'fixed' | 'fixedEstimated' | 'depreciation', number>>;
+  /** The part of the fixed costs (estimate included) that weighs on the goods, already inside `costParts`. */
+  fixedGoods?: number;
   /** Printer hours of the print log in the bucket (null before the log began); stripped with the margin figures. */
   printHours?: number | null;
   projection: Money | null;
@@ -400,9 +402,34 @@ export interface AnalysisResponse {
   dormant: DormantRow[];
 }
 
-export interface FixedCost {
-  label: string;
-  monthly: number;
+export type FixedAccountType = 'monthly' | 'annual' | 'one_off';
+
+/** A Zoho expense account (code starting with 6) and the share of it that is 3D printing's. */
+export interface FixedAccount {
+  id: string;
+  /** Not unique in Zoho: the id is the key. */
+  code: string;
+  name: string;
+  active: boolean;
+  /** Set when the page already counts this kind of account elsewhere. */
+  flag: 'purchases' | 'staff' | 'depreciation' | null;
+  /** Entered in the running month. */
+  month: number;
+  /** The twelve months ending with the running one. */
+  year: number;
+  /** Mean of the three closed months before. */
+  usual: number;
+  percent: number;
+  type: FixedAccountType;
+  /** Share of the charge that weighs on the goods (0–100); the rest weighs on the services. */
+  goodsShare: number;
+}
+
+export interface FixedAccountsResponse {
+  month: string;
+  /** Null until Zoho was read once. */
+  readAt: string | null;
+  accounts: FixedAccount[];
 }
 
 /** A Zoho fixed asset as the server stored it; Zoho may leave cost, start or life empty. */
@@ -429,9 +456,15 @@ export interface ResultMonth {
   ht: number;
   variable: number;
   labor: number;
+  /** Entered in the books. */
   fixed: number;
+  /** Usual charges the running month still misses; 0 on a closed month. */
+  fixedEstimated: number;
   depreciation: number;
+  /** With the estimate taken off. */
   result: number;
+  /** Without it: what the books say today. */
+  resultReal: number;
   /** Share of the HT whose cost is known (0–1); null without sales. */
   coverage: number | null;
   /** Before print and labour costs were tracked: the result would count services at full margin. */
@@ -441,7 +474,7 @@ export interface ResultMonth {
 export interface ResultResponse {
   fixedMonthly: number;
   /** The three charges of the whole current month. */
-  charges: { labor: number; fixed: number; depreciation: number };
+  charges: { labor: number; fixed: number; fixedEstimated: number; depreciation: number };
   months: ResultMonth[];
   /** First day print and labour costs exist; null when there are none yet. */
   costsSince: string | null;

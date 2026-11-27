@@ -22,7 +22,16 @@ export function RevenueResult({ version }: { version: unknown }) {
         <div className="space-y-2">
           {month && !month.partial && (
             <div className="grid grid-cols-[repeat(auto-fit,minmax(13.5rem,1fr))] gap-2">
-              <Tile label={t('revenue.result.month')} value={formatFcp(month.result)} tone={month.result < 0 ? 'alert' : undefined} />
+              {month.fixedEstimated > 0 ? (
+                <>
+                  {/* Never one merged figure: what the books say, then what the month will look like once the usual charges are entered. */}
+                  <Tile label={t('revenue.result.realResult')} value={formatFcp(month.resultReal)} tone={month.resultReal < 0 ? 'alert' : undefined} />
+                  <Tile label={t('revenue.result.projectedResult')} value={formatFcp(month.result)} tone={month.result < 0 ? 'alert' : undefined}
+                    hint={t('revenue.result.estimatedNote', { amount: formatFcp(month.fixedEstimated) })} />
+                </>
+              ) : (
+                <Tile label={t('revenue.result.month')} value={formatFcp(month.result)} tone={month.result < 0 ? 'alert' : undefined} />
+              )}
               {be && (
                 <>
                   <Tile label={t('revenue.result.breakEven')} value={formatFcp(be.amount)} />
@@ -54,7 +63,10 @@ export function RevenueResult({ version }: { version: unknown }) {
                     <td className="px-2 py-1 text-right text-white">{formatFcp(m.ht)}</td>
                     <td className="px-2 py-1 text-right text-bambu-gray-light">{m.partial ? DASH : formatFcp(m.variable)}</td>
                     <td className="px-2 py-1 text-right text-bambu-gray-light">{m.partial ? DASH : formatFcp(m.labor)}</td>
-                    <td className="px-2 py-1 text-right text-bambu-gray-light">{formatFcp(m.fixed)}</td>
+                    <td className="px-2 py-1 text-right text-bambu-gray-light">
+                      {formatFcp(m.fixed)}
+                      {m.fixedEstimated > 0 && <span className="ml-1 text-amber-700 dark:text-amber-400">≈ +{formatFcp(m.fixedEstimated)}</span>}
+                    </td>
                     <td className="px-2 py-1 text-right text-bambu-gray-light">{m.partial ? DASH : formatFcp(m.depreciation)}</td>
                     <td className={`px-2 py-1 text-right font-medium ${!m.partial && m.result < 0 ? 'text-status-error' : 'text-white'}`}>{m.partial ? DASH : formatFcp(m.result)}</td>
                     <td className={`px-2 py-1 text-right ${m.coverage !== null && m.coverage < 0.8 && !m.partial ? 'text-amber-700 dark:text-amber-400' : 'text-bambu-gray'}`}>

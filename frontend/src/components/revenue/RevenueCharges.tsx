@@ -6,7 +6,7 @@ import { useDismissableDialog } from '../../hooks/useDismissableDialog';
 import { focusRingCls } from '../formStyles';
 import { Panel } from '../aito/stats/primitives';
 import { RevenueDepreciation } from './RevenueDepreciation';
-import { RevenueFixedCosts } from './RevenueFixedCosts';
+import { RevenueFixedAccounts } from './RevenueFixedAccounts';
 import { RevenueLabor } from './RevenueLabor';
 import { formatFcp, formatPerMinute } from './lib/format';
 import type { ResultResponse } from './lib/types';
@@ -38,7 +38,9 @@ export function RevenueCharges({ canManage, version, onChanged, onClose, returnF
     };
   }, []);
   const c = data?.charges;
-  const rows = c ? ([['result.colLabor', c.labor], ['result.colFixed', c.fixed], ['result.colDepreciation', c.depreciation]] as const) : [];
+  // The fixed costs of the month: entered in the books plus the usual charges still missing, the latter named apart.
+  const estimated = c?.fixedEstimated ?? 0;
+  const rows = c ? ([['result.colLabor', c.labor], ['result.colFixed', c.fixed + estimated], ['result.colDepreciation', c.depreciation]] as const) : [];
   const total = rows.reduce((s, [, v]) => s + v, 0);
   const panel = { canManage, onChanged };
   // Portalled: an animated ancestor would otherwise become the containing block of `fixed`.
@@ -68,7 +70,12 @@ export function RevenueCharges({ canManage, version, onChanged, onClose, returnF
             <tbody>
               {rows.map(([key, value]) => (
                 <tr key={key} className="border-t border-bambu-dark-tertiary text-bambu-gray-light">
-                  <th scope="row" className="py-1 text-left font-normal">{t(`revenue.${key}`)}</th>
+                  <th scope="row" className="py-1 text-left font-normal">
+                    {t(`revenue.${key}`)}
+                    {key === 'result.colFixed' && estimated > 0 && (
+                      <span className="ml-2 text-xs text-amber-700 dark:text-amber-400">{t('revenue.fixedCosts.hintEstimated', { amount: formatFcp(estimated) })}</span>
+                    )}
+                  </th>
                   <td className="px-2 py-1 text-right">{formatFcp(value)}</td>
                   <td className="px-2 py-1 text-right">{formatPerMinute(value)}</td>
                 </tr>
@@ -83,7 +90,7 @@ export function RevenueCharges({ canManage, version, onChanged, onClose, returnF
         )}
       </Panel>
       <RevenueLabor {...panel} />
-      <RevenueFixedCosts {...panel} />
+      <RevenueFixedAccounts {...panel} />
       <RevenueDepreciation {...panel} />
         </div>
       </div>
