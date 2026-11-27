@@ -28,8 +28,10 @@ function stubFetch(days: CalendarDay[] | (() => Response) = DAYS) {
   return fetchMock;
 }
 
-const renderCal = (o: { taxMode?: TaxMode; filterParams?: string; today?: string } = {}) =>
-  render(<RevenueCalendar filterParams={o.filterParams ?? ''} taxMode={o.taxMode ?? 'ht'} version={0} today={o.today ?? '2026-11-19'} />);
+const cal = (o: { taxMode?: TaxMode; filterParams?: string; year?: number } = {}) => (
+  <RevenueCalendar filterParams={o.filterParams ?? ''} taxMode={o.taxMode ?? 'ht'} version={0} year={o.year ?? 2026} />
+);
+const renderCal = (o: Parameters<typeof cal>[0] = {}) => render(cal(o));
 
 const cell = (d: string) => document.querySelector(`[data-day="${d}"]`) as HTMLElement;
 const urls = (m: ReturnType<typeof stubFetch>) => m.mock.calls.map((c) => c[0]);
@@ -37,65 +39,19 @@ const urls = (m: ReturnType<typeof stubFetch>) => m.mock.calls.map((c) => c[0]);
 afterEach(() => vi.unstubAllGlobals());
 
 describe('RevenueCalendar', () => {
-  it('opens on the rolling twelve months with the filters', async () => {
+  it('reads the calendar year it is given with the filters, and follows it', async () => {
     const fetchMock = stubFetch();
-    renderCal({ filterParams: '&kind=goods' });
+    const { rerender } = renderCal({ filterParams: '&kind=goods' });
     await screen.findByRole('grid', { name: 'Revenue by day' });
-    expect(urls(fetchMock)).toEqual(['/api/v1/revenue/daily?kind=goods']);
+    expect(urls(fetchMock)).toEqual(['/api/v1/revenue/daily?from=2026-01-01&to=2026-12-31&kind=goods']);
     expect(screen.getByText('Sales calendar')).toBeInTheDocument();
-    expect(screen.getByText('Last 12 months')).toBeInTheDocument();
+    expect(screen.getByText('2026')).toBeInTheDocument();
     expect(screen.getByText('Jan 5, 2026 → Jan 12, 2026 · HT')).toBeInTheDocument();
-  });
-
-  it('reads the rolling window without a query string when no filter is set', async () => {
-    const fetchMock = stubFetch();
-    renderCal();
-    await screen.findByRole('grid');
-    expect(urls(fetchMock)).toEqual(['/api/v1/revenue/daily']);
-  });
-
-  it('steps from the rolling window to the current year, back to the history start, and forward again', async () => {
-    const fetchMock = stubFetch();
-    renderCal();
-    await screen.findByRole('grid');
-    const prev = screen.getByRole('button', { name: 'Previous year' });
-    const next = screen.getByRole('button', { name: 'Next year' });
-    expect(next).toBeDisabled();
-    fireEvent.click(prev);
-    await waitFor(() => expect(urls(fetchMock)).toContain('/api/v1/revenue/daily?from=2026-01-01&to=2026-12-31'));
-    expect(screen.getByText('2026')).toBeInTheDocument();
-    expect(next).toBeEnabled();
-    fireEvent.click(prev);
+    // The page's controls choose the year: no stepper of its own.
+    expect(screen.queryByRole('button', { name: 'Previous year' })).toBeNull();
+    rerender(cal({ year: 2025 }));
     await waitFor(() => expect(urls(fetchMock)).toContain('/api/v1/revenue/daily?from=2025-01-01&to=2025-12-31'));
-    fireEvent.click(prev);
-    await waitFor(() => expect(urls(fetchMock)).toContain('/api/v1/revenue/daily?from=2024-01-01&to=2024-12-31'));
-    expect(prev).toBeDisabled();
-    fireEvent.click(next);
-    fireEvent.click(next);
-    expect(screen.getByText('2026')).toBeInTheDocument();
-    fireEvent.click(next);
-    expect(screen.getByText('Last 12 months')).toBeInTheDocument();
-    expect(next).toBeDisabled();
-  });
-
-  it('moves focus to the other stepper button when a step disables the focused one', async () => {
-    stubFetch();
-    renderCal();
-    await screen.findByRole('grid');
-    const prev = screen.getByRole('button', { name: 'Previous year' });
-    const next = screen.getByRole('button', { name: 'Next year' });
-    prev.focus();
-    fireEvent.click(prev);
-    fireEvent.click(prev);
-    expect(prev).toHaveFocus();
-    fireEvent.click(prev);
-    expect(prev).toBeDisabled();
-    expect(next).toHaveFocus();
-    fireEvent.click(next);
-    fireEvent.click(next);
-    fireEvent.click(next);
-    expect(next).toBeDisabled();
-    expect(prev).toHaveFocus();
+    expect(screen.getByText('2025')).toBeInTheDocument();
   });
 
   it('lays the grid on a fixed 54 week columns whatever the window holds', async () => {
@@ -119,10 +75,10 @@ describe('RevenueCalendar', () => {
   it('shows the loading state, not the previous window, while a step loads', async () => {
     let calls = 0;
     vi.stubGlobal('fetch', vi.fn(async () => (calls++ === 0 ? json({ from: '2026-01-05', to: '2026-01-12', days: DAYS }) : new Promise<Response>(() => {}))));
-    renderCal();
+    const { rerender } = renderCal();
     await screen.findByRole('grid');
-    fireEvent.click(screen.getByRole('button', { name: 'Previous year' }));
-    expect(screen.getByText('2026')).toBeInTheDocument();
+    rerender(cal({ year: 2025 }));
+    expect(screen.getByText('2025')).toBeInTheDocument();
     expect(screen.queryByRole('grid')).toBeNull();
     expect(cell('2026-01-05')).toBeNull();
     expect(screen.queryByText('Jan 5, 2026 → Jan 12, 2026 · HT')).toBeNull();
@@ -133,9 +89,9 @@ describe('RevenueCalendar', () => {
   it('shows the error of a step that fails instead of the previous window', async () => {
     let calls = 0;
     vi.stubGlobal('fetch', vi.fn(async () => (calls++ === 0 ? json({ from: '2026-01-05', to: '2026-01-12', days: DAYS }) : json({ detail: 'Zoho indisponible' }, 503))));
-    renderCal();
+    const { rerender } = renderCal();
     await screen.findByRole('grid');
-    fireEvent.click(screen.getByRole('button', { name: 'Previous year' }));
+    rerender(cal({ year: 2025 }));
     expect(await screen.findByRole('alert')).toHaveTextContent('Zoho indisponible');
     expect(screen.queryByRole('grid')).toBeNull();
     expect(screen.queryByTestId('weekday-means')).toBeNull();

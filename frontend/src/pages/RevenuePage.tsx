@@ -279,8 +279,10 @@ export function RevenuePage() {
   };
 
   const today = orgToday();
-  // The journal shows one period, so it always steps one; elsewhere a picked month steps a whole month.
-  const stepBy = data ? (view === 'journal' ? data.granularity : stepGranularity(data.from, data.to, data.granularity, today)) : null;
+  // Every view but « Évolution » shows one period (the window's last), so it steps one; the window itself
+  // steps a whole month when a month is picked.
+  const periodView = view !== 'evolution';
+  const stepBy = data ? (periodView ? data.granularity : stepGranularity(data.from, data.to, data.granularity, today)) : null;
   const windowAt = (delta: number) => (data && stepBy ? shiftWindow(data.from, data.to, stepBy, delta, REVENUE_HISTORY_START, today) : null);
   const shift = (delta: number) => {
     const w = windowAt(delta);
@@ -428,6 +430,9 @@ export function RevenuePage() {
     setChargesOpen(!chargesOpen);
   };
   const lastBucket = data?.buckets[data.buckets.length - 1];
+  const period = lastBucket && { from: lastBucket.start, to: lastBucket.end > today ? today : lastBucket.end };
+  // What the control row names: the one period those views show, else the window.
+  const shown = (periodView && period) || { from: data?.from ?? '', to: data?.to ?? '' };
   const filterParams = filterQuery(basketIds, active.brands, active.kind, active.segment);
   const views = REVENUE_VIEWS.filter((v) => v.id !== 'clients' || can.customers).map((v) => ({ id: v.id, label: t(`revenue.views.${VIEW_KEYS[v.id]}`) }));
 
@@ -471,8 +476,8 @@ export function RevenuePage() {
           onGranularity={(granularity) => setControls({ granularity })}
           range={active.range}
           onRange={(range) => setControls({ range })}
-          from={data?.from ?? ''}
-          to={data?.to ?? ''}
+          from={shown.from}
+          to={shown.to}
           today={today}
           canPrev={windowAt(-1) !== null}
           canNext={windowAt(1) !== null}
@@ -572,25 +577,26 @@ export function RevenuePage() {
               })()}
             </>
           )}
-          {view === 'clients' && can.customers && data && (
+          {view === 'clients' && can.customers && data && lastBucket && period && (
             <>
-              <RevenueCustomers from={data.from} to={data.to} granularity={data.granularity} filterParams={filterParams} taxMode={active.taxMode}
+              {/* Retention inside the period reads one level finer (a quarter by month, a month by day). */}
+              <RevenueCustomers from={period.from} to={period.to} granularity={drillDown(lastBucket, data.granularity)?.granularity ?? data.granularity} filterParams={filterParams} taxMode={active.taxMode}
                 segment={active.segment} onSegment={(segment) => setControls({ segment })} version={data} />
               {/* Whole-history figures: they ignore the page's filters and period. */}
               {unfiltered && <RevenueCohorts version={data} />}
             </>
           )}
-          {view === 'produits' && data && (
+          {view === 'produits' && period && (
             <>
-              <RevenueBridge from={data.from} to={data.to} filterParams={filterParams} version={data} />
-              <RevenueAnalysis from={data.from} to={data.to} filterParams={filterParams} version={data} />
+              <RevenueBridge from={period.from} to={period.to} filterParams={filterParams} version={data} />
+              <RevenueAnalysis from={period.from} to={period.to} filterParams={filterParams} version={data} />
             </>
           )}
           {view === 'journal' && data && lastBucket && <RevenueJournal bucket={lastBucket} buckets={data.buckets} granularity={data.granularity} today={today} filterParams={filterParams} version={data} taxMode={active.taxMode} canMargin={can.margin} />}
           {view === 'saison' && data && (
             <>
               <RevenueYoy filterParams={filterParams} taxMode={active.taxMode} version={data} />
-              <RevenueCalendar filterParams={filterParams} taxMode={active.taxMode} version={data} today={today} />
+              <RevenueCalendar filterParams={filterParams} taxMode={active.taxMode} version={data} year={Number((period?.to ?? today).slice(0, 4))} />
             </>
           )}
         </section>

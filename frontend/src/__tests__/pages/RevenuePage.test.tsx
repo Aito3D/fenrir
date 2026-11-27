@@ -248,10 +248,10 @@ describe('RevenuePage — view tabs and tax switch', () => {
     expect(fetchMock.mock.calls.some(([u]) => String(u).startsWith('/api/v1/revenue/customers'))).toBe(false);
   });
 
-  it('opens Clients on the page range and filters, and its segment rows drive the page segment filter', async () => {
+  it('opens Clients on the last period of the window, one level finer, with the filters, and its segment rows drive the page segment filter', async () => {
     window.history.replaceState(null, '', '/revenue?kind=goods');
     localStorage.setItem('revenue-view', 'clients');
-    stubFetch(payload());
+    stubFetch(payload({ buckets: [{ key: '2026-10', label: 'oct. 2026', start: '2026-10-01', end: '2026-10-31' } as RevenueResponse['buckets'][number]] }));
     const series = fetchMock.getMockImplementation()!;
     fetchMock.mockImplementation(async (url: string, init?: RequestInit) =>
       url.startsWith('/api/v1/revenue/customers')
@@ -267,17 +267,17 @@ describe('RevenuePage — view tabs and tax switch', () => {
     await flush();
     await flush();
     expect(screen.getByRole('tabpanel')).toHaveAttribute('data-slot', 'revenue-view-clients');
-    expect(fetchMock.mock.calls.map(([u]) => String(u))).toContain('/api/v1/revenue/customers?from=2025-12-01&to=2026-11-19&granularity=month&kind=goods');
+    expect(fetchMock.mock.calls.map(([u]) => String(u))).toContain('/api/v1/revenue/customers?from=2026-10-01&to=2026-10-31&granularity=day&kind=goods');
     fireEvent.click(within(screen.getByRole('tabpanel')).getByRole('button', { name: /^Business.+FCP/ }));
     await flush();
     expect(String(seriesCalls()[seriesCalls().length - 1][0])).toContain('&segment=pro');
     expect(localStorage.getItem('revenue-segment')).toBe('pro');
   });
 
-  it('opens Products on the page range and filters', async () => {
+  it('opens Products on the last period of the window with the filters', async () => {
     window.history.replaceState(null, '', '/revenue?kind=goods');
     localStorage.setItem('revenue-view', 'produits');
-    stubFetch(payload());
+    stubFetch(payload({ buckets: [{ key: '2026-10', label: 'oct. 2026', start: '2026-10-01', end: '2026-10-31' } as RevenueResponse['buckets'][number]] }));
     const series = fetchMock.getMockImplementation()!;
     fetchMock.mockImplementation(async (url: string, init?: RequestInit) =>
       url.startsWith('/api/v1/revenue/analysis')
@@ -291,7 +291,7 @@ describe('RevenuePage — view tabs and tax switch', () => {
     await flush();
     await flush();
     expect(screen.getByRole('tabpanel')).toHaveAttribute('data-slot', 'revenue-view-produits');
-    expect(fetchMock.mock.calls.map(([u]) => String(u))).toContain('/api/v1/revenue/analysis?from=2025-12-01&to=2026-11-19&kind=goods');
+    expect(fetchMock.mock.calls.map(([u]) => String(u))).toContain('/api/v1/revenue/analysis?from=2026-10-01&to=2026-10-31&kind=goods');
     expect(within(screen.getByRole('tabpanel')).getByText('Nothing to rank.')).toBeInTheDocument();
   });
 
@@ -313,7 +313,8 @@ describe('RevenuePage — view tabs and tax switch', () => {
     expect(screen.getByRole('tabpanel')).toHaveAttribute('data-slot', 'revenue-view-saison');
     const urls = fetchMock.mock.calls.map(([u]) => String(u));
     expect(urls).toContain('/api/v1/revenue/yoy?kind=goods');
-    expect(urls).toContain('/api/v1/revenue/daily?kind=goods');
+    // The calendar reads the year of the period shown (this year without one).
+    expect(urls.some((u) => /\/daily\?from=\d{4}-01-01&to=\d{4}-12-31&kind=goods$/.test(u))).toBe(true);
     expect(within(screen.getByRole('tabpanel')).getByText('Year by year')).toBeInTheDocument();
     expect(within(screen.getByRole('tabpanel')).getByText('Sales calendar')).toBeInTheDocument();
   });
