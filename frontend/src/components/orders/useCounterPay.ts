@@ -6,6 +6,7 @@ import type { CounterOrderLine, OrderBoardLine, OrderBoardResponse, OrderBoardRo
 import { attributed, invoiceOf, pickLines, rowOf, shortLines } from './counterPay';
 import type { PayStep } from './counterPay';
 import { errorReason, failedStepText } from './orderErrors';
+import { waitingPackages } from './orderBoard';
 import { takeBoard } from './useOrderActions';
 
 export type PayWait = 'payment' | 'stock' | 'handover' | null;
@@ -39,7 +40,7 @@ export function useCounterPay(opts?: { onCreateError?: (e: unknown) => void }) {
   const running = useRef(false);
   const fresh = () => ({
     orderId: '', row: null as OrderBoardRow | null, paid: 0, invoiceNumber: null as string | null, invoiceId: '',
-    queue: [] as OrderBoardLine[], have: new Set<string>(), lines: null as OrderPickLines['lines'] | null, force: [] as string[], picklistPosted: false,
+    queue: [] as OrderBoardLine[], have: new Set<string>(), lines: null as OrderPickLines['lines'] | null, force: [] as string[], picklistPosted: false, parcelPosted: false,
     picklistId: '', packageNumber: '', packageId: '', stage: 'invoice' as Stage,
     asked: null as OrderBoardLine | null, forcedNames: [] as string[], lateNames: [] as string[],
   });
@@ -121,9 +122,17 @@ export function useCounterPay(opts?: { onCreateError?: (e: unknown) => void }) {
         c.picklistId = pl.picklist.id;
         await take(pl.board);
       }
-      const parcel = await api.createOrderParcel(c.orderId, c.picklistId, c.lines);
-      c.packageNumber = parcel.package_number;
-      await take(parcel.board);
+      // A parcel posted before a lost answer is already on the order: adopt it (only when it is the one not-shipped parcel).
+      if (c.parcelPosted) {
+        const waiting = waitingPackages((await take(await api.getOrderBoard())) ?? { packages: [] });
+        if (waiting.length === 1) c.packageNumber = waiting[0].number;
+      }
+      if (!c.packageNumber) {
+        c.parcelPosted = true;
+        const parcel = await api.createOrderParcel(c.orderId, c.picklistId, c.lines);
+        c.packageNumber = parcel.package_number;
+        await take(parcel.board);
+      }
     }
     let pkg = c.row?.packages.find((p) => p.number === c.packageNumber);
     if (!pkg) {

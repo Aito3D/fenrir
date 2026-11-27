@@ -344,6 +344,8 @@ describe('useCounterPay', () => {
     await act(async () => r.result.current.settle(12400));
     await waitFor(() => expect(r.result.current.error).toBe('nope'));
     expect(r.result.current.step).toBe('parcel');
+    // The retry re-reads the board for a parcel to adopt: none there, so it posts again.
+    m.getOrderBoard.mockResolvedValue(boardOf(mkRow({}, 0)));
     await act(async () => r.result.current.retry());
     await waitFor(() => expect(r.result.current.step).toBe('handover'));
     expect(m.createOrderPicklist).toHaveBeenCalledTimes(1);
@@ -495,6 +497,8 @@ describe('useCounterPay', () => {
     await act(async () => r.result.current.settle(12400));
     await waitFor(() => expect(r.result.current.error).toBe('orders.handover.failed'));
     expect(r.result.current.step).toBe('parcel');
+    // The retry re-reads the board for a parcel to adopt: none there, so it posts again.
+    m.getOrderBoard.mockResolvedValue(boardOf(mkRow({}, 0)));
     await act(async () => r.result.current.retry());
     await waitFor(() => expect(r.result.current.step).toBe('handover'));
     expect(m.createOrderParcel).toHaveBeenCalledTimes(2);
@@ -540,6 +544,91 @@ describe('useCounterPay', () => {
     await waitFor(() => expect(r.result.current.step).toBe('handover'));
     expect(m.createOrderPicklist).toHaveBeenCalledTimes(1);
     expect(m.createOrderParcel).toHaveBeenCalledWith('so1', 'plX', [{ line_id: 'l1', quantity: 2 }]);
+  });
+
+  describe('a parcel answer lost to a timeout', () => {
+    const pk = (id: string, number: string, status = 'not_shipped') => ({ id, number, status });
+    const lost = async (r: ReturnType<typeof setup>) => {
+      await toPayment(r);
+      await act(async () => r.result.current.settle(12400));
+      await waitFor(() => expect(r.result.current.error).toBe('timeout'));
+    };
+
+    it('a retry adopts the one not-shipped parcel and hands over without posting again', async () => {
+      arrange(mkRow());
+      m.createOrderParcel.mockRejectedValueOnce(new Error('timeout'));
+      const r = setup();
+      await lost(r);
+      m.getOrderBoard.mockResolvedValue(boardOf(mkRow({ packages: [pk('pkX', 'PKG-9')] }, 0)));
+      await act(async () => r.result.current.retry());
+      await waitFor(() => expect(r.result.current.step).toBe('handover'));
+      expect(m.createOrderParcel).toHaveBeenCalledTimes(1);
+      await act(async () => r.result.current.handOver());
+      await waitFor(() => expect(r.result.current.step).toBe('done'));
+      expect(m.handOverOrderParcel).toHaveBeenCalledWith('so1', 'pkX', { mode: 'pickup', apply_credit: false });
+    });
+
+    it('a retry posts again when the board shows no parcel to adopt', async () => {
+      arrange(mkRow());
+      m.createOrderParcel.mockRejectedValueOnce(new Error('timeout'));
+      const r = setup();
+      await lost(r);
+      m.getOrderBoard.mockResolvedValue(boardOf(mkRow({ packages: [pk('pkS', 'PKG-0', 'shipped')] }, 0)));
+      await act(async () => r.result.current.retry());
+      await waitFor(() => expect(r.result.current.step).toBe('handover'));
+      expect(m.createOrderParcel).toHaveBeenCalledTimes(2);
+    });
+
+    it('a retry does not guess between two not-shipped parcels and posts again', async () => {
+      arrange(mkRow());
+      m.createOrderParcel.mockRejectedValueOnce(new Error('timeout'));
+      const r = setup();
+      await lost(r);
+      m.getOrderBoard.mockResolvedValue(boardOf(mkRow({ packages: [pk('pkA', 'PKG-8'), pk('pkB', 'PKG-9')] }, 0)));
+      await act(async () => r.result.current.retry());
+      await waitFor(() => expect(r.result.current.step).toBe('handover'));
+      expect(m.createOrderParcel).toHaveBeenCalledTimes(2);
+    });
+
+    it('the first attempt never re-reads the board to adopt', async () => {
+      arrange(mkRow());
+      m.getOrderBoard.mockResolvedValue(boardOf(mkRow({ packages: [pk('pkX', 'PKG-9')] }, 0)));
+      const r = setup();
+      await toPayment(r);
+      await act(async () => r.result.current.settle(12400));
+      await waitFor(() => expect(r.result.current.step).toBe('handover'));
+      expect(m.getOrderBoard).not.toHaveBeenCalled();
+      expect(m.createOrderParcel).toHaveBeenCalledTimes(1);
+    });
+
+    it('reset clears the flag: the next sale posts its first parcel without a re-read', async () => {
+      arrange(mkRow());
+      m.createOrderParcel.mockRejectedValueOnce(new Error('timeout'));
+      const r = setup();
+      await lost(r);
+      m.getOrderBoard.mockResolvedValue(boardOf(mkRow({ packages: [pk('pkX', 'PKG-9')] }, 0)));
+      act(() => r.result.current.reset());
+      await toPayment(r);
+      await act(async () => r.result.current.settle(12400));
+      await waitFor(() => expect(r.result.current.step).toBe('handover'));
+      expect(m.createOrderParcel).toHaveBeenCalledTimes(2);
+      expect(m.getOrderBoard).not.toHaveBeenCalled();
+    });
+
+    it('a failed re-read shows the error and keeps the retry available', async () => {
+      arrange(mkRow());
+      m.createOrderParcel.mockRejectedValueOnce(new Error('timeout'));
+      const r = setup();
+      await lost(r);
+      m.getOrderBoard.mockRejectedValueOnce(new Error('offline'));
+      await act(async () => r.result.current.retry());
+      await waitFor(() => expect(r.result.current.error).toBe('offline'));
+      expect(m.createOrderParcel).toHaveBeenCalledTimes(1);
+      m.getOrderBoard.mockResolvedValue(boardOf(mkRow({ packages: [pk('pkX', 'PKG-9')] }, 0)));
+      await act(async () => r.result.current.retry());
+      await waitFor(() => expect(r.result.current.step).toBe('handover'));
+      expect(m.createOrderParcel).toHaveBeenCalledTimes(1);
+    });
   });
 
   it('a package missing from the row refetches the board once', async () => {

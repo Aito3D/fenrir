@@ -3876,3 +3876,72 @@ def test_to_box_skips_a_picklist_row_without_both_ids():
 
     row = {"salesorder_id": "so1", "so_line_item_id": "l1", "line_item_id": "", "quantity_to_be_picked": 2}
     assert _common._to_box({"status": "open", "line_items": [row]}, "so1") == {}
+
+
+async def _credit_ready(db, books, monkeypatch, *, advance=600, balance=1000, unused=900):
+    """so1 with an invoice inv-1 (live balance ``balance``), ``advance`` of credit on the board and ``unused`` in Books."""
+    handover_order(books, advance=advance)
+    books.orders["so1"]["invoices"] = [{"invoice_id": "inv-1", "invoice_number": "FA-1", "status": "sent"}]
+    await sync.run_pass(db)
+    await sync.run_pass(db)
+    books.log.clear()
+    books.unused = [{"payment_id": "p1", "date": "2026-09-01", "unused_amount": unused}] if unused else []
+
+    async def get_invoice(db, invoice_id):
+        return {"invoice_id": invoice_id, "balance": balance}
+
+    monkeypatch.setattr(zoho_service, "get_invoice", get_invoice)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("cap", "amount"),
+    [
+        (None, 600),  # no cap: the advance
+        (250, 250),  # below the advance
+        (100.126, 100.13),  # rounded to the cent
+        (9999, 600),  # above the advance
+    ],
+)
+async def test_apply_credit_applies_the_smallest_of_balance_advance_and_cap(
+    db_session, books, monkeypatch, cap, amount
+):
+    await _credit_ready(db_session, books, monkeypatch)
+    assert await actions.apply_credit(db_session, "so1", "inv-1", cap=cap) == amount
+    assert _calls(books, "apply_invoice_credits") == [("inv-1", [{"payment_id": "p1", "amount_applied": amount}])]
+    [event] = [e for e in await events_of(db_session, "so1") if e.kind == "credit.applied"]
+    assert event.detail == {"invoice": "FA-1", "amount": amount}
+
+
+@pytest.mark.asyncio
+async def test_apply_credit_cap_is_also_bounded_by_the_live_balance(db_session, books, monkeypatch):
+    await _credit_ready(db_session, books, monkeypatch, balance=150)
+    assert await actions.apply_credit(db_session, "so1", "inv-1") == 150
+    assert _calls(books, "apply_invoice_credits") == [("inv-1", [{"payment_id": "p1", "amount_applied": 150}])]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("cap", [0, 0.004])
+async def test_apply_credit_with_a_cap_under_a_cent_is_refused_without_writing(db_session, books, monkeypatch, cap):
+    await _credit_ready(db_session, books, monkeypatch)
+    with pytest.raises(actions.OrderActionRefused) as refused:
+        await actions.apply_credit(db_session, "so1", "inv-1", cap=cap)
+    assert refused.value.args[0] == "no_credit"
+    assert _calls(books, "apply_invoice_credits") == []
+    assert [e for e in await events_of(db_session, "so1") if e.kind == "credit.applied"] == []
+
+
+@pytest.mark.asyncio
+async def test_apply_credit_that_applies_nothing_logs_no_event(db_session, books, monkeypatch):
+    await _credit_ready(db_session, books, monkeypatch, unused=0)  # the board counts credit Books no longer holds
+    assert await actions.apply_credit(db_session, "so1", "inv-1") == 0.0
+    assert _calls(books, "apply_invoice_credits") == []
+    assert [e for e in await events_of(db_session, "so1") if e.kind == "credit.applied"] == []
+
+
+@pytest.mark.asyncio
+async def test_apply_credit_to_an_unlisted_invoice_is_refused(db_session, books, monkeypatch):
+    await _credit_ready(db_session, books, monkeypatch)
+    with pytest.raises(actions.OrderActionRefused) as refused:
+        await actions.apply_credit(db_session, "so1", "inv-9")
+    assert refused.value.args[0] == "unknown_invoice"

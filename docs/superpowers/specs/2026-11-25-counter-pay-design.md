@@ -128,6 +128,8 @@ Conforme au design, avec ces précisions et écarts :
 - Au « Réessayer » de l'étape Facture, le crédit est désormais plafonné à ce que la vente a encaissé moins ce que la
   facture porte déjà (paramètre `cap` optionnel de la route `apply-credit`) : l'acompte d'un autre client de passage
   n'est plus consommé. Les autres appels de la route n'envoient pas de plafond et ne changent pas.
-- Cas restant bloquant (repli : « Ouvrir la commande ») : colis créé par Books mais réponse perdue ; facture restée en
-  brouillon après un échec de « marquer envoyée ».
+- Colis créé par Books mais réponse perdue : « Réessayer » relit le tableau et reprend le seul colis non expédié de la
+  commande au lieu d'en poster un second (s'il y en a plusieurs, on ne devine pas : nouvel envoi, le serveur tranche).
+  Facture restée en brouillon après un échec de « marquer envoyée » : le message nomme désormais le brouillon ;
+  repli : « Ouvrir la commande ».
 - Le câblage de la fenêtre TPE est copié de la fiche commande (`OrderPaymentBlock`) : à factoriser si l'un des deux change.
