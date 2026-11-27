@@ -1,0 +1,1 @@
+import{t as e}from"./useMediaQuery-CokAsIEU.js";var t=768;function n(){return e(`(max-width: ${t-1}px)`,()=>typeof window<`u`&&window.innerWidth<t)}export{n as t};
