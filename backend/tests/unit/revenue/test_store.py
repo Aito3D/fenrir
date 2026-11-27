@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from backend.app.core.database import Base, _set_sqlite_pragmas, load_all_models
 from backend.app.services.revenue import store
+from backend.app.services.revenue.config import REVENUE_SERVICE_ACCOUNT_ID as ACC
 from backend.app.services.revenue.customers import RevenueCustomerFacts
 from backend.app.services.revenue.scope import ScopeItem
 from backend.app.services.revenue.sync_plan import DayRow
@@ -344,7 +345,7 @@ async def test_scope_items_maps_a_blank_brand_and_nature_to_none_and_computes_th
     await store.replace_items(
         db,
         [
-            {"item_id": "a", "name": "A", "brand": "  ", "nature": "", "item_type": "inventory", "tax_percentage": 16},
+            {"item_id": "a", "name": "A", "brand": "  ", "nature": "", "account_id": "acc", "tax_percentage": 16},
             {"item_id": "b", "name": "B", "brand": "Hobie", "nature": "Filaments"},
             {"item_id": "d", "name": "D", "purchase_rate": 500, "dealer_price": 800},
             {"item_id": "p", "name": "P", "purchase_rate": 500, "dealer_price": 0},
@@ -355,8 +356,8 @@ async def test_scope_items_maps_a_blank_brand_and_nature_to_none_and_computes_th
     async with store.snapshot(engine) as conn:
         items = await store.read_scope_items(conn)
         synced = await store.items_synced_at(conn)
-    assert items["a"] == ScopeItem("a", "A", "", None, None, "inventory", 16, None, None)
-    assert items["b"].brand == "Hobie" and items["b"].nature == "Filaments" and items["b"].item_type is None
+    assert items["a"] == ScopeItem("a", "A", "", None, None, "acc", 16, None, None)
+    assert items["b"].brand == "Hobie" and items["b"].nature == "Filaments" and items["b"].account_id is None
     assert [items[k].unit_cost for k in "dpn"] == [800, 500, None]
     assert synced == NOW.isoformat()
     await store.replace_items(db, [{"item_id": "z", "name": "Z"}], LATER)
@@ -572,7 +573,7 @@ async def test_an_identical_relisting_keeps_the_shares(engine, db):
 
 
 async def test_renaming_a_service_item_into_the_3d_prefix_forgets_the_shares(engine, db):
-    items = [{"item_id": "a", "name": "Boats - Prestation 'x'", "item_type": "sales"}]
+    items = [{"item_id": "a", "name": "Boats - Prestation 'x'", "account_id": ACC}]
     assert await _shared_invoice(engine, db, items) == 0.5
     generation = store._current_decisions_generation()
     await store.replace_items(db, [{**items[0], "name": 'Filaments - Prestation "AITO 3D"'}], LATER)
@@ -580,8 +581,8 @@ async def test_renaming_a_service_item_into_the_3d_prefix_forgets_the_shares(eng
     assert store._current_decisions_generation() != generation
 
 
-async def test_changing_an_items_type_forgets_the_shares(engine, db):
-    items = [{"item_id": "a", "name": 'Filaments - Prestation "AITO 3D"', "item_type": "sales"}]
+async def test_changing_an_items_sales_account_forgets_the_shares(engine, db):
+    items = [{"item_id": "a", "name": 'Filaments - Prestation "AITO 3D"', "account_id": ACC}]
     assert await _shared_invoice(engine, db, items) == 0.5
-    await store.replace_items(db, [{**items[0], "item_type": "goods"}], LATER)
+    await store.replace_items(db, [{**items[0], "account_id": "other"}], LATER)
     assert await _share(engine) is None

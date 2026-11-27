@@ -496,6 +496,7 @@ async def test_refresh_items_maps_zoho_fields_and_stamps(zoho, engine):
             "brand": "SUNLU",
             "cf_nature_du_produit": "Filaments",
             "item_type": "inventory",
+            "account_id": "acc1",
             "tax_percentage": 16,
             "purchase_rate": 1000,
             "cf_prix_dealer_usd_unformatted": "",
@@ -512,6 +513,7 @@ async def test_refresh_items_maps_zoho_fields_and_stamps(zoho, engine):
         assert await store.items_synced_at(conn) == now.isoformat()
     assert sorted(scope) == ["i1", "i2"]
     assert (scope["i1"].brand, scope["i1"].nature, scope["i1"].tax_percentage) == ("SUNLU", "Filaments", 16)
+    assert scope["i1"].account_id == "acc1"
 
 
 async def test_refresh_items_keeps_one_row_for_an_item_listed_on_two_pages(zoho, engine):

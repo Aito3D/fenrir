@@ -7,6 +7,9 @@ ORG_TIME_ZONE = "Pacific/Tahiti"
 REVENUE_PASSAGE_CUSTOMER_IDS = ["66407000001237340"]
 REVENUE_PASSAGE_CUSTOMER_NAMES = ["client de passage"]
 
+# Zoho sales account 70610000 « O'SEA Prestation de service Aito 3D »: an item sold on it is a service.
+REVENUE_SERVICE_ACCOUNT_ID = "66407000004504242"
+
 REVENUE_NATURES = [
     "3D Printers",
     "3D Printer Accessories",

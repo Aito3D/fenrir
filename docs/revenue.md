@@ -31,6 +31,12 @@ Filters: goods / services, customer segment, brands, a product basket (search by
 controls are kept in `localStorage` and mirrored in the URL. The ⋯ menu holds the monthly targets editor, the items
 to classify, copy summary, CSV export and the full rebuild.
 
+A **service** is an item whose Zoho sales account is 70610000 « O'SEA Prestation de service Aito 3D »
+(`REVENUE_SERVICE_ACCOUNT_ID` in `config.py`); every other item is goods, whatever its Zoho item type. Amounts are
+after discount, so the services total sits below the account's own balance: Zoho posts the price before discount to
+70610000 and the discount to 707001 « Remise ». After an upgrade every item reads as goods until the first item sync
+(at most 10 minutes) fills the account.
+
 ## How the sync works
 
 Interactive requests never call Zoho. Every authorised read of `/api/v1/revenue*` starts a background loop (one per

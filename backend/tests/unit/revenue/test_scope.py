@@ -1,3 +1,4 @@
+from backend.app.services.revenue.config import REVENUE_SERVICE_ACCOUNT_ID as ACC
 from backend.app.services.revenue.customers import RevenueCustomerFacts, customer_display_name, segment_of
 from backend.app.services.revenue.scope import (
     RevenueDecision,
@@ -14,7 +15,7 @@ from backend.app.services.revenue.scope import (
 
 
 def item(**over):
-    return ScopeItem(**{"item_id": "i1", "name": "X", "item_type": "inventory", "tax_percentage": 16, **over})
+    return ScopeItem(**{"item_id": "i1", "name": "X", "tax_percentage": 16, **over})
 
 
 def dec(item_id, included):
@@ -81,7 +82,7 @@ TOTALS = [
 ]
 ITEMS = {
     "snap": item(item_id="snap", name="Snap Maker - Artisan"),
-    "cowork": item(item_id="cowork", name="Co Working Bureau Privé", item_type="sales", tax_percentage=13),
+    "cowork": item(item_id="cowork", name="Co Working Bureau Privé", tax_percentage=13),
     "pla": item(item_id="pla", name="SUNLU PLA", brand="SUNLU", nature="Filaments"),
     "refund": item(item_id="refund", name="Old thing"),
 }
@@ -114,10 +115,10 @@ def test_a_decided_item_with_no_revenue_at_all_still_appears_in_the_decided_list
     ]  # fmt: skip
 
 
-def test_only_a_sales_item_is_a_service_an_unknown_item_reads_as_goods():
-    assert is_service_item(item(item_type="sales")) is True
-    assert is_service_item(item(item_type="inventory")) is False
-    assert is_service_item(item(item_type=None)) is False
+def test_a_service_is_an_item_on_the_service_account_anything_else_reads_as_goods():
+    assert is_service_item(item(account_id=ACC)) is True
+    assert is_service_item(item(account_id="other")) is False
+    assert is_service_item(item(account_id=None)) is False  # cached before the column existed
     assert is_service_item(None) is False
 
 
@@ -169,11 +170,12 @@ def test_customer_display_name_falls_back_name_company_id():
 
 
 def test_service_nature_from_aito_service_name():
-    assert service_nature('Impression3D - Prestation "AITO 3D"', "sales", None) == "Impression3D"
-    assert (
-        service_nature('Découpe et Gravure Laser - Prestation "AITO 3D"', "sales", None) == "Découpe et Gravure Laser"
-    )
-    # A Zoho category wins; goods, and other services, are left alone.
-    assert service_nature('Scan3D - Prestation "AITO 3D"', "sales", "Scan") == "Scan"
-    assert service_nature('Scan3D - Prestation "AITO 3D"', "inventory", None) is None
-    assert service_nature('Prestation "AITO 3D"', "sales", None) is None
+    assert service_nature('Impression3D - Prestation "AITO 3D"', ACC, None) == "Impression3D"
+    assert service_nature('Découpe et Gravure Laser - Prestation "AITO 3D"', ACC, None) == "Découpe et Gravure Laser"
+    assert service_nature('Usinage - Vente "AITO 3D"', ACC, None) == "Usinage"
+    # A Zoho category wins; items off the account, and other names on it, are left alone.
+    assert service_nature('Scan3D - Prestation "AITO 3D"', ACC, "Scan") == "Scan"
+    assert service_nature('Scan3D - Prestation "AITO 3D"', "other", None) is None
+    assert service_nature('Scan3D - Prestation "AITO 3D"', None, None) is None
+    assert service_nature('Prestation "AITO 3D"', ACC, None) is None
+    assert service_nature("Starlink - Support Mini", ACC, None) is None

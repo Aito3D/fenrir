@@ -4,7 +4,7 @@ import unicodedata
 from dataclasses import dataclass
 from typing import Any, Literal
 
-from backend.app.services.revenue.config import REVENUE_BRANDS, REVENUE_NATURES
+from backend.app.services.revenue.config import REVENUE_BRANDS, REVENUE_NATURES, REVENUE_SERVICE_ACCOUNT_ID
 
 ScopeReason = Literal["decision-include", "nature", "brand", "decision-exclude", "unclassified", "unknown-item"]
 
@@ -18,7 +18,7 @@ class ScopeItem:
     sku: str = ""
     brand: str | None = None
     nature: str | None = None
-    item_type: str | None = None
+    account_id: str | None = None  # Zoho sales account
     tax_percentage: float | None = None
     unit_cost: float | None = None
     status: str | None = None
@@ -63,7 +63,7 @@ def classify_revenue_item(item: ScopeItem | None, decision: RevenueDecision | No
 
 
 def is_service_item(item: ScopeItem | None) -> bool:
-    return item is not None and item.item_type == "sales"
+    return item is not None and item.account_id == REVENUE_SERVICE_ACCOUNT_ID
 
 
 def matches_kind(item: ScopeItem | None, kind: str | None) -> bool:
@@ -71,11 +71,11 @@ def matches_kind(item: ScopeItem | None, kind: str | None) -> bool:
 
 
 # Aito3D services carry no Zoho category: their kind is the name's prefix, « Impression3D - Prestation "AITO 3D" ».
-_SERVICE_NATURE = re.compile(r'^(.+?) - Prestation "AITO 3D"$')
+_SERVICE_NATURE = re.compile(r'^(.+?) - (?:Prestation|Vente) "AITO 3D"$')
 
 
-def service_nature(name: str, item_type: str | None, nature: str | None) -> str | None:
-    if nature is not None or item_type != "sales":
+def service_nature(name: str, account_id: str | None, nature: str | None) -> str | None:
+    if nature is not None or account_id != REVENUE_SERVICE_ACCOUNT_ID:
         return nature
     m = _SERVICE_NATURE.match(name.strip())
     return m.group(1).strip() if m else None

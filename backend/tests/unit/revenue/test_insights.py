@@ -1,3 +1,4 @@
+from backend.app.services.revenue.config import REVENUE_SERVICE_ACCOUNT_ID as ACC
 from backend.app.services.revenue.customers import RevenueCustomerFacts
 from backend.app.services.revenue.insights import (
     acquisition_of,
@@ -17,9 +18,9 @@ from backend.app.services.revenue.series import LineFilters, RevenueLine, item_b
 from backend.tests.unit.revenue.fixtures import bucket
 
 ITEMS = {
-    "pla": ScopeItem("pla", "SUNLU PLA", brand="SUNLU", nature="Filaments", item_type="inventory", tax_percentage=16),
-    "print": ScopeItem("print", "Impression3D", brand="Aito3D", nature=None, item_type="sales", tax_percentage=13),
-    "esun": ScopeItem("esun", "eSUN PETG", brand="eSUN", nature="Filaments", item_type="inventory", tax_percentage=16),
+    "pla": ScopeItem("pla", "SUNLU PLA", brand="SUNLU", nature="Filaments", tax_percentage=16),
+    "print": ScopeItem("print", "Impression3D", brand="Aito3D", nature=None, account_id=ACC, tax_percentage=13),
+    "esun": ScopeItem("esun", "eSUN PETG", brand="eSUN", nature="Filaments", tax_percentage=16),
 }
 CUSTOMERS = {
     "biz": RevenueCustomerFacts("biz", "Coco Dive", "Coco Dive", "business"),

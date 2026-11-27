@@ -7039,6 +7039,7 @@ async def _run_migrations(conn):
     # Revenue lines keep the item's cost and tax rate from fetch time; older days stay NULL and use today's.
     await _safe_execute(conn, "ALTER TABLE revenue_day_lines ADD COLUMN unit_cost FLOAT")
     await _safe_execute(conn, "ALTER TABLE revenue_day_lines ADD COLUMN tax_percentage FLOAT")
+    await _safe_execute(conn, "ALTER TABLE revenue_items ADD COLUMN account_id VARCHAR(64)")
 
     # Migration: the stock alert templates name the colour and subtype (#2955).
     # The forecast groups by colour, so two colours of one product would

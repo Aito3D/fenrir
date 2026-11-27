@@ -194,6 +194,7 @@ def _item_row(it: dict) -> dict:
         "brand": it.get("brand"),
         "nature": it.get("cf_nature_du_produit"),
         "item_type": it.get("item_type"),
+        "account_id": it.get("account_id"),
         "tax_percentage": _optional_float(it.get("tax_percentage")),
         "purchase_rate": _optional_float(it.get("purchase_rate")),
         "dealer_price": _optional_float(it.get("cf_prix_dealer_usd_unformatted")),

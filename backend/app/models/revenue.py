@@ -81,6 +81,7 @@ class RevenueItem(Base):
     brand: Mapped[str | None] = mapped_column(String(255), nullable=True)
     nature: Mapped[str | None] = mapped_column(String(255), nullable=True)  # cf_nature_du_produit
     item_type: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    account_id: Mapped[str | None] = mapped_column(String(64), nullable=True)  # Zoho sales account
     tax_percentage: Mapped[float | None] = mapped_column(Float, nullable=True)
     purchase_rate: Mapped[float | None] = mapped_column(Float, nullable=True)
     dealer_price: Mapped[float | None] = mapped_column(Float, nullable=True)  # cf_prix_dealer_usd_unformatted

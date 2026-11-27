@@ -1,5 +1,6 @@
 import pytest
 
+from backend.app.services.revenue.config import REVENUE_SERVICE_ACCOUNT_ID as ACC
 from backend.app.services.revenue.products import (
     BRANDS_PARAM_ERROR,
     ITEMS_PARAM_ERROR,
@@ -15,15 +16,15 @@ from backend.app.services.revenue.scope import ITEM_ID_RE, RevenueDecision, Scop
 from backend.app.services.revenue.series import LineFilters
 
 
-def sitem(item_id, name, brand, nature, item_type, tax):
-    return ScopeItem(item_id=item_id, name=name, brand=brand, nature=nature, item_type=item_type, tax_percentage=tax)
+def sitem(item_id, name, brand, nature, account_id, tax):
+    return ScopeItem(item_id=item_id, name=name, brand=brand, nature=nature, account_id=account_id, tax_percentage=tax)
 
 
 ITEMS = {
-    "mini": sitem("mini", "Starlink - Support Mini", "Aito3D", None, "sales", 13),
-    "v3": sitem("v3", "Starlink - Support v3&4", "Aito3D", None, "sales", 13),
-    "hobie": sitem("hobie", "Hobie T1", "Hobie", "Hobie Sailing", "inventory", 16),
-    "snap": sitem("snap", "Snap Maker", None, None, "inventory", 16),
+    "mini": sitem("mini", "Starlink - Support Mini", "Aito3D", None, ACC, 13),
+    "v3": sitem("v3", "Starlink - Support v3&4", "Aito3D", None, ACC, 13),
+    "hobie": sitem("hobie", "Hobie T1", "Hobie", "Hobie Sailing", None, 16),
+    "snap": sitem("snap", "Snap Maker", None, None, None, 16),
 }
 
 

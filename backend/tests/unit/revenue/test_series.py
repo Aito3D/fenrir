@@ -1,5 +1,6 @@
 import pytest
 
+from backend.app.services.revenue.config import REVENUE_SERVICE_ACCOUNT_ID as ACC
 from backend.app.services.revenue.customers import RevenueCustomerFacts
 from backend.app.services.revenue.dates import all_days, is_valid_day
 from backend.app.services.revenue.production import ProductionCosts
@@ -21,12 +22,10 @@ from backend.app.services.revenue.series import (
 from backend.tests.unit.revenue.fixtures import bucket
 
 ITEMS = {
-    "pla": ScopeItem("pla", "SUNLU PLA", brand="SUNLU", nature="Filaments", item_type="inventory", tax_percentage=16),
-    "print": ScopeItem("print", "Impression3D", brand="Aito3D", nature=None, item_type="sales", tax_percentage=13),
-    "hobie": ScopeItem(
-        "hobie", "Hobie T1", brand="Hobie", nature="Hobie Sailing", item_type="inventory", tax_percentage=16
-    ),
-    "notax": ScopeItem("notax", "Pre-migration", brand="eSUN", nature=None, item_type=None, tax_percentage=None),
+    "pla": ScopeItem("pla", "SUNLU PLA", brand="SUNLU", nature="Filaments", tax_percentage=16),
+    "print": ScopeItem("print", "Impression3D", brand="Aito3D", nature=None, account_id=ACC, tax_percentage=13),
+    "hobie": ScopeItem("hobie", "Hobie T1", brand="Hobie", nature="Hobie Sailing", tax_percentage=16),
+    "notax": ScopeItem("notax", "Pre-migration", brand="eSUN", nature=None, tax_percentage=None),
 }
 FETCHED_ALL = all_days("2025-08-01", "2026-10-15")
 
@@ -343,8 +342,8 @@ def test_restricts_the_series_to_the_selected_items_and_splits_each_bucket_by_it
 
 def test_two_selected_products_sharing_a_name_merge_into_one_by_item_series():
     twins = {
-        "a": ScopeItem("a", "Support", brand="Aito3D", item_type="sales", tax_percentage=13),
-        "b": ScopeItem("b", "Support", brand="Aito3D", item_type="sales", tax_percentage=13),
+        "a": ScopeItem("a", "Support", brand="Aito3D", account_id=ACC, tax_percentage=13),
+        "b": ScopeItem("b", "Support", brand="Aito3D", account_id=ACC, tax_percentage=13),
     }
     [sep, *_] = series(
         fetched_days=FETCHED_ALL,
@@ -385,7 +384,7 @@ def test_a_brand_filter_and_a_basket_compose_as_an_intersection():
 
 
 def test_a_brandless_item_never_matches_a_brand_filter():
-    no_brand = {**ITEMS, "snap": ScopeItem("snap", "Snap Maker", nature="Filaments", item_type="inventory")}
+    no_brand = {**ITEMS, "snap": ScopeItem("snap", "Snap Maker", nature="Filaments")}
     b = series(
         fetched_days=FETCHED_ALL,
         items=no_brand,
@@ -538,7 +537,6 @@ def test_margin_covers_only_the_lines_whose_item_has_a_unit_cost_credit_notes_in
             "SUNLU PLA",
             brand="SUNLU",
             nature="Filaments",
-            item_type="inventory",
             tax_percentage=16,
             unit_cost=400,
         ),
@@ -628,7 +626,7 @@ def test_print_hours_sum_per_bucket_and_are_null_before_the_log():
 def test_margin_split_charges_zoho_costs_per_line_and_print_costs_pro_rata_of_service_ht():
     items = {
         **ITEMS,
-        "pla": ScopeItem("pla", "SUNLU PLA", brand="SUNLU", nature="Filaments", item_type="inventory", unit_cost=300),
+        "pla": ScopeItem("pla", "SUNLU PLA", brand="SUNLU", nature="Filaments", unit_cost=300),
     }
     prod = ProductionCosts(
         by_day={"2026-09-10": {"wear": 600.0}, "2026-10-05": {"energy": 80.0}}, first_day="2026-09-01"
@@ -659,7 +657,6 @@ def test_a_line_uses_its_frozen_cost_and_tax_rate_and_falls_back_to_the_items_cu
             "SUNLU PLA",
             brand="SUNLU",
             nature="Filaments",
-            item_type="inventory",
             tax_percentage=16,
             unit_cost=400,
         ),

@@ -372,8 +372,8 @@ async def read_scope_items(conn: AsyncConnection) -> dict[str, ScopeItem]:
             name=r.name,
             sku=r.sku,
             brand=_blank_to_none(r.brand),
-            nature=service_nature(r.name, r.item_type, _blank_to_none(r.nature)),
-            item_type=r.item_type,
+            nature=service_nature(r.name, r.account_id, _blank_to_none(r.nature)),
+            account_id=r.account_id,
             tax_percentage=r.tax_percentage,
             unit_cost=unit_cost_of(r.purchase_rate, r.dealer_price),
             status=r.status,
@@ -385,10 +385,10 @@ async def read_scope_items(conn: AsyncConnection) -> dict[str, ScopeItem]:
 async def replace_items(db: AsyncSession, items: list[dict], now: datetime) -> None:
     """Swaps the whole item table for a fresh Zoho listing and stamps the refresh; items are dicts of RevenueItem columns."""
     stamp = now.isoformat()
-    # Only these columns reach classify_revenue_item (name and item_type via service_nature); a change invalidates shares.
-    cols = (RevenueItem.item_id, RevenueItem.nature, RevenueItem.brand, RevenueItem.name, RevenueItem.item_type)
+    # Only these columns reach classify_revenue_item (name and account_id via service_nature); a change invalidates shares.
+    cols = (RevenueItem.item_id, RevenueItem.nature, RevenueItem.brand, RevenueItem.name, RevenueItem.account_id)
     old = set((await db.execute(select(*cols))).all())
-    if old != {(i["item_id"], i.get("nature"), i.get("brand"), i.get("name", ""), i.get("item_type")) for i in items}:
+    if old != {(i["item_id"], i.get("nature"), i.get("brand"), i.get("name", ""), i.get("account_id")) for i in items}:
         await _forget_invoice_shares(db)
     await db.execute(delete(RevenueItem))
     if items:
