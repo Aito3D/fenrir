@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
-import { screen } from '@testing-library/react';
+import { act, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { http, HttpResponse } from 'msw';
 import { server } from '../../mocks/server';
@@ -10,6 +10,7 @@ const print = vi.fn();
 const dialogProps = vi.hoisted(() => ({ current: null as null | {
   document: { id: string; due: number | null };
   onStart: (amount: number) => Promise<unknown>;
+  onSeen: (p: unknown) => void;
   recover: (e: unknown) => null | { message: string; label: string; start: (amount: number) => Promise<unknown> };
   fetchPayment: () => Promise<unknown>;
 } }));
@@ -227,10 +228,15 @@ describe('CounterPayFlow', () => {
       const pay = mkPay();
       flow(pay);
       await user.click(screen.getByRole('button', { name: 'Card (terminal)' }));
-      const seen = await screen.findByRole('button', { name: 'seen-paid' });
-      await user.click(seen);
-      await user.click(seen);
-      await user.click(seen);
+      await screen.findByRole('button', { name: 'seen-paid' });
+      // The captured prop outlives the unmounted dialog: calling it again is what a late poll does.
+      const onSeen = dialogProps.current!.onSeen;
+      const paid = { id: 1, status: 'paid', booking_status: 'booked', amount: 12400, amount_confirmed: 12400 };
+      act(() => {
+        onSeen(paid);
+        onSeen(paid);
+        onSeen(paid);
+      });
       expect(pay.settle).toHaveBeenCalledTimes(1);
       expect(pay.settle).toHaveBeenCalledWith(12400);
     });
