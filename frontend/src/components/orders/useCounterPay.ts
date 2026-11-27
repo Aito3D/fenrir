@@ -157,7 +157,7 @@ export function useCounterPay(opts?: { onCreateError?: (e: unknown) => void }) {
       const o = r.outcome;
       if (o.invoice === 'created' && o.invoice_number) c.invoiceNumber = o.invoice_number;
       else if (o.invoice === 'manual' || o.invoice === 'draft') {
-        fail('invoice', 'invoice', t(o.manual_reason === 'draft' ? 'orders.handover.manualDraft' : 'orders.handover.manual', { number: o.invoice_number ?? '' }));
+        fail('invoice', 'invoice', t(o.invoice === 'draft' || o.manual_reason === 'draft' ? 'orders.handover.manualDraft' : 'orders.handover.manual', { number: o.invoice_number ?? '' }));
         return;
       } else if (o.failed_step || o.invoice === 'failed') {
         fail('invoice', 'invoice', failedStepText(t, { ...o, failed_step: o.failed_step ?? 'invoice' }));

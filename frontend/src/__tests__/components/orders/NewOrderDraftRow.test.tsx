@@ -594,6 +594,79 @@ describe('NewOrderDraftRow', () => {
       expect(onClose).not.toHaveBeenCalled();
     });
 
+    it('Pay on an empty cart is refused with the reason and posts no order', async () => {
+      const user = userEvent.setup();
+      let posted = 0;
+      server.use(http.post('/api/v1/order-board/orders', () => { posted += 1; return HttpResponse.json({}); }));
+      renderRow();
+      await user.click(screen.getByRole('button', { name: /^Pay/ }));
+      expect(await screen.findByRole('alert')).toBeInTheDocument();
+      expect(posted).toBe(0);
+      expect(screen.queryByTestId('counter-pay')).not.toBeInTheDocument();
+    });
+
+    it('a second sale after New sale gets a fresh client_ref and a fresh credit cap, nothing carried over', async () => {
+      const user = userEvent.setup();
+      const orders: { client_ref: string; lines: unknown[] }[] = [];
+      const invoices: Record<string, unknown>[] = [];
+      const recorded: Record<string, unknown>[] = [];
+      const rowOf = (id: string, n: string, invNo: string, total: number) =>
+        ({ id, number: n, currency: 'XPF', lines: [], packages: [], payment: { invoices: [{ id: `i${id}`, number: invNo, total, balance: 0, status: 'paid', date: '2026-11-26' }] } });
+      const rows: Record<string, ReturnType<typeof rowOf>> = {
+        '9': rowOf('9', 'SO-9', 'FAC-9', 1000), '10': rowOf('10', 'SO-10', 'FAC-10', 2000),
+      };
+      const boardOf = (r: unknown) => ({ rows: [r], computed_at: null, stock_loaded_at: null, sync: {} });
+      server.use(
+        http.post('/api/v1/order-board/orders', async ({ request }) => {
+          orders.push(await request.json() as { client_ref: string; lines: unknown[] });
+          const id = orders.length === 1 ? '9' : '10';
+          return HttpResponse.json({ board: boardOf(rows[id]), row: rows[id], salesorder_id: id });
+        }),
+        http.get('/api/v1/order-board/orders/:id/payment-target', ({ params }) =>
+          HttpResponse.json({ kind: 'salesorder', document_id: params.id, number: `SO-${params.id}`, max_amount: params.id === '9' ? 1000 : 2000, left: params.id === '9' ? 1000 : 2000, link: null })),
+        http.get('/api/v1/order-board/orders/:id/terminal-payment', () => HttpResponse.json(null)),
+        http.post('/api/v1/order-board/orders/:id/manual-payment', async ({ request }) => {
+          recorded.push(await request.json() as Record<string, unknown>);
+          return HttpResponse.json({});
+        }),
+        http.post('/api/v1/order-board/orders/:id/invoice', async ({ request, params }) => {
+          invoices.push({ id: params.id, ...(await request.json() as object) });
+          const no = params.id === '9' ? 'FAC-9' : 'FAC-10';
+          return HttpResponse.json({
+            board: boardOf(rows[params.id as string]),
+            outcome: { invoice: 'created', invoice_number: no, manual_reason: null, credit_applied: 0, failed_step: null, error: null },
+          });
+        }),
+        http.get('/api/v1/order-board/orders/:id/picklist', () => HttpResponse.json({ lines: [] })),
+      );
+      renderRow();
+      const search = () => screen.getByLabelText('Scan or search: name, SKU, EAN, reference…');
+      const addItem = async () => {
+        await user.type(search(), 'pla');
+        await user.click(await screen.findByRole('button', { name: /^Bambu Lab PLA Basic Noir/ }, { timeout: 3000 }));
+      };
+      await addItem();
+      await user.click(payBtn());
+      await user.click(await screen.findByRole('button', { name: 'Cash or cheque' }, { timeout: 3000 }));
+      await user.click(await screen.findByRole('button', { name: /^Record|^Save|^Confirm/i }, { timeout: 3000 }));
+      await user.click(await screen.findByRole('button', { name: 'New sale' }, { timeout: 5000 }));
+      expect(invoices).toEqual([{ id: '9', apply_credit: true, scope: 'whole', credit_cap: 1000 }]);
+      // Second sale: a bigger cart, so a different amount; the first sale's 1000 must not come back.
+      await addItem();
+      await addItem();
+      await user.click(payBtn());
+      await user.click(await screen.findByRole('button', { name: 'Cash or cheque' }, { timeout: 3000 }));
+      await user.click(await screen.findByRole('button', { name: /^Record|^Save|^Confirm/i }, { timeout: 3000 }));
+      await user.click(await screen.findByRole('button', { name: 'New sale' }, { timeout: 5000 }));
+      expect(orders).toHaveLength(2);
+      expect(orders[1].client_ref).not.toBe(orders[0].client_ref);
+      expect(orders.map((o) => o.lines)).toEqual([[{ item_id: 'A', quantity: 1 }], [{ item_id: 'A', quantity: 2 }]]);
+      expect(recorded).toHaveLength(2);
+      expect(invoices).toHaveLength(2);
+      expect(invoices[1]).toEqual({ id: '10', apply_credit: true, scope: 'whole', credit_cap: 2000 });
+      expect(recorded.map((r) => r.amount)).toEqual([1000, 2000]);
+    });
+
     describe('leaving a sale', () => {
       const target = () => server.use(
         http.get('/api/v1/order-board/orders/9/payment-target', () =>
@@ -626,6 +699,20 @@ describe('NewOrderDraftRow', () => {
         onCreated.mockClear();
         await user.click(screen.getByRole('button', { name: 'Abandon' }));
         opened(onCreated);
+      });
+
+      it('leaving a sale with no board in the cache just closes the modal', async () => {
+        const user = userEvent.setup();
+        payOrder();
+        target();
+        seed([{ item: item(), quantity: 2, discount: '' }]);
+        const { onCreated, onClose } = renderRow();
+        await user.click(payBtn());
+        await screen.findByText('Card (terminal)');
+        await waitFor(() => expect(screen.getByRole('button', { name: 'Abandon' })).toBeEnabled());
+        await user.keyboard('{Escape}');
+        await waitFor(() => expect(onClose).toHaveBeenCalled());
+        expect(onCreated).not.toHaveBeenCalled();
       });
 
       it('Escape and the X do nothing while a payment dialog is open', async () => {

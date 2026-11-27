@@ -6,7 +6,8 @@ import type { ReactNode } from 'react';
 import { ApiError } from '../../../api/client';
 import type { OrderBoardResponse } from '../../../api/client';
 
-vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (k: string) => k }) }));
+const tSpy = vi.hoisted(() => vi.fn((k: string, _o?: unknown) => k));
+vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: tSpy }) }));
 vi.mock('../../../api/client', async (orig) => {
   const mod = await orig<typeof import('../../../api/client')>();
   const fn = () => vi.fn();
@@ -48,7 +49,10 @@ const toPayment = async (r: ReturnType<typeof setup>) => {
   await waitFor(() => expect(r.result.current.step).toBe('payment'));
 };
 
-beforeEach(() => vi.resetAllMocks());
+beforeEach(() => {
+  vi.resetAllMocks();
+  tSpy.mockImplementation((k: string) => k);
+});
 
 describe('useCounterPay', () => {
   it('runs create, then waits for the payment', async () => {
@@ -210,6 +214,22 @@ describe('useCounterPay', () => {
       expect(m.applyOrderCredit).not.toHaveBeenCalled();
     });
 
+    it.each([
+      ['a board without the order', () => boardOf(mkRow({ id: 'other' }, 12400))],
+      ['a row holding only another invoice', () => boardOf(mkRow({ payment: { invoices: [{ id: 'inv9', number: 'FAC-9', total: 12400, balance: 0 }] } }))],
+    ])('a re-read answered with %s stays notAttributed: no credit, no second invoice', async (_n, board) => {
+      lacking();
+      m.getOrderBoard.mockResolvedValue(board());
+      const r = setup();
+      await toError(r);
+      await act(async () => r.result.current.retry());
+      await waitFor(() => expect(m.getOrderBoard).toHaveBeenCalledTimes(1));
+      await waitFor(() => expect(r.result.current.busy).toBe(false));
+      expect(r.result.current).toMatchObject({ step: 'invoice', error: 'orders.counterPay.notAttributed', invoice: null });
+      expect(m.applyOrderCredit).not.toHaveBeenCalled();
+      expect(m.createOrderInvoice).toHaveBeenCalledTimes(1);
+    });
+
     it('a lost apply-credit answer: the next retry sees the invoice paid and does not apply again', async () => {
       arrange(mkRow(), 12400);
       m.applyOrderCredit.mockRejectedValueOnce(new Error('network'));
@@ -256,6 +276,38 @@ describe('useCounterPay', () => {
     await act(async () => r.result.current.settle(12400));
     await waitFor(() => expect(r.result.current.error).toBe('orders.handover.manualDraft'));
     expect(r.result.current.step).toBe('invoice');
+  });
+
+  describe('an invoice answer that is not a clean created', () => {
+    const answered = async (outcome: Record<string, unknown>) => {
+      arrange(mkRow());
+      m.createOrderInvoice.mockResolvedValue({ board: boardOf(mkRow()), outcome: { ...created, ...outcome } } as never);
+      const r = setup();
+      await toPayment(r);
+      await act(async () => r.result.current.settle(12400));
+      await waitFor(() => expect(r.result.current.error).toBeTruthy());
+      return r;
+    };
+
+    it('a draft left by a failed "mark sent" names the draft and its number, not the discount text', async () => {
+      const r = await answered({ invoice: 'draft', invoice_number: 'FAC-7', manual_reason: null, failed_step: 'sent', error: 'timeout' });
+      expect(r.result.current).toMatchObject({ step: 'invoice', error: 'orders.handover.manualDraft' });
+      expect(tSpy).toHaveBeenCalledWith('orders.handover.manualDraft', { number: 'FAC-7' });
+      expect(tSpy).not.toHaveBeenCalledWith('orders.handover.manual', expect.anything());
+      expect(m.createOrderInvoice).toHaveBeenCalledTimes(1);
+    });
+
+    it('a manual outcome with reason draft keeps the draft text', async () => {
+      const r = await answered({ invoice: 'manual', invoice_number: 'FAC-8', manual_reason: 'draft' });
+      expect(r.result.current).toMatchObject({ step: 'invoice', error: 'orders.handover.manualDraft' });
+      expect(tSpy).toHaveBeenCalledWith('orders.handover.manualDraft', { number: 'FAC-8' });
+    });
+
+    it('a manual outcome with another reason keeps the discount-or-charge text', async () => {
+      const r = await answered({ invoice: 'manual', invoice_number: null, manual_reason: 'discount' });
+      expect(r.result.current).toMatchObject({ step: 'invoice', error: 'orders.handover.manual' });
+      expect(tSpy).toHaveBeenCalledWith('orders.handover.manual', { number: '' });
+    });
   });
 
   it('a partial payment passes the invoice step', async () => {
