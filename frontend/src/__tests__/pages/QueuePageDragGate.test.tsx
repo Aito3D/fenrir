@@ -82,6 +82,18 @@ describe('QueuePage drag reorder gate', () => {
     expect(dndSensors.last).toEqual([]);
   });
 
+  it('shows the phone move arrows in ascending position sort', async () => {
+    await renderWithSort('position', 'true');
+    expect(screen.getAllByTitle('Move Up')).toHaveLength(2);
+    expect(screen.getAllByTitle('Move Down')).toHaveLength(2);
+  });
+
+  it('hides the phone move arrows in descending position sort', async () => {
+    await renderWithSort('position', 'false');
+    expect(screen.queryByTitle('Move Up')).toBeNull();
+    expect(screen.queryByTitle('Move Down')).toBeNull();
+  });
+
   it.each(['name', 'printer', 'time'])('disables dragging in %s sort', async (sortBy) => {
     await renderWithSort(sortBy, 'true');
     expect(dndSensors.last).toEqual([]);

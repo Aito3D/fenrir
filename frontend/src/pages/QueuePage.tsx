@@ -2658,6 +2658,8 @@ export function QueuePage() {
     hasPermission('queue:reorder') &&
     pendingSortBy === 'position' &&
     !settings?.queue_shortest_first;
+  // A descending position sort shows the list reversed, so a slot swap would renumber it wrongly.
+  const canReorderNow = canReorderManually && pendingSortAsc;
 
   const rowItemIds = (row: QueueRow): number[] =>
     row.kind === 'item' ? [row.item.id] : row.items.map((i) => i.id);
@@ -2705,7 +2707,7 @@ export function QueuePage() {
     rows: QueueRow[],
     idx: number,
   ): { onMoveUp?: () => void; onMoveDown?: () => void } => {
-    if (!canReorderManually) return {};
+    if (!canReorderNow) return {};
     const moving = rowItemIds(rows[idx]);
     const onMoveUp =
       idx > 0
@@ -3192,7 +3194,7 @@ export function QueuePage() {
               </div>
 
               <DndContext
-                sensors={canReorderManually && pendingSortAsc ? sensors : []}
+                sensors={canReorderNow ? sensors : []}
                 collisionDetection={closestCenter}
                 onDragStart={handleDragStart}
                 onDragEnd={handleDragEnd}
@@ -3223,7 +3225,7 @@ export function QueuePage() {
                           etaNow={etaNow}
                           aggregateForRows={aggregateForRows}
                           {...rowMovers(groupedRows, idx)}
-                          onMoveBlock={canReorderManually ? moveBlockRelativeTo : undefined}
+                          onMoveBlock={canReorderNow ? moveBlockRelativeTo : undefined}
                         />
                       ))}
                     </div>
@@ -3263,7 +3265,7 @@ export function QueuePage() {
                                   etaNow={etaNow}
                                   aggregateForRows={aggregateForRows}
                                   {...rowMovers(bucket.rows, idx)}
-                                  onMoveBlock={canReorderManually ? moveBlockRelativeTo : undefined}
+                                  onMoveBlock={canReorderNow ? moveBlockRelativeTo : undefined}
                                 />
                               ))}
                             </div>
