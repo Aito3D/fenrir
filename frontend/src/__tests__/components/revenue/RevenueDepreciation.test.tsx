@@ -23,7 +23,7 @@ function setup({ stored = state(), refresh = () => json(state()), canManage = tr
   const onChanged = vi.fn();
   render(
     <ToastProvider>
-      <RevenueDepreciation canManage={canManage} onChanged={onChanged} onClose={vi.fn()} returnFocus={vi.fn()} />
+      <RevenueDepreciation canManage={canManage} onChanged={onChanged} />
     </ToastProvider>,
   );
   return { fetchMock, onChanged };

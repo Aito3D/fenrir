@@ -4,7 +4,7 @@ import { bearerAuthHeaders } from '../../api/client';
 import { useToast } from '../../contexts/ToastContext';
 import { focusRingCls } from '../formStyles';
 import { Toggle } from '../Toggle';
-import { RevenueClosablePanel } from './RevenueClosablePanel';
+import { CHARGES_CARD, CHARGES_LINK, RevenueChargesSection } from './RevenueChargesSection';
 import { failureMessage, readJsonBody } from './lib/dashboard';
 import { formatFcp, formatPerMinute } from './lib/format';
 import type { DepreciationAsset, DepreciationState } from './lib/types';
@@ -27,14 +27,21 @@ function phase(a: DepreciationAsset, today: string): Phase {
   return today < a.start ? 'notStarted' : today >= end ? 'ended' : 'running';
 }
 const monthly = (a: DepreciationAsset, today: string) => (phase(a, today) === 'running' ? (a.cost ?? 0) / (a.months ?? 1) : 0);
+/** Share of the asset's life already behind it (0–1). */
+function lifeSpent(a: DepreciationAsset, today: string): number {
+  const end = lifeEnd(a);
+  if (!a.start || !end) return 0;
+  const [from, to, now] = [a.start, end, today].map((d) => new Date(`${d}T00:00:00`).getTime());
+  return Math.min(1, Math.max(0, (now - from) / (to - from)));
+}
 const frDay = (day: string) => `${day.slice(8, 10)}/${day.slice(5, 7)}/${day.slice(0, 4)}`;
 
 /** Zoho's fixed assets, by asset type: the ones switched on are charged to 3D printing by the minute, like rent. */
-export function RevenueDepreciation({ canManage, onChanged, onClose, returnFocus }: {
+export function RevenueDepreciation({ canManage, onChanged, footer }: {
   canManage: boolean;
   onChanged: () => void;
-  onClose?: () => void;
-  returnFocus?: () => void;
+  /** The dialog's footer, for the unsaved-changes bar. */
+  footer?: HTMLElement | null;
 }) {
   const { t } = useTranslation();
   const { showToast } = useToast();
@@ -117,27 +124,23 @@ export function RevenueDepreciation({ canManage, onChanged, onClose, returnFocus
   const locked = !canManage || busy;
 
   return (
-    <RevenueClosablePanel
+    <RevenueChargesSection
       title={t('revenue.depreciation.title')}
-      onClose={onClose}
-      returnFocus={returnFocus}
+      intro={t('revenue.depreciation.intro')}
+      footer={footer}
+      save={canManage && dep ? { dirty, busy, onSave: () => void save(), onDiscard: () => void load() } : undefined}
       action={
-        canManage && dep ? (
-          <>
-            {/* A refresh replaces the selection on screen with the stored one: unsaved switches go first. */}
-            <button type="button" disabled={busy || dirty} onClick={() => void refresh()}
-              className={`text-xs text-bambu-gray-light underline underline-offset-2 hover:text-white disabled:opacity-40 ${focusRingCls}`}>
+        <>
+          {dep?.readAt && <span className="text-xs text-bambu-gray">{t('revenue.depreciation.readAt', { date: new Date(dep.readAt).toLocaleString() })}</span>}
+          {canManage && dep && (
+            // A refresh replaces the selection on screen with the stored one: unsaved switches go first.
+            <button type="button" disabled={busy || dirty} onClick={() => void refresh()} className={CHARGES_LINK}>
               {t('revenue.depreciation.refresh')}
             </button>
-            <button type="button" disabled={!dirty || busy} onClick={() => void save()}
-              className={`rounded-md bg-bambu-green px-3 py-1 text-sm text-white disabled:opacity-40 ${focusRingCls}`}>
-              {busy ? '…' : t('revenue.fixedCosts.save')}
-            </button>
-          </>
-        ) : null
+          )}
+        </>
       }
     >
-      <p className="mb-2 text-xs text-bambu-gray">{t('revenue.depreciation.intro')}</p>
       {error && (
         <p role="alert" className="mb-2 text-sm text-red-400">
           {error.message}{' '}
@@ -151,27 +154,32 @@ export function RevenueDepreciation({ canManage, onChanged, onClose, returnFocus
       ) : dep.assets.length === 0 ? (
         !busy && <p className="text-sm text-bambu-gray">{t('revenue.depreciation.empty')}</p>
       ) : (
-        <div className="max-w-3xl space-y-3 text-sm">
+        <div className={`${CHARGES_CARD} text-sm`}>
           {[...groups].map(([type, assets]) => {
             const usable = assets.filter((a) => a.status === 'active').map((a) => a.id);
             const sum = assets.reduce((s, a) => s + (selected.has(a.id) ? monthly(a, today) : 0), 0);
             return (
               <div key={type} role="group" aria-label={type}>
-                <div className="flex items-center gap-2 border-b border-bambu-dark-tertiary pb-1 text-white">
+                <div className="flex items-center gap-3 border-b border-bambu-dark-tertiary bg-bambu-dark/40 px-3 py-2.5 text-white">
                   <Toggle aria-label={`${type} (${assets.length})`} disabled={locked || usable.length === 0}
                     checked={usable.length > 0 && usable.every((id) => selected.has(id))} onChange={(on) => set(usable, on)} />
                   <span className="flex-1 font-medium">{type} ({assets.length})</span>
-                  <span className="tabular-nums">{formatFcp(sum)}</span>
+                  <span className="font-semibold tabular-nums">{formatFcp(sum)}</span>
                   <span className="w-28 text-right tabular-nums text-bambu-gray-light">{formatPerMinute(sum)}</span>
                 </div>
                 {assets.map((a) => {
                   const p = phase(a, today);
                   const end = lifeEnd(a);
                   return (
-                    <div key={a.id} className="flex items-center gap-2 py-1 pl-4 text-bambu-gray-light">
+                    <div key={a.id} className={`flex items-center gap-3 border-b border-bambu-dark-tertiary/60 px-3 py-2 ${selected.has(a.id) ? 'text-white' : 'text-bambu-gray'}`}>
                       <Toggle aria-label={a.name} disabled={locked || a.status !== 'active'} checked={selected.has(a.id)} onChange={(on) => set([a.id], on)} />
                       <span className="min-w-0 flex-1 truncate" title={`${a.number} · ${a.cost == null ? DASH : formatFcp(a.cost)}`}>{a.name}</span>
-                      <span className="hidden text-xs text-bambu-gray sm:inline">
+                      {(p === 'running' || p === 'ended') && (
+                        <span aria-hidden className="hidden h-1 w-28 overflow-hidden rounded-full bg-bambu-dark-tertiary md:block">
+                          <span className="block h-full bg-violet-400" style={{ width: `${100 * lifeSpent(a, today)}%` }} />
+                        </span>
+                      )}
+                      <span className="hidden w-44 text-xs text-bambu-gray sm:inline">
                         {p === 'running' || p === 'unknown'
                           ? a.start && end ? `${frDay(a.start)} → ${end.slice(5, 7)}/${end.slice(0, 4)}` : DASH
                           : t(`revenue.depreciation.${p}`)}
@@ -183,9 +191,8 @@ export function RevenueDepreciation({ canManage, onChanged, onClose, returnFocus
               </div>
             );
           })}
-          {dep.readAt && <p className="text-xs text-bambu-gray">{t('revenue.depreciation.readAt', { date: new Date(dep.readAt).toLocaleString() })}</p>}
         </div>
       )}
-    </RevenueClosablePanel>
+    </RevenueChargesSection>
   );
 }

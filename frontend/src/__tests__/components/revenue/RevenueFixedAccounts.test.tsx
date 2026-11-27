@@ -25,6 +25,11 @@ function setup(canManage = true, state: FixedAccountsResponse = STATE) {
 }
 const row = (name: string) => screen.getByRole('row', { name: new RegExp(name) });
 const foot = (label: string) => screen.getByText(label).parentElement!;
+// Accounts without a stored share are folded away: open the fold, then find the row.
+const idleRow = async () => {
+  fireEvent.click(await screen.findByRole('button', { name: 'Not counted (1)' }));
+  return row('Electricite');
+};
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -53,7 +58,7 @@ describe('RevenueFixedAccounts', () => {
 
   it('shows the type and the split only once an account has a share', async () => {
     setup();
-    const r = within(await screen.findByRole('row', { name: /Electricite/ }));
+    const r = within(await idleRow());
     expect(r.queryByRole('combobox')).toBeNull();
     expect(r.queryByRole('slider')).toBeNull();
     fireEvent.change(r.getByRole('spinbutton', { name: '3D share · Electricite' }), { target: { value: '100' } });
@@ -71,27 +76,41 @@ describe('RevenueFixedAccounts', () => {
   it('moves the split with one slider', async () => {
     setup();
     const r = within(await screen.findByRole('row', { name: /Location/ }));
-    expect(r.getByText('40 %')).toBeInTheDocument();
+    expect(r.getByText('40 / 60')).toBeInTheDocument();
     fireEvent.change(r.getByRole('slider'), { target: { value: '75' } });
-    expect(r.getByText('25 %')).toBeInTheDocument();
-    expect(r.getByText('75 %')).toBeInTheDocument();
+    expect(r.getByText('25 / 75')).toBeInTheDocument();
     expect(foot('Goods')).toHaveTextContent('20.000 FCP');
+  });
+
+  it('folds the accounts without a share away, and searches through all of them', async () => {
+    setup();
+    await screen.findByRole('row', { name: /Location/ });
+    expect(screen.queryByRole('row', { name: /Electricite/ })).toBeNull();
+    fireEvent.change(screen.getByRole('searchbox', { name: 'Search an account…' }), { target: { value: '60612' } });
+    expect(row('Electricite')).toBeInTheDocument();
+    expect(screen.queryByRole('row', { name: /Location/ })).toBeNull();
+    // A share typed on a found account keeps it where it is, and still counts in the total.
+    fireEvent.change(within(row('Electricite')).getByRole('spinbutton'), { target: { value: '100' } });
+    fireEvent.change(screen.getByRole('searchbox', { name: 'Search an account…' }), { target: { value: '' } });
+    expect(screen.queryByRole('row', { name: /Electricite/ })).toBeNull();
+    expect(foot('Entered')).toHaveTextContent('24.000 FCP');
   });
 
   it('warns on an account the page already counts elsewhere', async () => {
     setup();
-    await screen.findByRole('row', { name: /Location/ });
+    await idleRow();
     expect(within(row('Electricite')).getByRole('img', { name: /already counted in the cost of the items sold/ })).toBeInTheDocument();
     expect(within(row('Location')).queryByRole('img')).toBeNull();
   });
 
   it('saves the shares and tells the page', async () => {
     const { fetchMock, onChanged } = setup();
-    const r = within(await screen.findByRole('row', { name: /Electricite/ }));
-    const save = screen.getByRole('button', { name: 'Save' });
-    expect(save).toBeDisabled();
+    const r = within(await idleRow());
+    // Nothing to save, no bar.
+    expect(screen.queryByRole('button', { name: 'Save' })).toBeNull();
     fireEvent.change(r.getByRole('spinbutton'), { target: { value: '12.5' } });
-    fireEvent.click(save);
+    expect(screen.getByText('Unsaved changes')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
     await waitFor(() => expect(onChanged).toHaveBeenCalled());
     const put = fetchMock.mock.calls.find(([, init]) => init?.method === 'PUT')!;
     expect(put[0]).toBe('/api/v1/revenue/fixed-accounts');
@@ -103,16 +122,26 @@ describe('RevenueFixedAccounts', () => {
   it('refuses a share outside 0 to 100 and reads an empty one as 0', async () => {
     setup();
     const share = within(await screen.findByRole('row', { name: /Location/ })).getByRole('spinbutton');
-    const save = screen.getByRole('button', { name: 'Save' });
+    const save = () => screen.getByRole('button', { name: 'Save' });
     for (const bad of ['150', '-5']) {
       fireEvent.change(share, { target: { value: bad } });
-      expect(save).toBeDisabled();
+      expect(save()).toBeDisabled();
       expect(screen.getByRole('alert')).toHaveTextContent('Each share must be between 0 and 100 %.');
     }
     fireEvent.change(share, { target: { value: '' } });
     expect(screen.queryByRole('alert')).toBeNull();
-    expect(save).toBeEnabled();
+    expect(save()).toBeEnabled();
     expect(within(row('Location')).queryByRole('slider')).toBeNull();
+  });
+
+  it('discards unsaved shares by reading the stored ones again', async () => {
+    const { fetchMock } = setup();
+    const share = within(await screen.findByRole('row', { name: /Location/ })).getByRole('spinbutton');
+    fireEvent.change(share, { target: { value: '80' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Discard' }));
+    await waitFor(() => expect(screen.queryByText('Unsaved changes')).toBeNull());
+    expect(within(row('Location')).getByRole('spinbutton')).toHaveValue(50);
+    expect(fetchMock.mock.calls.every(([, init]) => !init?.method)).toBe(true);
   });
 
   it('re-reads Zoho on demand', async () => {

@@ -11,7 +11,7 @@ afterEach(() => {
 });
 
 describe('RevenueCharges', () => {
-  it('sums the three charges per month and per minute, above the three tables', async () => {
+  it('sums the three charges per month and per minute, with a tab per table', async () => {
     vi.useFakeTimers({ toFake: ['Date'] });
     vi.setSystemTime(new Date(2026, 10, 15)); // November: 30 days, 43 200 minutes
     vi.stubGlobal('fetch', vi.fn(async (url: string) => {
@@ -31,15 +31,24 @@ describe('RevenueCharges', () => {
     expect(document.body.style.overflow).toBe('hidden');
     // One × for the dialog, none on the tables inside.
     expect(within(dialog).getAllByRole('button', { name: /close/i })).toHaveLength(1);
-    const summary = await screen.findByRole('table', { name: 'Costs' });
-    const row = (name: string) => within(summary).getByRole('row', { name: new RegExp(`^${name}`) });
-    expect(within(row('Labour')).getByText('1,0 FCP/min')).toBeInTheDocument();
-    expect(within(row('Fixed costs')).getByText('2,0 FCP/min')).toBeInTheDocument();
-    expect(within(row('Depreciation')).getByText('3,0 FCP/min')).toBeInTheDocument();
-    expect(within(row('Total')).getByText('259.200 FCP')).toBeInTheDocument();
-    expect(within(row('Total')).getByText('6,0 FCP/min')).toBeInTheDocument();
-    // The three tables follow.
+    const card = (name: string) => within(screen.getByRole('button', { name: new RegExp(`^${name}`) }));
+    const overview = within(await screen.findByRole('tabpanel', { name: 'Overview' }));
+    await overview.findByText('259.200 FCP');
+    expect(card('Labour').getByText('1,0 FCP/min')).toBeInTheDocument();
+    expect(card('Labour').getByText('17 %')).toBeInTheDocument();
+    expect(card('Fixed costs').getByText('2,0 FCP/min')).toBeInTheDocument();
+    expect(card('Depreciation').getByText('3,0 FCP/min')).toBeInTheDocument();
+    expect(overview.getByText('Total costs · November 2026')).toBeInTheDocument();
+    expect(overview.getByText('Per month · 6,0 FCP/min')).toBeInTheDocument();
+    expect(card('Labour').getByText('People: 0')).toBeInTheDocument();
+    expect(card('Depreciation').getByText('Assets: 0 of 0')).toBeInTheDocument();
+    // Each tab names its amount; the three tables sit behind them, mounted but hidden until picked.
+    expect(screen.getByRole('tab', { name: 'Labour 43.200 FCP' })).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Fixed costs' })).toBeNull();
+    fireEvent.click(card('Fixed costs').getByText('86.400 FCP'));
+    expect(screen.getByRole('tab', { name: /^Fixed costs/ })).toHaveAttribute('aria-selected', 'true');
     expect(screen.getByRole('heading', { name: 'Fixed costs' })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('tab', { name: /^Depreciation/ }));
     expect(screen.getByRole('heading', { name: 'Depreciation (Zoho)' })).toBeInTheDocument();
     fireEvent.keyDown(window, { key: 'Escape' });
     await waitFor(() => expect(onClose).toHaveBeenCalledTimes(1));
@@ -62,12 +71,12 @@ describe('RevenueCharges', () => {
         <RevenueCharges canManage={false} version={0} onChanged={vi.fn()} onClose={vi.fn()} returnFocus={vi.fn()} />
       </ToastProvider>,
     );
-    const summary = await screen.findByRole('table', { name: 'Costs' });
-    const row = (name: string) => within(summary).getByRole('row', { name: new RegExp(`^${name}`) });
-    expect(within(row('Fixed costs')).getByText('86.400 FCP')).toBeInTheDocument();
-    expect(within(row('Fixed costs')).getByText('2,0 FCP/min')).toBeInTheDocument();
-    expect(within(row('Fixed costs')).getByText('of which 43.200 FCP estimated')).toBeInTheDocument();
-    expect(within(row('Total')).getByText('86.400 FCP')).toBeInTheDocument();
-    expect(within(row('Labour')).queryByText(/estimated/)).toBeNull();
+    const card = (name: string) => within(screen.getByRole('button', { name: new RegExp(`^${name}`) }));
+    await screen.findByRole('button', { name: /^Fixed costs/ });
+    expect(card('Fixed costs').getByText('86.400 FCP')).toBeInTheDocument();
+    expect(card('Fixed costs').getByText('2,0 FCP/min')).toBeInTheDocument();
+    expect(card('Fixed costs').getByText('of which 43.200 FCP estimated')).toBeInTheDocument();
+    expect(within(screen.getByRole('tabpanel', { name: 'Overview' })).getAllByText('86.400 FCP')).toHaveLength(2);
+    expect(card('Labour').queryByText(/estimated/)).toBeNull();
   });
 });

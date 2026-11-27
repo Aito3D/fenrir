@@ -14,7 +14,7 @@ function setup(canManage = true) {
   const onChanged = vi.fn();
   render(
     <ToastProvider>
-      <RevenueLabor canManage={canManage} onChanged={onChanged} onClose={vi.fn()} returnFocus={vi.fn()} />
+      <RevenueLabor canManage={canManage} onChanged={onChanged} />
     </ToastProvider>,
   );
   return { fetchMock, onChanged };
@@ -33,9 +33,9 @@ describe('RevenueLabor', () => {
   it('saves the whole list once a valid row is added', async () => {
     const { fetchMock, onChanged } = setup();
     await screen.findByDisplayValue('Alice');
-    const save = screen.getByRole('button', { name: 'Save' });
-    expect(save).toBeDisabled();
+    expect(screen.queryByRole('button', { name: 'Save' })).toBeNull();
     fireEvent.click(screen.getByRole('button', { name: 'Add a person' }));
+    const save = screen.getByRole('button', { name: 'Save' });
     // A row without a name is not sent.
     expect(save).toBeDisabled();
     fireEvent.change(screen.getAllByRole('textbox', { name: 'Name' })[1], { target: { value: 'Bob' } });

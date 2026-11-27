@@ -8,13 +8,15 @@ import { segmentPanelId, segmentTabId } from './lib/dashboard';
  *  selected tab is in the tab order. Otherwise pressed buttons. */
 export function RevenueSegmented<T extends string>(p: {
   label: string;
-  options: readonly { id: T; label: string; title?: string }[];
+  options: readonly { id: T; label: string; title?: string; /** A small figure after the label. */ hint?: string }[];
   value: T;
   onChange: (v: T) => void;
   tabs?: boolean;
   idPrefix?: string;
   /** Inside a panel: the track one step darker, the selection one step lighter. */
   inPanel?: boolean;
+  /** A dialog's page tabs: no track, the selection underlined. */
+  underline?: boolean;
 }) {
   const prefix = p.idPrefix ?? 'segment';
   const move = (e: KeyboardEvent<HTMLButtonElement>, index: number) => {
@@ -32,7 +34,7 @@ export function RevenueSegmented<T extends string>(p: {
   };
 
   return (
-    <div role={p.tabs ? 'tablist' : 'group'} aria-label={p.label} className={`inline-flex shrink-0 gap-0.5 rounded-[10px] p-[3px] ${p.inPanel ? 'bg-bambu-dark' : 'bg-bambu-dark-secondary/60'}`}>
+    <div role={p.tabs ? 'tablist' : 'group'} aria-label={p.label} className={p.underline ? 'flex shrink-0 gap-1' : `inline-flex shrink-0 gap-0.5 rounded-[10px] p-[3px] ${p.inPanel ? 'bg-bambu-dark' : 'bg-bambu-dark-secondary/60'}`}>
       {p.options.map((o, index) => {
         const on = o.id === p.value;
         return (
@@ -51,11 +53,14 @@ export function RevenueSegmented<T extends string>(p: {
               : { 'aria-pressed': on })}
             title={o.title}
             onClick={() => p.onChange(o.id)}
-            className={`rounded-lg px-3.5 py-1.5 text-[13px] font-medium whitespace-nowrap transition-colors duration-150 ${
-              on ? `${p.inPanel ? 'bg-bambu-dark-tertiary' : 'bg-bambu-dark-secondary'} text-white shadow-sm` : 'text-bambu-gray-light hover:text-white'
+            className={`font-medium whitespace-nowrap transition-colors duration-150 ${
+              p.underline
+                ? `border-b-2 px-3 py-3 text-sm ${on ? 'border-bambu-green text-white' : 'border-transparent text-bambu-gray hover:text-white'}`
+                : `rounded-lg px-3.5 py-1.5 text-[13px] ${on ? `${p.inPanel ? 'bg-bambu-dark-tertiary' : 'bg-bambu-dark-secondary'} text-white shadow-sm` : 'text-bambu-gray-light hover:text-white'}`
             } ${focusRingCls}`}
           >
             {o.label}
+            {o.hint && <span className="ml-2 text-xs font-normal tabular-nums text-bambu-gray">{o.hint}</span>}
           </button>
         );
       })}
