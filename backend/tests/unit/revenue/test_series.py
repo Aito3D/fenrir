@@ -698,6 +698,8 @@ def test_fixed_costs_follow_the_goods_or_services_filter():
     both = parts()
     assert both["costParts"] == {"items": 0, "fixed": 900, "fixedEstimated": 90, "labor": 500}
     assert both["cost"] == 1490
+    # Named apart: the journal must not share it among the service lines.
+    assert (both["fixedGoods"], parts(LineFilters(kind="services"))["fixedGoods"]) == (330, 0)
     # The goods' share of the fixed costs weighs on the goods, the rest on the services sold.
     assert both["marginSplit"]["kind"] == {"Biens": -330, "Services": 2000 - 1160}
     services = parts(LineFilters(kind="services"))

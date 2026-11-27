@@ -203,7 +203,7 @@ describe('RevenuePage — fixed costs follow the books', () => {
     expect(seriesCalls()).toHaveLength(2);
   });
 
-  it('leaves the page alone when Zoho had nothing new or could not be read', async () => {
+  it('leaves the page alone when Zoho had nothing new, and says so when it could not be read', async () => {
     granted = new Set([...ALL, 'revenue:view_margin', 'revenue:manage_targets']);
     await open(() => json({ changed: false }));
     expect(refreshCalls()).toHaveLength(1);
@@ -212,7 +212,8 @@ describe('RevenuePage — fixed costs follow the books', () => {
     document.body.innerHTML = '';
     await open(() => json({ detail: 'Zoho could not be read' }, 502));
     expect(seriesCalls()).toHaveLength(1);
-    expect(screen.queryByText('Zoho could not be read')).toBeNull();
+    // Not silent: the figures on screen are then older than the books.
+    expect(screen.getByText('Zoho could not be read')).toBeInTheDocument();
   });
 
   it('asks nothing of Zoho without the right to manage the charges', async () => {

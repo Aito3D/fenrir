@@ -484,6 +484,8 @@ def build_revenue_series(
                 "marginSplit": acc.margin_split(),
                 # What the cost is made of: Zoho item costs, then the services' print and labour costs.
                 "costParts": _round_record({"items": acc.cost, **acc.prod_parts}),
+                # The part of `fixed` + `fixedEstimated` that weighs on the goods: not the service lines' to share.
+                "fixedGoods": js_round(acc.goods_fixed),
                 "costedHt": js_round(acc.costed_ht),
                 # Null before the print log began: no data, not zero hours.
                 **(

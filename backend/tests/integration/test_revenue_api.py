@@ -127,9 +127,18 @@ async def test_series_payload_keys(async_client, revenue_db, tokens):
 @pytest.mark.asyncio
 async def test_read_user_buckets_lack_cost_and_segments_all_user_has_them(async_client, revenue_db, tokens):
     plain = (await async_client.get(URL, params=MONTH, headers=tokens["read"])).json()["buckets"][0]
-    assert not {"cost", "costedHt", "marginSplit", "costParts", "printHours", "bySegment", "bySegmentTtc"} & set(plain)
+    assert not {
+        "cost",
+        "costedHt",
+        "marginSplit",
+        "costParts",
+        "fixedGoods",
+        "printHours",
+        "bySegment",
+        "bySegmentTtc",
+    } & set(plain)
     full = (await async_client.get(URL, params=MONTH, headers=tokens["all"])).json()["buckets"][0]
-    assert {"cost", "costedHt", "marginSplit", "costParts", "bySegment", "bySegmentTtc"} <= set(full)
+    assert {"cost", "costedHt", "marginSplit", "costParts", "fixedGoods", "bySegment", "bySegmentTtc"} <= set(full)
     assert full["cost"] == 8
 
 
@@ -1027,6 +1036,7 @@ async def test_refresh_current_is_throttled(async_client, revenue_db, tokens, mo
     from datetime import timedelta
 
     from backend.app.services.revenue import production
+    from backend.app.services.revenue.fixed_accounts import months_before
 
     calls = _zoho_books(monkeypatch)
     # An empty cache reads everything, whatever the scope.
@@ -1039,7 +1049,7 @@ async def test_refresh_current_is_throttled(async_client, revenue_db, tokens, mo
     # Read again, nothing new in the books: the page has no reason to reload.
     assert (await async_client.post(f"{FIXED}/refresh", headers=tokens["labor"])).json()["changed"] is False
     calls.clear()
-    # Older than 15 minutes: the current month only.
+    # Older than 15 minutes: the running month and the three before it, where late entries still land.
     async with store.snapshot() as conn:
         cache = await production.read_fixed_cache(conn)
     old = (datetime.now(timezone.utc) - timedelta(minutes=16)).isoformat()
@@ -1047,11 +1057,12 @@ async def test_refresh_current_is_throttled(async_client, revenue_db, tokens, mo
         await production.save_fixed_cache(db, {**cache, "currentReadAt": old})
     calls = _zoho_books(monkeypatch, amount=170000)
     r = await async_client.post(f"{FIXED}/refresh?scope=current", headers=tokens["labor"])
-    assert len(calls) == 1
+    assert [c[0][:7] for c in calls] == [*months_before(r.json()["month"], 3), r.json()["month"]]
     rent = next(a for a in r.json()["accounts"] if a["id"] == "rent")
-    assert (rent["month"], rent["usual"]) == (170000, 160000)
+    assert (rent["month"], rent["usual"]) == (170000, 170000)
     assert r.json()["changed"] is True
-    assert r.json()["readAt"] == cache["readAt"]
+    # The date shown is the last time Zoho answered, whatever was asked of it.
+    assert r.json()["readAt"] > cache["readAt"]
 
 
 @pytest.mark.asyncio
@@ -1063,8 +1074,8 @@ async def test_refresh_current_rereads_the_months_since_the_last_read(async_clie
     month = (await async_client.post(f"{FIXED}/refresh", headers=tokens["labor"])).json()["month"]
     async with store.snapshot() as conn:
         cache = await production.read_fixed_cache(conn)
-    # Last read in the middle of the month before last: both closed months since may have gained entries.
-    before = months_before(month, 2)
+    # Last read five months ago: every month since may have gained entries.
+    before = months_before(month, 5)
     async with async_sessionmaker(revenue_db, expire_on_commit=False)() as db:
         await production.save_fixed_cache(db, {**cache, "currentReadAt": f"{before[0]}-15T10:00:00+00:00"})
     calls = _zoho_books(monkeypatch)

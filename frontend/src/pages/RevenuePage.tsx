@@ -305,7 +305,8 @@ export function RevenuePage() {
   };
 
   // The fixed costs follow the books: opening the page re-reads the running month from Zoho (the server does it at
-  // most every 15 minutes) and reloads only if an amount moved. Silent: the last read stays in use on a failure.
+  // most every 15 minutes) and reloads only if an amount moved. When Zoho cannot be read the last read stays in use
+  // and the page says so: its figures are then older than the books.
   const canManageCharges = can.margin && can.targets;
   const reload = useRef(refresh);
   reload.current = refresh;
@@ -313,10 +314,12 @@ export function RevenuePage() {
     if (!canManageCharges) return;
     void fetch('/api/v1/revenue/fixed-accounts/refresh?scope=current', { method: 'POST', headers: bearerAuthHeaders() })
       .then(async (res) => {
-        if (res.ok && ((await readJsonBody(res)) as { changed?: boolean } | null)?.changed) reload.current();
+        const body = await readJsonBody(res);
+        if (res.status === 502) showToast(failureMessage(res.status, body), 'error');
+        else if (res.ok && (body as { changed?: boolean } | null)?.changed) reload.current();
       })
       .catch(() => {});
-  }, [canManageCharges]);
+  }, [canManageCharges, showToast]);
 
   const postSync = async () => {
     const res = await fetch('/api/v1/revenue/sync', { method: 'POST', headers: bearerAuthHeaders() });

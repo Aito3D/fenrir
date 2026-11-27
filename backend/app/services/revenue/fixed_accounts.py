@@ -162,7 +162,8 @@ def view(config: Config, cache: dict, month: str) -> dict:
         if a["active"] or a["id"] in config
     ]
     rows.sort(key=lambda r: (r["percent"] <= 0, r["code"], r["name"]))
-    return {"month": month, "readAt": cache["readAt"], "accounts": rows}
+    # The date shown is the last time Zoho answered at all, a page-opening re-read included.
+    return {"month": month, "readAt": cache["currentReadAt"] or cache["readAt"], "accounts": rows}
 
 
 def _months_from(first: str, last: str) -> list[str]:

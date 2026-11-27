@@ -937,8 +937,8 @@ async def refresh_fixed_accounts(
     scope: Literal["current", "all"] = "all", user: User | None = RequirePermissionIfAuthEnabled(*_MANAGE_CHARGES)
 ):
     """Re-read Zoho's expense accounts and their monthly totals. Everything is read before anything is stored: a
-    failure leaves the cache as it was. `current` is the page opening: the months since the last read, at most
-    every 15 minutes."""
+    failure leaves the cache as it was. `current` is the page opening: the running month, the three before it and
+    any month since the last read, at most every 15 minutes."""
     now = datetime.now(timezone.utc)
     months = fixed_accounts.months_to_read(org_today(now), production.COSTS_START)
     async with _fixed_refresh_lock, _writer()() as db:
@@ -949,8 +949,10 @@ async def refresh_fixed_accounts(
         partial = scope == "current" and bool(cache["readAt"] and last)
         if partial and (now - datetime.fromisoformat(last)).total_seconds() < _FIXED_CURRENT_MAX_AGE_S:
             return {**fixed_accounts.view(config, cache, months[-1]), "changed": False}
-        # A month that closed since the last read may have gained entries after it.
-        wanted = [m for m in months if m >= org_today(datetime.fromisoformat(last))[:7]] if partial else months
+        # Late entries are the rule: the three months before the running one are read again too (they also set
+        # what a monthly account "usually" costs), and every month since the last read.
+        since = min(months[-4], org_today(datetime.fromisoformat(last))[:7]) if partial else months[0]
+        wanted = [m for m in months if m >= since]
         try:
             accounts = cache["accounts"]
             if not partial:
