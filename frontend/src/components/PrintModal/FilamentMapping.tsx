@@ -174,7 +174,9 @@ export function FilamentMapping({
   // the same sliced-3MF identity. Falls back to the raw type / generic
   // colour bucket when the SKU is unknown or the by-material lookup hasn't
   // resolved — never blanks out the required row.
-  const filamentLabels = useFilamentLabels(filamentReqs?.filaments);
+  // From the rows as rendered: they are sorted by nozzle, so indexing labels
+  // built in slot order put each name on the other nozzle's row.
+  const filamentLabels = useFilamentLabels(filamentComparison);
 
   // Price and grams left per slot, from the mode-aware bindings above. The
   // built-in assignment table these came from holds nothing in Spoolman mode,

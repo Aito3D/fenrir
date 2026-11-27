@@ -345,6 +345,39 @@ describe('FilamentMapping — FTS routing', () => {
     });
   });
 
+  it('keeps each filament name on its own row when rows are reordered by nozzle', async () => {
+    // Slot 1 prints on the left nozzle and slot 2 on the right, so the right
+    // row is listed first. The names used to stay in slot order and swap.
+    server.use(
+      http.get('/api/v1/printers/:id/status', () => HttpResponse.json(createStatus({}))),
+      http.get('/api/v1/cloud/builtin-filaments', () => HttpResponse.json([])),
+      http.get('/api/v1/cloud/filament-id-map', () => HttpResponse.json({})),
+      http.get('/api/v1/inventory/colors/by-material', () => HttpResponse.json({ color_name: null })),
+    );
+
+    render(
+      <FilamentMapping
+        printerId={1}
+        blockedFilaments={[]}
+        filamentReqs={{
+          filaments: [
+            { slot_id: 1, type: 'PA6-CF', color: '#000000', used_grams: 89.4, used_meters: 33.8, nozzle_id: 1 },
+            { slot_id: 2, type: 'ASA', color: '#C0C0C0', used_grams: 17.9, used_meters: 7.1, nozzle_id: 0 },
+          ],
+        }}
+        manualMappings={{}}
+        onManualMappingChange={() => {}}
+        currencySymbol="$"
+        defaultCostPerKg={0}
+        defaultExpanded
+      />,
+    );
+
+    const grams = await screen.findByText('(17.9g)');
+    expect(grams.parentElement).toHaveTextContent('ASA');
+    expect(screen.getByText('(89.4g)').parentElement).toHaveTextContent('PA6-CF');
+  });
+
   it('pins the gram usage so a long name cannot clip it (#2669)', async () => {
     // Long resolved name + gram usage. The name must be the truncating
     // element; the "(25g)" must sit in its own non-truncating, shrink-0 span
