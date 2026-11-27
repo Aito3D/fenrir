@@ -1927,6 +1927,7 @@ export default {
       bulkUpdatedSome: '{{updated}} jobb uppdaterade; {{skipped}} kunde inte ändras',
       bulkUpdatedNone: 'Inga jobb uppdaterades',
       bulkCancelled: 'Avbröt {{count}} post(er)',
+      bulkCancelledSome: '{{cancelled}} jobb avbrutna; {{failed}} kunde inte avbrytas',
       bulkCancelFailed: 'Kunde inte avbryta poster',
       duplicated: 'Lade till {{count}} jobb sist i kön',
       duplicateFailed: 'Det gick inte att duplicera objekten',

@@ -3120,6 +3120,7 @@ export default {
       bulkUpdatedSome: 'Обновлено заданий: {{updated}}; {{skipped}} изменить не удалось',
       bulkUpdatedNone: 'Ни одно задание не обновлено',
       bulkCancelled: "Отменено заданий: {{count}}",
+      bulkCancelledSome: 'Отменено заданий: {{cancelled}}; не удалось отменить: {{failed}}',
       bulkCancelFailed: "Не удалось отменить задания",
       duplicated: 'Добавлено заданий в конец очереди: {{count}}',
       duplicateFailed: 'Не удалось дублировать элементы',

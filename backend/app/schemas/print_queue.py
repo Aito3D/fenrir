@@ -128,7 +128,7 @@ class PrintQueueItemCreate(BaseModel):
     # Auto-print G-code injection
     gcode_injection: bool = False
     # Batch: create multiple copies (creates a batch if > 1)
-    quantity: int = 1
+    quantity: int = Field(default=1, le=999)
     # Existing batch to add this item into. When set, the item's batch_id is
     # populated on insert so the queue UI groups it with its siblings. Used by
     # the multi-plate auto-batch flow and by the "Group as batch" action.
@@ -162,7 +162,6 @@ class PrintQueueItemUpdate(IgnoresNullForRequiredColumns):
     target_model: str | None = None  # Target printer model (mutually exclusive with printer_id)
     target_location: str | None = None  # Target location filter (only used with target_model)
     filament_overrides: list[dict] | None = None  # Filament overrides for model-based assignment
-    position: int | None = None
     scheduled_time: NaiveUTCDatetime = None
     require_previous_success: bool | None = None
     auto_off_after: bool | None = None

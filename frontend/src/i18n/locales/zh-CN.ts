@@ -3184,6 +3184,7 @@ export default {
       bulkUpdatedSome: '已更新 {{updated}} 个任务；{{skipped}} 个无法更改',
       bulkUpdatedNone: '没有更新任何任务',
       bulkCancelled: '已取消 {{count}} 个项目',
+      bulkCancelledSome: '已取消 {{cancelled}} 个任务；{{failed}} 个无法取消',
       bulkCancelFailed: '批量取消项目失败',
       duplicated: '已将 {{count}} 个任务添加到队列末尾',
       duplicateFailed: '复制失败',

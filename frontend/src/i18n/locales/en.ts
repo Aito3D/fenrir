@@ -3206,6 +3206,7 @@ export default {
       bulkUpdatedSome: 'Updated {{updated}} job(s); {{skipped}} could not be changed',
       bulkUpdatedNone: 'No jobs were updated',
       bulkCancelled: 'Cancelled {{count}} item(s)',
+      bulkCancelledSome: 'Cancelled {{cancelled}} job(s); {{failed}} could not be cancelled',
       bulkCancelFailed: 'Failed to cancel items',
       duplicated: 'Added {{count}} job(s) to the end of the queue',
       duplicateFailed: 'Failed to duplicate items',

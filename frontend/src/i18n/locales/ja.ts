@@ -3183,6 +3183,7 @@ export default {
       bulkUpdatedSome: '{{updated}} 件のジョブを更新しました。{{skipped}} 件は変更できませんでした',
       bulkUpdatedNone: '更新されたジョブはありません',
       bulkCancelled: '{{count}}件のアイテムをキャンセルしました',
+      bulkCancelledSome: '{{cancelled}} 件のジョブをキャンセルしました。{{failed}} 件はキャンセルできませんでした',
       bulkCancelFailed: 'アイテムのキャンセルに失敗しました',
       duplicated: 'キューの末尾に{{count}}件追加しました',
       duplicateFailed: '複製に失敗しました',

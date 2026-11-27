@@ -152,3 +152,96 @@ async def test_copies_of_a_model_job_wait_for_any_printer_of_the_model(
         assert (copy.printer_id, copy.target_model) == (None, "X1C")
         assert _resolved(copy) == (None, False, None, None)
         assert (copy.plate_id, copy.use_ams) == (2, False)
+
+
+async def _patch(async_client: AsyncClient, item_id: int, **body):
+    return await async_client.patch(f"/api/v1/queue/{item_id}", json=body)
+
+
+async def test_patch_of_a_printing_item_is_refused_and_row_unchanged(
+    async_client: AsyncClient, db_session, printer_factory, archive_factory
+):
+    a, b = await printer_factory(name="A"), await printer_factory(name="B")
+    a_id, b_id = a.id, b.id
+    item_id = await _item(db_session, a_id, (await archive_factory(a_id)).id)
+    (await _row(db_session, item_id)).status = "printing"
+    await db_session.commit()
+
+    response = await _patch(async_client, item_id, printer_id=b_id)
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == "Can only update pending items"
+    item = await _row(db_session, item_id)
+    assert (item.status, item.printer_id) == ("printing", a_id)
+
+
+async def test_patch_of_a_dispatching_item_is_a_409_and_row_unchanged(
+    async_client: AsyncClient, db_session, printer_factory, archive_factory
+):
+    from datetime import datetime, timezone
+
+    a, b = await printer_factory(name="A"), await printer_factory(name="B")
+    a_id, b_id = a.id, b.id
+    item_id = await _item(db_session, a_id, (await archive_factory(a_id)).id, dispatching_at=datetime.now(timezone.utc))
+
+    response = await _patch(async_client, item_id, printer_id=b_id)
+
+    assert response.status_code == 409
+    assert response.json()["detail"] == "Item is being dispatched — cancel it first to make changes"
+    item = await _row(db_session, item_id)
+    assert item.printer_id == a_id
+    assert _resolved(item) == tuple(RESOLVED_FOR_A.values())
+
+
+async def test_patch_with_printer_and_target_model_together_is_refused(
+    async_client: AsyncClient, db_session, printer_factory, archive_factory
+):
+    a = await printer_factory(name="A")
+    a_id = a.id
+    item_id = await _item(db_session, a_id, (await archive_factory(a_id)).id)
+
+    response = await _patch(async_client, item_id, target_model="X1C")
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == "Cannot specify both printer_id and target_model"
+    item = await _row(db_session, item_id)
+    assert (item.printer_id, item.target_model) == (a_id, None)
+
+
+async def test_patch_to_an_unknown_printer_is_refused(
+    async_client: AsyncClient, db_session, printer_factory, archive_factory
+):
+    a = await printer_factory(name="A")
+    a_id = a.id
+    item_id = await _item(db_session, a_id, (await archive_factory(a_id)).id)
+
+    response = await _patch(async_client, item_id, printer_id=999999)
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == "Printer not found"
+    assert (await _row(db_session, item_id)).printer_id == a_id
+
+
+async def test_patch_to_a_model_with_no_active_printer_is_refused(
+    async_client: AsyncClient, db_session, printer_factory, archive_factory
+):
+    a = await printer_factory(name="A", model="X1C")
+    a_id = a.id
+    item_id = await _item(db_session, a_id, (await archive_factory(a_id)).id, ams_mapping=None)
+    item = await _row(db_session, item_id)
+    item.printer_id = None
+    await db_session.commit()
+
+    response = await _patch(async_client, item_id, target_model="P1S")
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == "No active printers for model: P1S"
+    item = await _row(db_session, item_id)
+    assert (item.printer_id, item.target_model) == (None, None)
+
+
+async def test_patch_of_an_unknown_item_is_404(async_client: AsyncClient):
+    response = await _patch(async_client, 999999, priority=1)
+
+    assert response.status_code == 404
+    assert response.json()["detail"] == "Queue item not found"

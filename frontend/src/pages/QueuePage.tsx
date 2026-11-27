@@ -1854,6 +1854,16 @@ const HISTORY_PAGE_SIZE = 50;
 const ACTIVE_STATUSES = ['pending', 'printing', 'skipped'];
 const EMPTY_QUEUE: PrintQueueItem[] = [];
 
+// Positions are one sequence across every pending job, so a reorder of a filtered
+// view hands the visible jobs the positions they already occupy (hidden jobs keep
+// their place). The reorder route rejects duplicate positions in one request, so
+// two visible jobs that share a position are separated by pushing the later one up.
+function reorderUpdates(reordered: PrintQueueItem[]) {
+  const slots = reordered.map((i) => i.position).sort((a, b) => a - b);
+  for (let i = 1; i < slots.length; i++) slots[i] = Math.max(slots[i], slots[i - 1] + 1);
+  return reordered.map((item, index) => ({ id: item.id, position: slots[index] }));
+}
+
 export function QueuePage() {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
@@ -2196,15 +2206,25 @@ export function QueuePage() {
 
   const bulkCancelMutation = useMutation({
     mutationFn: async (ids: number[]) => {
+      let cancelled = 0;
+      let failed = 0;
+      // One at a time, in order: the backend takes a queue lock per cancel.
       for (const id of ids) {
-        await api.cancelQueueItem(id);
+        try {
+          await api.cancelQueueItem(id);
+          cancelled += 1;
+        } catch {
+          failed += 1;
+        }
       }
-      return ids.length;
+      if (failed > 0 && cancelled === 0) throw new Error('bulk cancel failed');
+      return { cancelled, failed };
     },
-    onSuccess: (count) => {
+    onSuccess: ({ cancelled, failed }) => {
       queryClient.invalidateQueries({ queryKey: ['queue'] });
       setSelectedItems([]);
-      showToast(t('queue.toast.bulkCancelled', { count }));
+      if (failed > 0) showToast(t('queue.toast.bulkCancelledSome', { cancelled, failed }), 'error');
+      else showToast(t('queue.toast.bulkCancelled', { count: cancelled }));
     },
     onError: () => showToast(t('queue.toast.bulkCancelFailed'), 'error'),
   });
@@ -2602,11 +2622,7 @@ export function QueuePage() {
       ...remaining.slice(insertAt),
     ];
 
-    const updates = reordered.map((item, index) => ({
-      id: item.id,
-      position: index + 1,
-    }));
-    reorderMutation.mutate(updates);
+    reorderMutation.mutate(reorderUpdates(reordered));
   };
 
   // Group pending items by batch_id. Items with batch_id null render as
@@ -2642,6 +2658,8 @@ export function QueuePage() {
     hasPermission('queue:reorder') &&
     pendingSortBy === 'position' &&
     !settings?.queue_shortest_first;
+  // A descending position sort shows the list reversed, so a slot swap would renumber it wrongly.
+  const canReorderNow = canReorderManually && pendingSortAsc;
 
   const rowItemIds = (row: QueueRow): number[] =>
     row.kind === 'item' ? [row.item.id] : row.items.map((i) => i.id);
@@ -2679,9 +2697,7 @@ export function QueuePage() {
       ...movingItems,
       ...remaining.slice(insertAt),
     ];
-    reorderMutation.mutate(
-      reordered.map((item, index) => ({ id: item.id, position: index + 1 })),
-    );
+    reorderMutation.mutate(reorderUpdates(reordered));
   };
 
   // Build up/down thunks for the row at `idx` within its displayed sibling
@@ -2691,7 +2707,7 @@ export function QueuePage() {
     rows: QueueRow[],
     idx: number,
   ): { onMoveUp?: () => void; onMoveDown?: () => void } => {
-    if (!canReorderManually) return {};
+    if (!canReorderNow) return {};
     const moving = rowItemIds(rows[idx]);
     const onMoveUp =
       idx > 0
@@ -3178,7 +3194,7 @@ export function QueuePage() {
               </div>
 
               <DndContext
-                sensors={sensors}
+                sensors={canReorderNow ? sensors : []}
                 collisionDetection={closestCenter}
                 onDragStart={handleDragStart}
                 onDragEnd={handleDragEnd}
@@ -3209,7 +3225,7 @@ export function QueuePage() {
                           etaNow={etaNow}
                           aggregateForRows={aggregateForRows}
                           {...rowMovers(groupedRows, idx)}
-                          onMoveBlock={canReorderManually ? moveBlockRelativeTo : undefined}
+                          onMoveBlock={canReorderNow ? moveBlockRelativeTo : undefined}
                         />
                       ))}
                     </div>
@@ -3249,7 +3265,7 @@ export function QueuePage() {
                                   etaNow={etaNow}
                                   aggregateForRows={aggregateForRows}
                                   {...rowMovers(bucket.rows, idx)}
-                                  onMoveBlock={canReorderManually ? moveBlockRelativeTo : undefined}
+                                  onMoveBlock={canReorderNow ? moveBlockRelativeTo : undefined}
                                 />
                               ))}
                             </div>

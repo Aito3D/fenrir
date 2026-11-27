@@ -237,3 +237,116 @@ async def test_duplicating_needs_queue_create(async_client, printer_factory, arc
     )
 
     assert response.status_code == 403
+
+
+async def _count_items() -> int:
+    async with _database_module.async_session() as session:
+        return len((await session.execute(select(PrintQueueItem.id))).scalars().all())
+
+
+async def _assert_refused_without_a_copy(async_client, item_id: int, headers: dict | None = None):
+    before = await _count_items()
+    body = await _duplicate(async_client, [item_id], headers)
+    assert body == {"created_ids": [], "skipped_count": 1}
+    assert await _count_items() == before
+
+
+async def test_a_job_on_a_printer_outside_the_callers_scope_is_not_copied(
+    async_client, db_session, printer_factory, archive_factory
+):
+    from backend.tests.integration.test_projects_batches_scope import _member
+
+    mine, other = await printer_factory(name="Mine"), await printer_factory(name="Other")
+    archive = await archive_factory(other.id)
+    item = await _item(db_session, printer_id=other.id, archive_id=archive.id)
+    headers, _admin = await _member(async_client, [mine.id])
+
+    await _assert_refused_without_a_copy(async_client, item.id, headers)
+
+
+async def test_a_job_whose_archive_is_gone_is_not_copied(async_client, db_session, printer_factory):
+    printer = await printer_factory()
+    item = await _item(db_session, printer_id=printer.id, archive_id=999999)
+
+    await _assert_refused_without_a_copy(async_client, item.id)
+
+
+async def test_a_job_whose_archive_is_deleted_is_not_copied(async_client, db_session, printer_factory, archive_factory):
+    printer = await printer_factory()
+    archive = await archive_factory(printer.id, deleted_at=datetime.now())
+    item = await _item(db_session, printer_id=printer.id, archive_id=archive.id)
+
+    await _assert_refused_without_a_copy(async_client, item.id)
+
+
+async def test_a_job_with_a_deleted_library_file_is_not_copied(async_client, db_session, printer_factory):
+    printer = await printer_factory()
+    library_file = await _library_file(db_session, "trashed.3mf")
+    library_file.deleted_at = datetime.now()
+    await db_session.commit()
+    item = await _item(db_session, printer_id=printer.id, library_file_id=library_file.id)
+
+    await _assert_refused_without_a_copy(async_client, item.id)
+
+
+@pytest.mark.parametrize("missing", ["archives:read_all", "archives:reprint_all"])
+async def test_a_job_whose_archive_the_caller_cannot_queue_is_not_copied(
+    async_client, db_session, printer_factory, archive_factory, missing
+):
+    printer = await printer_factory(name="Lab")
+    archive = await archive_factory(printer.id)
+    admin = await review._admin_token(async_client)
+    student, student_id = await review._user(
+        async_client, admin, "student", [p for p in review.STUDENT if p != missing]
+    )
+    item = await _item(db_session, printer_id=printer.id, archive_id=archive.id, created_by_id=student_id)
+
+    await _assert_refused_without_a_copy(async_client, item.id, review._auth(student))
+
+
+# Fenrir: a copy of a job linked to an Aito task credits that task, so it needs aito:read
+# (user-approved behavior change, T-027).
+async def _link_aito_task(item_id: int, task_id: int | None) -> None:
+    async with _database_module.async_session() as session:
+        (await session.get(PrintQueueItem, item_id)).aito_task_id = task_id
+        await session.commit()
+
+
+async def _aito_duplicate(async_client, printer_factory, archive_factory, permissions, *, task_id=7):
+    printer = await printer_factory(name="Lab")
+    archive = await archive_factory(printer.id)
+    admin = await review._admin_token(async_client)
+    user, _ = await review._user(async_client, admin, "worker", permissions)
+    item = await review._queue(async_client, review._auth(user), printer.id, archive.id)
+    await _link_aito_task(item["id"], task_id)
+    return await _duplicate(async_client, [item["id"]], review._auth(user))
+
+
+async def test_a_job_linked_to_an_aito_task_is_not_copied_without_aito_read(
+    async_client, printer_factory, archive_factory
+):
+    body = await _aito_duplicate(async_client, printer_factory, archive_factory, review.STUDENT)
+    assert body == {"created_ids": [], "skipped_count": 1}
+
+
+async def test_a_job_linked_to_an_aito_task_is_copied_with_aito_read(async_client, printer_factory, archive_factory):
+    body = await _aito_duplicate(async_client, printer_factory, archive_factory, [*review.STUDENT, "aito:read"])
+    assert body["skipped_count"] == 0
+    (copy_id,) = body["created_ids"]
+    assert (await _load(copy_id)).aito_task_id == 7
+
+
+async def test_a_job_without_an_aito_task_is_copied_without_aito_read(async_client, printer_factory, archive_factory):
+    body = await _aito_duplicate(async_client, printer_factory, archive_factory, review.STUDENT, task_id=None)
+    assert body["skipped_count"] == 0
+    assert len(body["created_ids"]) == 1
+
+
+async def test_a_job_linked_to_an_aito_task_is_copied_with_auth_off(async_client, db_session, printer_factory):
+    printer = await printer_factory()
+    original = await _item(
+        db_session, printer_id=printer.id, library_file_id=(await _library_file(db_session, "a.3mf")).id, aito_task_id=7
+    )
+    body = await _duplicate(async_client, [original.id])
+    assert body["skipped_count"] == 0
+    assert (await _load(body["created_ids"][0])).aito_task_id == 7

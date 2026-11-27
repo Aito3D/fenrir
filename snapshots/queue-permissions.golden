@@ -1,0 +1,160 @@
+### exit: 0
+### stdout:
+GET /api/v1/queue/ -> list_queue
+    auth_result: require_ownership_permission.<locals>.checker {"_api_key_ownership": {"all_perm": ["queue:read_all"], "own_perm": ["queue:read_own"]}, "all_perm": ["queue:read_all"], "own_perm": ["queue:read_own"]} <- (HTTPBearer)
+    can_read_aito: probe_permissions_if_auth_enabled.<locals>.checker {"permission_checker": {"perm_strings": ["aito:read"]}} <- (HTTPBearer)
+    printer_scope: get_printer_scope_if_auth_enabled <- (HTTPBearer)
+GET /api/v1/queue/history -> list_queue_history
+    auth_result: require_ownership_permission.<locals>.checker {"_api_key_ownership": {"all_perm": ["queue:read_all"], "own_perm": ["queue:read_own"]}, "all_perm": ["queue:read_all"], "own_perm": ["queue:read_own"]} <- (HTTPBearer)
+    can_read_aito: probe_permissions_if_auth_enabled.<locals>.checker {"permission_checker": {"perm_strings": ["aito:read"]}} <- (HTTPBearer)
+    printer_scope: get_printer_scope_if_auth_enabled <- (HTTPBearer)
+POST /api/v1/queue/history/clear -> clear_queue_history
+    auth_result: require_ownership_permission.<locals>.checker {"_api_key_ownership": {"all_perm": ["queue:delete_all"], "own_perm": ["queue:delete_own"]}, "all_perm": ["queue:delete_all"], "own_perm": ["queue:delete_own"]} <- (HTTPBearer)
+    read_result: require_ownership_permission.<locals>.checker {"_api_key_ownership": {"all_perm": ["queue:read_all"], "own_perm": ["queue:read_own"]}, "all_perm": ["queue:read_all"], "own_perm": ["queue:read_own"]} <- (HTTPBearer)
+    printer_scope: get_printer_scope_if_auth_enabled <- (HTTPBearer)
+POST /api/v1/queue/ -> add_to_queue
+    current_user: require_permission_if_auth_enabled.<locals>.permission_checker {"perm_strings": ["queue:create"]} <- (HTTPBearer)
+    can_read_aito: probe_permissions_if_auth_enabled.<locals>.checker {"permission_checker": {"perm_strings": ["aito:read"]}} <- (HTTPBearer)
+    printer_scope: get_printer_scope_if_auth_enabled <- (HTTPBearer)
+    review_required: get_queue_review_required <- (HTTPBearer)
+    actor: get_request_actor <- (HTTPBearer)
+PATCH /api/v1/queue/bulk -> bulk_update_queue_items
+    auth_result: require_ownership_permission.<locals>.checker {"_api_key_ownership": {"all_perm": ["queue:update_all"], "own_perm": ["queue:update_own"]}, "all_perm": ["queue:update_all"], "own_perm": ["queue:update_own"]} <- (HTTPBearer)
+    printer_scope: get_printer_scope_if_auth_enabled <- (HTTPBearer)
+    actor: get_request_actor <- (HTTPBearer)
+POST /api/v1/queue/duplicate -> duplicate_queue_items
+    current_user: require_permission_if_auth_enabled.<locals>.permission_checker {"perm_strings": ["queue:create"]} <- (HTTPBearer)
+    printer_scope: get_printer_scope_if_auth_enabled <- (HTTPBearer)
+    review_required: get_queue_review_required <- (HTTPBearer)
+    actor: get_request_actor <- (HTTPBearer)
+POST /api/v1/queue/batches -> create_batch
+    current_user: require_permission_if_auth_enabled.<locals>.permission_checker {"perm_strings": ["queue:create"]} <- (HTTPBearer)
+    printer_scope: get_printer_scope_if_auth_enabled <- (HTTPBearer)
+    actor: get_request_actor <- (HTTPBearer)
+PATCH /api/v1/queue/batches/{batch_id} -> update_batch
+    current_user: require_permission_if_auth_enabled.<locals>.permission_checker {"perm_strings": ["queue:update_own"]} <- (HTTPBearer)
+    actor: get_request_actor <- (HTTPBearer)
+    printer_scope: get_printer_scope_if_auth_enabled <- (HTTPBearer)
+POST /api/v1/queue/batches/{batch_id}/dispatch -> dispatch_batch
+    current_user: require_permission_if_auth_enabled.<locals>.permission_checker {"perm_strings": ["queue:create"]} <- (HTTPBearer)
+    printer_scope: get_printer_scope_if_auth_enabled <- (HTTPBearer)
+    review_required: get_queue_review_required <- (HTTPBearer)
+    actor: get_request_actor <- (HTTPBearer)
+POST /api/v1/queue/batches/{batch_id}/ungroup -> ungroup_batch
+    current_user: require_permission_if_auth_enabled.<locals>.permission_checker {"perm_strings": ["queue:update_own"]} <- (HTTPBearer)
+    printer_scope: get_printer_scope_if_auth_enabled <- (HTTPBearer)
+    actor: get_request_actor <- (HTTPBearer)
+GET /api/v1/queue/batches -> list_batches
+    auth_result: require_ownership_permission.<locals>.checker {"_api_key_ownership": {"all_perm": ["queue:read_all"], "own_perm": ["queue:read_own"]}, "all_perm": ["queue:read_all"], "own_perm": ["queue:read_own"]} <- (HTTPBearer)
+    printer_scope: get_printer_scope_if_auth_enabled <- (HTTPBearer)
+GET /api/v1/queue/batches/{batch_id} -> get_batch
+    auth_result: require_ownership_permission.<locals>.checker {"_api_key_ownership": {"all_perm": ["queue:read_all"], "own_perm": ["queue:read_own"]}, "all_perm": ["queue:read_all"], "own_perm": ["queue:read_own"]} <- (HTTPBearer)
+    printer_scope: get_printer_scope_if_auth_enabled <- (HTTPBearer)
+DELETE /api/v1/queue/batches/{batch_id} -> cancel_batch
+    current_user: require_permission_if_auth_enabled.<locals>.permission_checker {"perm_strings": ["queue:delete_all"]} <- (HTTPBearer)
+    printer_scope: get_printer_scope_if_auth_enabled <- (HTTPBearer)
+GET /api/v1/queue/{item_id} -> get_queue_item
+    auth_result: require_ownership_permission.<locals>.checker {"_api_key_ownership": {"all_perm": ["queue:read_all"], "own_perm": ["queue:read_own"]}, "all_perm": ["queue:read_all"], "own_perm": ["queue:read_own"]} <- (HTTPBearer)
+    can_read_aito: probe_permissions_if_auth_enabled.<locals>.checker {"permission_checker": {"perm_strings": ["aito:read"]}} <- (HTTPBearer)
+    printer_scope: get_printer_scope_if_auth_enabled <- (HTTPBearer)
+PATCH /api/v1/queue/{item_id} -> update_queue_item
+    auth_result: require_ownership_permission.<locals>.checker {"_api_key_ownership": {"all_perm": ["queue:update_all"], "own_perm": ["queue:update_own"]}, "all_perm": ["queue:update_all"], "own_perm": ["queue:update_own"]} <- (HTTPBearer)
+    can_read_aito: probe_permissions_if_auth_enabled.<locals>.checker {"permission_checker": {"perm_strings": ["aito:read"]}} <- (HTTPBearer)
+    printer_scope: get_printer_scope_if_auth_enabled <- (HTTPBearer)
+    actor: get_request_actor <- (HTTPBearer)
+DELETE /api/v1/queue/{item_id} -> delete_queue_item
+    auth_result: require_ownership_permission.<locals>.checker {"_api_key_ownership": {"all_perm": ["queue:delete_all"], "own_perm": ["queue:delete_own"]}, "all_perm": ["queue:delete_all"], "own_perm": ["queue:delete_own"]} <- (HTTPBearer)
+    printer_scope: get_printer_scope_if_auth_enabled <- (HTTPBearer)
+POST /api/v1/queue/reorder -> reorder_queue
+    _: require_permission_if_auth_enabled.<locals>.permission_checker {"perm_strings": ["queue:update_all"]} <- (HTTPBearer)
+    printer_scope: get_printer_scope_if_auth_enabled <- (HTTPBearer)
+POST /api/v1/queue/printer/{printer_id}/resume -> resume_queue_after_failure
+    _: require_printer_permission_if_auth_enabled.<locals>.checker {"permission_checker": {"perm_strings": ["queue:update_all"]}} <- (HTTPBearer)
+POST /api/v1/queue/model/{model}/resume -> resume_model_queue_after_failure
+    _: require_permission_if_auth_enabled.<locals>.permission_checker {"perm_strings": ["queue:update_all"]} <- (HTTPBearer)
+    printer_scope: get_printer_scope_if_auth_enabled <- (HTTPBearer)
+POST /api/v1/queue/{item_id}/cancel -> cancel_queue_item
+    auth_result: require_ownership_permission.<locals>.checker {"_api_key_ownership": {"all_perm": ["queue:update_all"], "own_perm": ["queue:update_own"]}, "all_perm": ["queue:update_all"], "own_perm": ["queue:update_own"]} <- (HTTPBearer)
+    printer_scope: get_printer_scope_if_auth_enabled <- (HTTPBearer)
+POST /api/v1/queue/{item_id}/retry-slice -> retry_queue_item_slice
+    auth_result: require_ownership_permission.<locals>.checker {"_api_key_ownership": {"all_perm": ["queue:update_all"], "own_perm": ["queue:update_own"]}, "all_perm": ["queue:update_all"], "own_perm": ["queue:update_own"]} <- (HTTPBearer)
+    can_read_aito: probe_permissions_if_auth_enabled.<locals>.checker {"permission_checker": {"perm_strings": ["aito:read"]}} <- (HTTPBearer)
+    printer_scope: get_printer_scope_if_auth_enabled <- (HTTPBearer)
+    actor: get_request_actor <- (HTTPBearer)
+POST /api/v1/queue/{item_id}/stop -> stop_queue_item
+    auth_result: require_ownership_permission.<locals>.checker {"_api_key_ownership": {"all_perm": ["queue:update_all"], "own_perm": ["queue:update_own"]}, "all_perm": ["queue:update_all"], "own_perm": ["queue:update_own"]} <- (HTTPBearer)
+    printer_scope: get_printer_scope_if_auth_enabled <- (HTTPBearer)
+POST /api/v1/queue/{item_id}/start -> start_queue_item
+    auth_result: require_ownership_permission.<locals>.checker {"_api_key_ownership": {"all_perm": ["queue:update_all"], "own_perm": ["queue:update_own"]}, "all_perm": ["queue:update_all"], "own_perm": ["queue:update_own"]} <- (HTTPBearer)
+    can_read_aito: probe_permissions_if_auth_enabled.<locals>.checker {"permission_checker": {"perm_strings": ["aito:read"]}} <- (HTTPBearer)
+    printer_scope: get_printer_scope_if_auth_enabled <- (HTTPBearer)
+    actor: get_request_actor <- (HTTPBearer)
+{
+ "apikey_denied": [],
+ "apikey_scope": {
+  "queue:create": "can_queue",
+  "queue:delete_all": "can_queue",
+  "queue:delete_own": "can_queue",
+  "queue:read": "can_read_status",
+  "queue:read_all": "can_read_status",
+  "queue:read_own": "can_read_status",
+  "queue:reorder": "can_queue",
+  "queue:start_unreviewed": "can_queue",
+  "queue:update_all": "can_queue",
+  "queue:update_own": "can_queue"
+ },
+ "categories": {
+  "Queue": [
+   "queue:read",
+   "queue:read_own",
+   "queue:read_all",
+   "queue:create",
+   "queue:update_own",
+   "queue:update_all",
+   "queue:delete_own",
+   "queue:delete_all",
+   "queue:reorder",
+   "queue:start_unreviewed"
+  ]
+ },
+ "groups": {
+  "Administrators": [
+   "queue:read",
+   "queue:read_own",
+   "queue:read_all",
+   "queue:create",
+   "queue:update_own",
+   "queue:update_all",
+   "queue:delete_own",
+   "queue:delete_all",
+   "queue:reorder",
+   "queue:start_unreviewed"
+  ],
+  "Operators": [
+   "queue:read_own",
+   "queue:create",
+   "queue:update_own",
+   "queue:delete_own",
+   "queue:reorder",
+   "queue:start_unreviewed"
+  ],
+  "Viewers": [
+   "queue:read_own"
+  ]
+ },
+ "values": {
+  "QUEUE_CREATE": "queue:create",
+  "QUEUE_DELETE_ALL": "queue:delete_all",
+  "QUEUE_DELETE_OWN": "queue:delete_own",
+  "QUEUE_READ": "queue:read",
+  "QUEUE_READ_ALL": "queue:read_all",
+  "QUEUE_READ_OWN": "queue:read_own",
+  "QUEUE_REORDER": "queue:reorder",
+  "QUEUE_START_UNREVIEWED": "queue:start_unreviewed",
+  "QUEUE_UPDATE_ALL": "queue:update_all",
+  "QUEUE_UPDATE_OWN": "queue:update_own"
+ }
+}
+
+### stderr:
+

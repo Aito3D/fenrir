@@ -1,0 +1,643 @@
+### exit: 0
+### stdout:
+{
+ "exports": {
+  "bulk": [
+   "bulkUpdateToast"
+  ],
+  "filters": [
+   "QUEUE_FILTER_STATUSES",
+   "hasActiveQueueFilter"
+  ],
+  "itemName": [
+   "queueItemDisplayName"
+  ],
+  "order": [
+   "compareQueueOrder",
+   "queueLaneKey"
+  ],
+  "thumbnail": [
+   "queueItemThumbnailUrl"
+  ]
+ },
+ "queueLaneKey": [
+  [
+   1,
+   "printer:1"
+  ],
+  [
+   2,
+   "model:X1C"
+  ],
+  [
+   3,
+   "printer:2"
+  ],
+  [
+   4,
+   "model:X2D"
+  ],
+  [
+   5,
+   "unassigned"
+  ],
+  [
+   6,
+   "printer:0"
+  ],
+  [
+   "noid",
+   "printer:1"
+  ],
+  [
+   8,
+   "unassigned"
+  ],
+  [
+   9,
+   "model:x1c"
+  ]
+ ],
+ "sorted": {
+  "byPosition": [
+   9,
+   2,
+   8,
+   3,
+   4,
+   1,
+   "noid",
+   6,
+   5
+  ],
+  "shortestFirst": [
+   4,
+   8,
+   6,
+   1,
+   "noid",
+   2,
+   9,
+   3,
+   5
+  ],
+  "reversedInputByPosition": [
+   9,
+   2,
+   8,
+   3,
+   4,
+   1,
+   "noid",
+   6,
+   5
+  ],
+  "reversedInputShortestFirst": [
+   4,
+   8,
+   6,
+   1,
+   "noid",
+   2,
+   9,
+   3,
+   5
+  ]
+ },
+ "compareMatrix": {
+  "position": [
+   "=>>><<<>>",
+   "<=<<<<<<>",
+   "<>=<<<<>>",
+   "<>>=<<<>>",
+   ">>>>=>>>>",
+   ">>>><=>>>",
+   ">>>><<=>>",
+   "<><<<<<=>",
+   "<<<<<<<<="
+  ],
+  "sjf": [
+   "=<<><><><",
+   ">=<><>>><",
+   ">>=><>>>>",
+   "<<<=<<<<<",
+   ">>>>=>>>>",
+   "<<<><=<><",
+   "><<><>=><",
+   "<<<><<<=<",
+   ">><><>>>="
+  ]
+ },
+ "compareRaw": [
+  {
+   "a": {
+    "position": 1,
+    "id": 5
+   },
+   "b": {
+    "position": 1,
+    "id": 2
+   },
+   "sjf": false,
+   "result": 3
+  },
+  {
+   "a": {
+    "position": 1
+   },
+   "b": {
+    "position": 1
+   },
+   "sjf": true,
+   "result": 0
+  },
+  {
+   "a": {
+    "position": 2,
+    "print_time_seconds": 10
+   },
+   "b": {
+    "position": 1,
+    "print_time_seconds": 10
+   },
+   "sjf": true,
+   "result": 1
+  },
+  {
+   "a": {
+    "position": 2,
+    "print_time_seconds": 10
+   },
+   "b": {
+    "position": 1,
+    "print_time_seconds": 20
+   },
+   "sjf": true,
+   "result": -10
+  },
+  {
+   "a": {
+    "position": 2,
+    "print_time_seconds": 10
+   },
+   "b": {
+    "position": 1,
+    "print_time_seconds": 20
+   },
+   "sjf": false,
+   "result": 1
+  },
+  {
+   "a": {
+    "position": 9,
+    "been_jumped": true
+   },
+   "b": {
+    "position": 1,
+    "print_time_seconds": 1
+   },
+   "sjf": true,
+   "result": -1
+  },
+  {
+   "a": {
+    "position": 9,
+    "been_jumped": true
+   },
+   "b": {
+    "position": 1,
+    "print_time_seconds": 1
+   },
+   "sjf": false,
+   "result": 8
+  },
+  {
+   "a": {
+    "position": 1,
+    "print_time_seconds": null
+   },
+   "b": {
+    "position": 2,
+    "print_time_seconds": 0
+   },
+   "sjf": true,
+   "result": null
+  },
+  {
+   "a": {
+    "position": 1,
+    "print_time_seconds": null
+   },
+   "b": {
+    "position": 2
+   },
+   "sjf": true,
+   "result": -1
+  }
+ ],
+ "queueItemDisplayName": [
+  {
+   "item": {
+    "archive_name": "Archive name",
+    "library_file_name": "Library name",
+    "archive_id": 1,
+    "library_file_id": 2,
+    "variants": [
+     {
+      "filename": "v.3mf"
+     }
+    ]
+   },
+   "withMore": "Archive name",
+   "bare": "Archive name"
+  },
+  {
+   "item": {
+    "archive_name": "",
+    "library_file_name": "Library name",
+    "archive_id": 1,
+    "library_file_id": 2
+   },
+   "withMore": "Library name",
+   "bare": "Library name"
+  },
+  {
+   "item": {
+    "archive_name": null,
+    "library_file_name": null,
+    "archive_id": 7,
+    "library_file_id": 9
+   },
+   "withMore": "File #7",
+   "bare": "File #7"
+  },
+  {
+   "item": {
+    "archive_id": null,
+    "library_file_id": 9
+   },
+   "withMore": "File #9",
+   "bare": "File #9"
+  },
+  {
+   "item": {
+    "archive_id": 0,
+    "library_file_id": 9
+   },
+   "withMore": "File #0",
+   "bare": "File #0"
+  },
+  {
+   "item": {
+    "archive_id": null,
+    "library_file_id": null
+   },
+   "withMore": "File #null",
+   "bare": "File #null"
+  },
+  {
+   "item": {},
+   "withMore": "File #undefined",
+   "bare": "File #undefined"
+  },
+  {
+   "item": {
+    "variants": []
+   },
+   "withMore": "File #undefined",
+   "bare": "File #undefined"
+  },
+  {
+   "item": {
+    "variants": [
+     {
+      "filename": "one.3mf"
+     }
+    ]
+   },
+   "withMore": "one.3mf",
+   "bare": "one.3mf"
+  },
+  {
+   "item": {
+    "variants": [
+     {
+      "filename": "first.3mf"
+     },
+     {
+      "filename": "second.3mf"
+     }
+    ]
+   },
+   "withMore": "first.3mf (+1 more)",
+   "bare": "first.3mf"
+  },
+  {
+   "item": {
+    "variants": [
+     {
+      "filename": "first.3mf"
+     },
+     {
+      "filename": "second.3mf"
+     },
+     {
+      "filename": "third.3mf"
+     }
+    ],
+    "archive_id": 4
+   },
+   "withMore": "first.3mf (+2 more)",
+   "bare": "first.3mf"
+  },
+  {
+   "item": {
+    "archive_name": "Wins",
+    "variants": [
+     {
+      "filename": "first.3mf"
+     },
+     {
+      "filename": "second.3mf"
+     }
+    ]
+   },
+   "withMore": "Wins",
+   "bare": "Wins"
+  },
+  {
+   "item": {
+    "variants": [
+     {
+      "filename": ""
+     },
+     {
+      "filename": "second.3mf"
+     }
+    ]
+   },
+   "withMore": " (+1 more)",
+   "bare": ""
+  }
+ ],
+ "queueItemThumbnailUrl": [
+  {
+   "item": {
+    "archive_id": 3,
+    "archive_thumbnail": "t.png"
+   },
+   "url": "/api/v1/archives/3/thumbnail?v=1794348000000-0"
+  },
+  {
+   "item": {
+    "archive_id": 3,
+    "archive_thumbnail": "t.png",
+    "plate_id": 2
+   },
+   "url": "/api/v1/archives/3/plate-thumbnail/2"
+  },
+  {
+   "item": {
+    "archive_id": 3,
+    "archive_thumbnail": "t.png",
+    "plate_id": 0
+   },
+   "url": "/api/v1/archives/3/plate-thumbnail/0"
+  },
+  {
+   "item": {
+    "archive_id": 3,
+    "archive_thumbnail": null,
+    "plate_id": 2
+   },
+   "url": null
+  },
+  {
+   "item": {
+    "archive_id": null,
+    "archive_thumbnail": "t.png"
+   },
+   "url": null
+  },
+  {
+   "item": {
+    "archive_id": 0,
+    "archive_thumbnail": "t.png",
+    "plate_id": null
+   },
+   "url": "/api/v1/archives/0/thumbnail?v=1794348000000-0"
+  },
+  {
+   "item": {
+    "library_file_id": 5,
+    "library_file_thumbnail": "l.png"
+   },
+   "url": "/api/v1/library/files/5/thumbnail"
+  },
+  {
+   "item": {
+    "library_file_id": 5,
+    "library_file_thumbnail": "l.png",
+    "plate_id": 4
+   },
+   "url": "/api/v1/library/files/5/plate-thumbnail/4"
+  },
+  {
+   "item": {
+    "library_file_id": 5,
+    "library_file_thumbnail": ""
+   },
+   "url": null
+  },
+  {
+   "item": {
+    "library_file_id": null,
+    "library_file_thumbnail": "l.png"
+   },
+   "url": null
+  },
+  {
+   "item": {
+    "archive_id": 3,
+    "archive_thumbnail": "t.png",
+    "library_file_id": 5,
+    "library_file_thumbnail": "l.png",
+    "plate_id": 1
+   },
+   "url": "/api/v1/archives/3/plate-thumbnail/1"
+  },
+  {
+   "item": {
+    "archive_id": 3,
+    "archive_thumbnail": "",
+    "library_file_id": 5,
+    "library_file_thumbnail": "l.png"
+   },
+   "url": "/api/v1/library/files/5/thumbnail"
+  },
+  {
+   "item": {
+    "archive_id": 3,
+    "library_file_id": 5
+   },
+   "url": null
+  },
+  {
+   "item": {},
+   "url": null
+  }
+ ],
+ "bulkUpdateToast": [
+  {
+   "updated_count": 0,
+   "skipped_count": 0,
+   "toast": {
+    "key": "queue.toast.bulkUpdatedNone",
+    "params": {
+     "updated": 0,
+     "skipped": 0
+    },
+    "type": "error"
+   }
+  },
+  {
+   "updated_count": 0,
+   "skipped_count": 3,
+   "toast": {
+    "key": "queue.toast.bulkUpdatedNone",
+    "params": {
+     "updated": 0,
+     "skipped": 3
+    },
+    "type": "error"
+   }
+  },
+  {
+   "updated_count": 2,
+   "skipped_count": 0,
+   "toast": {
+    "key": "queue.toast.bulkUpdated",
+    "params": {
+     "updated": 2,
+     "skipped": 0
+    },
+    "type": "success"
+   }
+  },
+  {
+   "updated_count": 2,
+   "skipped_count": 1,
+   "toast": {
+    "key": "queue.toast.bulkUpdatedSome",
+    "params": {
+     "updated": 2,
+     "skipped": 1
+    },
+    "type": "warning"
+   }
+  },
+  {
+   "updated_count": 1,
+   "skipped_count": -1,
+   "toast": {
+    "key": "queue.toast.bulkUpdated",
+    "params": {
+     "updated": 1,
+     "skipped": -1
+    },
+    "type": "success"
+   }
+  },
+  {
+   "updated_count": -1,
+   "skipped_count": 0,
+   "toast": {
+    "key": "queue.toast.bulkUpdated",
+    "params": {
+     "updated": -1,
+     "skipped": 0
+    },
+    "type": "success"
+   }
+  }
+ ],
+ "QUEUE_FILTER_STATUSES": [
+  "pending",
+  "slicing",
+  "slice_failed",
+  "printing",
+  "completed",
+  "failed",
+  "skipped",
+  "cancelled"
+ ],
+ "hasActiveQueueFilter": [
+  {
+   "args": [
+    null,
+    "",
+    ""
+   ],
+   "active": false
+  },
+  {
+   "args": [
+    -1,
+    "",
+    ""
+   ],
+   "active": true
+  },
+  {
+   "args": [
+    0,
+    "",
+    ""
+   ],
+   "active": true
+  },
+  {
+   "args": [
+    3,
+    "",
+    ""
+   ],
+   "active": true
+  },
+  {
+   "args": [
+    null,
+    "pending",
+    ""
+   ],
+   "active": true
+  },
+  {
+   "args": [
+    null,
+    "",
+    "Lab"
+   ],
+   "active": true
+  },
+  {
+   "args": [
+    null,
+    " ",
+    ""
+   ],
+   "active": true
+  },
+  {
+   "args": [
+    2,
+    "failed",
+    "Lab"
+   ],
+   "active": true
+  }
+ ]
+}
+
+### stderr:
+

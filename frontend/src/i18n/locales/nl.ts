@@ -1927,6 +1927,7 @@ export default {
       bulkUpdatedSome: '{{updated}} taak/taken bijgewerkt; {{skipped}} konden niet worden gewijzigd',
       bulkUpdatedNone: 'Geen taken bijgewerkt',
       bulkCancelled: '{{count}} item(s) geannuleerd',
+      bulkCancelledSome: '{{cancelled}} taak/taken geannuleerd; {{failed}} kon(den) niet worden geannuleerd',
       bulkCancelFailed: 'Items annuleren mislukt',
       duplicated: '{{count}} taak/taken achteraan de wachtrij toegevoegd',
       duplicateFailed: 'Dupliceren van items mislukt',
