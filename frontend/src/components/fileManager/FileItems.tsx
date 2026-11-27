@@ -40,7 +40,7 @@ import { type SlicerType } from '../../utils/slicer';
 import { isSlicedLibraryFile, isSliceableLibraryFile } from '../../utils/libraryFiles';
 import { isPrintableFilename } from '../projects/files/filesUi';
 import { PrintFacts } from '../PrintFacts';
-import { type TFunction, isPreviewableLibraryFile, isModelPreview, documentPreviewIcon, hasServerThumbnail, isStepType, isSpreadsheetType, stopRowActivation, fileTypeBadgeClass, isImageType } from './fileTypes';
+import { type TFunction, isPreviewableLibraryFile, isModelPreview, documentPreviewIcon, previewMenuItem, hasServerThumbnail, isStepType, isSpreadsheetType, stopRowActivation, fileTypeBadgeClass, isImageType } from './fileTypes';
 
 // The icon a file without a thumbnail shows. Shared by the grid card, the list
 // row and the columns view so the three never disagree about a type.
@@ -166,15 +166,9 @@ export function FileCard({ file, isSelected, isHighlighted, onSelect, onDelete, 
       title: !hasPermission('pipelines:run') ? t('library.runWithPipeline.noPermission') : undefined,
     });
   }
-  if (onPreview && isPreviewableLibraryFile(file)) {
-    const modelPreview = isModelPreview(file);
-    menuItems.push({
-      label: modelPreview ? t('fileManager.preview3d') : t('fileManager.preview.open'),
-      icon: modelPreview ? <Box className="w-4 h-4" /> : documentPreviewIcon(file.file_type),
-      onClick: () => onPreview(file),
-      disabled: !canPreview3d,
-      title: !canPreview3d ? t('fileManager.noPermissionPreview') : undefined,
-    });
+  if (onPreview) {
+    const preview = previewMenuItem(file, onPreview, canPreview3d, t);
+    if (preview) menuItems.push(preview);
   }
   if (onOpenInCalculator) {
     menuItems.push({

@@ -46,6 +46,12 @@ export const EVENT_FLAGS = {
     card: { label: 'notifications.plateClearRequired', desc: 'notifications.plateClearRequiredDescription', default: false },
     badge: { label: 'notifications.plateClear', cls: 'bg-amber-100 dark:bg-amber-500/20 text-amber-700 dark:text-amber-400' },
   },
+  // A plate changer used its last plate (#3575). Defaults ON.
+  on_plate_changer_empty: {
+    modal: { default: true, label: 'notifications.plateChangerEmpty', desc: 'notifications.plateChangerEmptyDescription' },
+    card: { label: 'notifications.plateChangerEmpty', desc: 'notifications.plateChangerEmptyDescription', default: true },
+    badge: { label: 'notifications.plateChanger', cls: 'bg-amber-100 dark:bg-amber-500/20 text-amber-700 dark:text-amber-400' },
+  },
   // Post-print outcome confirmation (#1898). Defaults ON — it only fires for prints that opted in
   // per-job, so the toggle exists to mute a channel.
   on_print_confirm_request: {
@@ -106,6 +112,12 @@ export const EVENT_FLAGS = {
     modal: { default: false, label: 'notifications.lowFilament' },
     card: { label: 'notifications.lowFilamentLabel' },
     badge: { label: 'notifications.lowFilament', cls: 'bg-cyan-100 dark:bg-cyan-500/20 text-cyan-700 dark:text-cyan-400' },
+  },
+  // Sent by the scheduler only while the inventory-colours setting is on (#3590).
+  on_filament_out_of_stock: {
+    modal: { default: false, label: 'notifications.filamentOutOfStock', desc: 'notifications.filamentOutOfStockDescription' },
+    card: { label: 'notifications.filamentOutOfStock', desc: 'notifications.filamentOutOfStockDescription', default: false },
+    badge: { label: 'notifications.outOfStock', cls: 'bg-orange-100 dark:bg-orange-500/20 text-orange-700 dark:text-orange-400' },
   },
   on_maintenance_due: {
     modal: { default: false, label: 'notifications.maintenance' },
@@ -203,7 +215,7 @@ export const MODAL_SECTIONS: { title: string; grid: string | null; keys: ModalFl
     grid: 'grid grid-cols-2 gap-2',
     keys: [
       'on_print_start', 'on_print_complete', 'on_print_failed', 'on_print_stopped', 'on_print_progress',
-      'on_billing_charge_failed', 'on_plate_clear_required', 'on_print_confirm_request', 'on_bed_cooled',
+      'on_billing_charge_failed', 'on_plate_clear_required', 'on_plate_changer_empty', 'on_print_confirm_request', 'on_bed_cooled',
       'on_first_layer_complete', 'on_print_pause_upcoming',
     ],
   },
@@ -212,7 +224,7 @@ export const MODAL_SECTIONS: { title: string; grid: string | null; keys: ModalFl
     grid: 'grid grid-cols-2 gap-2',
     keys: [
       'on_printer_offline', 'on_ha_sensor_alert', 'on_location_ha_sensor_alert', 'on_printer_error',
-      'on_ai_failure_detection', 'on_filament_low', 'on_maintenance_due',
+      'on_ai_failure_detection', 'on_filament_low', 'on_filament_out_of_stock', 'on_maintenance_due',
     ],
   },
   { title: 'notifications.inventoryAlerts', grid: 'grid grid-cols-1 gap-2', keys: ['on_stock_reorder_alert', 'on_stock_break_alert'] },
@@ -223,20 +235,20 @@ export const MODAL_SECTIONS: { title: string; grid: string | null; keys: ModalFl
 /** ntfy (#990) / Gotify (#2743) priority rows, in DOM order. The card lists no priorities. */
 export const MODAL_PRIORITY_KEYS: ModalFlagKey[] = [
   'on_print_start', 'on_print_complete', 'on_print_failed', 'on_print_stopped', 'on_print_progress',
-  'on_billing_charge_failed', 'on_plate_clear_required', 'on_print_confirm_request', 'on_bed_cooled',
+  'on_billing_charge_failed', 'on_plate_clear_required', 'on_plate_changer_empty', 'on_print_confirm_request', 'on_bed_cooled',
   'on_first_layer_complete', 'on_print_pause_upcoming', 'on_printer_offline', 'on_printer_error',
-  'on_ha_sensor_alert', 'on_location_ha_sensor_alert', 'on_ai_failure_detection', 'on_filament_low',
+  'on_ha_sensor_alert', 'on_location_ha_sensor_alert', 'on_ai_failure_detection', 'on_filament_low', 'on_filament_out_of_stock',
   'on_maintenance_due', 'on_stock_reorder_alert', 'on_stock_break_alert',
 ];
 
 /** Card badges in DOM order, split around the Telegram verdict badges that sit between them. */
 export const CARD_BADGES_BEFORE_VERDICT: BadgeFlagKey[] = [
-  'on_print_start', 'on_plate_not_empty', 'on_print_complete', 'on_plate_clear_required', 'on_print_confirm_request',
+  'on_print_start', 'on_plate_not_empty', 'on_print_complete', 'on_plate_clear_required', 'on_plate_changer_empty', 'on_print_confirm_request',
 ];
 export const CARD_BADGES_AFTER_VERDICT: BadgeFlagKey[] = [
   'on_print_failed', 'on_print_stopped', 'on_billing_charge_failed', 'on_aito_payment_received', 'on_print_progress',
   'on_printer_offline', 'on_printer_error', 'on_ai_failure_detection', 'on_ha_sensor_alert',
-  'on_location_ha_sensor_alert', 'on_filament_low', 'on_maintenance_due', 'on_ams_humidity_high',
+  'on_location_ha_sensor_alert', 'on_filament_low', 'on_filament_out_of_stock', 'on_maintenance_due', 'on_ams_humidity_high',
   'on_ams_temperature_high', 'on_ams_drying_suspended', 'on_ams_ht_humidity_high', 'on_ams_ht_temperature_high',
   'on_bed_cooled', 'on_first_layer_complete', 'on_print_pause_upcoming', 'on_app_message',
   'on_print_missing_spool_assignment', 'on_stock_reorder_alert', 'on_stock_break_alert',
@@ -247,7 +259,7 @@ export const CARD_SECTIONS: { title: string; keys: EventFlagKey[] }[] = [
   {
     title: 'notifications.printEvents',
     keys: [
-      'on_print_start', 'on_plate_not_empty', 'on_print_complete', 'on_plate_clear_required',
+      'on_print_start', 'on_plate_not_empty', 'on_print_complete', 'on_plate_clear_required', 'on_plate_changer_empty',
       'on_print_confirm_request', 'on_bed_cooled', 'on_first_layer_complete', 'on_print_pause_upcoming',
       'on_print_missing_spool_assignment', 'on_aito_payment_received', 'on_print_failed', 'on_print_stopped',
       'on_billing_charge_failed', 'on_print_progress',
@@ -257,7 +269,7 @@ export const CARD_SECTIONS: { title: string; keys: EventFlagKey[] }[] = [
     title: 'notifications.printerStatus',
     keys: [
       'on_printer_offline', 'on_printer_error', 'on_ai_failure_detection', 'on_ha_sensor_alert',
-      'on_location_ha_sensor_alert', 'on_filament_low', 'on_maintenance_due',
+      'on_location_ha_sensor_alert', 'on_filament_low', 'on_filament_out_of_stock', 'on_maintenance_due',
     ],
   },
   { title: 'notifications.amsAlarms', keys: ['on_ams_humidity_high', 'on_ams_temperature_high', 'on_ams_drying_suspended'] },

@@ -26,7 +26,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from backend.app.api.routes.cloud import resolve_api_key_cloud_owner
-from backend.app.api.routes.library_variants import normalize_model_name, resolve_variant_model
+from backend.app.api.routes.library_variants import (
+    changeable_group_ids,
+    masked_group_names,
+    normalize_model_name,
+    resolve_variant_model,
+    visible_members_query,
+)
 from backend.app.api.routes.print_queue import (
     _extract_filament_types_from_3mf,
     printed_plate_of_multi_plate_file,
@@ -38,6 +44,7 @@ from backend.app.core.auth import (
     RequestActor,
     RequestPrinterScope,
     require_actor_still_exists,
+    require_clear_plate_permission,
     require_media_token_ownership,
     require_ownership_permission,
     require_permission_if_auth_enabled,
@@ -51,7 +58,14 @@ from backend.app.core.printer_scope import PrinterScope, ensure_model_target_all
 from backend.app.core.row_visibility import visible_row_clauses
 from backend.app.core.tasks import spawn_background_task
 from backend.app.models.archive import PrintArchive
-from backend.app.models.library import LibraryFile, LibraryFileTag, LibraryFolder, LibraryTag, prune_empty_library_tags
+from backend.app.models.library import (
+    FileVariantGroup,
+    LibraryFile,
+    LibraryFileTag,
+    LibraryFolder,
+    LibraryTag,
+    prune_empty_library_tags,
+)
 from backend.app.models.print_log import PrintLogEntry
 from backend.app.models.print_queue import SLICE_WAIT_STATUSES, PrintQueueItem
 from backend.app.models.printer import Printer
@@ -140,6 +154,8 @@ from backend.app.utils.safe_path import PathTraversalError, assert_under, safe_j
 from backend.app.utils.slicer_strings import first_slicer_string
 from backend.app.utils.sql_like import escape_like
 from backend.app.utils.threemf_tools import (
+    REGION_SLOT_KEYS,
+    SUPPORT_SLOT_KEYS,
     carries_gcode,
     default_plate_gcode_name,
     expand_to_project_slots,
@@ -147,6 +163,7 @@ from backend.app.utils.threemf_tools import (
     extract_nozzle_mapping_from_3mf,
     extract_project_filaments_from_3mf,
     is_unsliced_3mf,
+    process_slots_in_config,
     sanitize_project_settings_sentinels,
     select_plate_gcode_name,
     supports_enabled_in_config,
@@ -2576,6 +2593,7 @@ async def list_files(
     direction: SortDirection = "asc",
     limit: int = Query(default=100, ge=1, le=2000),
     offset: int = Query(default=0, ge=0),
+    with_variant_members: bool = False,
     db: AsyncSession = Depends(get_db, scope="function"),
     auth_result: tuple[User | ApiKeyActor | None, bool] = Depends(
         require_ownership_permission(
@@ -2583,6 +2601,7 @@ async def list_files(
             Permission.LIBRARY_READ_OWN,
         )
     ),
+    actor: User | ApiKeyActor | None = RequestActor,
 ):
     """List files, optionally filtered by folder or project.
 
@@ -2620,6 +2639,14 @@ async def list_files(
                Total matching row count is returned in the ``X-Total-Count``
                response header so callers can page through the full result.
         offset: Number of matching rows to skip (paired with ``limit``).
+        with_variant_members: For every variant group present in the result, also
+                 return the visible members that the filters left out (other
+                 folders), flagged ``variant_elsewhere`` and carrying their
+                 ``folder_name``. Every row of a group then reports
+                 ``variant_group_name``, ``variant_position`` and
+                 ``variant_group_editable``, whether the caller may ungroup it
+                 or take a version out of it (#3628). These extra rows come on
+                 top of ``limit`` and are not counted in ``X-Total-Count``.
     """
     if internal_only and external_only:
         raise HTTPException(
@@ -2659,6 +2686,55 @@ async def list_files(
     result = await db.execute(query)
     files = result.scalars().unique().all() if tag_ids else result.scalars().all()
 
+    # Variant group members the filters left out (#3628): one query for the
+    # members, one for the group names, one for their folder names.
+    group_names: dict[int, str | None] = {}
+    editable_groups: set[int] = set()
+    elsewhere_ids: set[int] = set()
+    folder_names: dict[int, str] = {}
+    if with_variant_members:
+        shown_group_ids = {f.variant_group_id for f in files if f.variant_group_id}
+        if shown_group_ids:
+            shown_ids = {f.id for f in files}
+            extra_query = (
+                visible_members_query(shown_group_ids, user, can_read_all)
+                # Fenrir: project revision files are not File Manager files (PDM §6.1).
+                .where(LibraryFile.revision_id.is_(None))
+                .options(selectinload(LibraryFile.created_by), selectinload(LibraryFile.tags))
+                .order_by(LibraryFile.variant_group_id, LibraryFile.variant_position, LibraryFile.id)
+            )
+            # Same internal/external restriction as the list itself.
+            if internal_only:
+                extra_query = extra_query.where(LibraryFile.is_external.is_(False))
+            elif external_only:
+                extra_query = extra_query.where(LibraryFile.is_external.is_(True))
+            extra_members = (await db.execute(extra_query)).scalars().all()
+            extras = [m for m in extra_members if m.id not in shown_ids]
+            elsewhere_ids = {m.id for m in extras}
+            files = [*files, *extras]
+            raw_names = dict(
+                (
+                    await db.execute(
+                        select(FileVariantGroup.id, FileVariantGroup.name).where(
+                            FileVariantGroup.id.in_(shown_group_ids)
+                        )
+                    )
+                ).all()
+            )
+            # A name equal to a file the caller cannot see is withheld (#3628).
+            group_names = await masked_group_names(db, raw_names, user, can_read_all)
+            # Said up front, so the client can disable what the server would refuse.
+            editable_groups = await changeable_group_ids(db, shown_group_ids, actor)
+            extra_folder_ids = {m.folder_id for m in extras if m.folder_id is not None}
+            if extra_folder_ids:
+                folder_names = dict(
+                    (
+                        await db.execute(
+                            select(LibraryFolder.id, LibraryFolder.name).where(LibraryFolder.id.in_(extra_folder_ids))
+                        )
+                    ).all()
+                )
+
     # Get duplicate counts
     hash_counts = {}
     if files:
@@ -2683,14 +2759,13 @@ async def list_files(
     variant_counts: dict[int, int] = {}
     group_ids = {f.variant_group_id for f in files if f.variant_group_id}
     if group_ids:
+        # Only members the caller may see (#3628), so the count never reveals
+        # files an *_OWN user cannot open.
         count_result = await db.execute(
-            select(LibraryFile.variant_group_id, func.count(LibraryFile.id))
-            .where(
-                LibraryFile.variant_group_id.in_(group_ids),
-                LibraryFile.deleted_at.is_(None),
-                # Fenrir: project revision files are not File Manager files (PDM §6.1).
-                LibraryFile.revision_id.is_(None),
-            )
+            visible_members_query(group_ids, user, can_read_all)
+            # Fenrir: project revision files are not File Manager files (PDM §6.1).
+            .where(LibraryFile.revision_id.is_(None))
+            .with_only_columns(LibraryFile.variant_group_id, func.count(LibraryFile.id))
             .group_by(LibraryFile.variant_group_id)
         )
         variant_counts = dict(count_result.all())
@@ -2738,7 +2813,17 @@ async def list_files(
                 tags=[TagSummary(id=t.id, name=t.name) for t in f.tags],
                 variant_group_id=f.variant_group_id,
                 variant_count=variant_counts.get(f.variant_group_id, 0) if f.variant_group_id else 0,
+                variant_group_name=group_names.get(f.variant_group_id)
+                if with_variant_members and f.variant_group_id
+                else None,
+                variant_position=f.variant_position if with_variant_members and f.variant_group_id else None,
+                variant_group_editable=f.variant_group_id in editable_groups
+                if with_variant_members and f.variant_group_id
+                else None,
+                variant_elsewhere=f.id in elsewhere_ids,
+                folder_name=folder_names.get(f.folder_id) if f.id in elsewhere_ids and f.folder_id else None,
                 external_url=f.external_url,
+                clears_plate=bool(f.clears_plate),
                 has_notes=bool(f.notes),
                 photo_count=len(f.photos or []),
             )
@@ -3008,11 +3093,18 @@ async def upload_file(
     file: UploadFile = File(...),
     folder_id: int | None = None,
     generate_stl_thumbnails: bool = Query(default=True),
+    clears_plate: bool = Query(default=False),
     db: AsyncSession = Depends(get_db, scope="function"),
     current_user: User | None = Depends(require_permission_if_auth_enabled(Permission.LIBRARY_UPLOAD)),
     actor: User | ApiKeyActor | None = RequestActor,
 ):
-    """Upload a file to the library."""
+    """Upload a file to the library.
+
+    ``clears_plate`` marks a file that clears its own plate (#3576); switching
+    it on takes printers:clear_plate.
+    """
+    if clears_plate:
+        require_clear_plate_permission(actor)
     try:
         if not file.filename:
             raise HTTPException(status_code=400, detail="Filename is required")
@@ -3161,6 +3253,7 @@ async def upload_file(
             thumbnail_path=to_relative_path(thumbnail_path) if thumbnail_path else None,
             file_metadata=_without_print_name(metadata) if metadata else None,
             created_by_id=actor.id if actor else None,
+            clears_plate=clears_plate,
         )
         db.add(library_file)
         await db.commit()
@@ -3220,6 +3313,7 @@ async def extract_zip_file(
     preserve_structure: bool = Query(default=True),
     create_folder_from_zip: bool = Query(default=False),
     generate_stl_thumbnails: bool = Query(default=True),
+    clears_plate: bool = Query(default=False),
     db: AsyncSession = Depends(get_db, scope="function"),
     current_user: User | None = Depends(require_permission_if_auth_enabled(Permission.LIBRARY_UPLOAD)),
     actor: User | ApiKeyActor | None = RequestActor,
@@ -3234,6 +3328,10 @@ async def extract_zip_file(
         generate_stl_thumbnails: If True, generate thumbnails for STL files
     """
     import tempfile
+
+    # Marking the extracted files as clearing their plate takes printers:clear_plate (#3576)
+    if clears_plate:
+        require_clear_plate_permission(actor)
 
     if not file.filename or not file.filename.lower().endswith(".zip"):
         raise HTTPException(status_code=400, detail="Only ZIP files are supported")
@@ -3551,6 +3649,7 @@ async def extract_zip_file(
                         thumbnail_path=to_relative_path(thumbnail_path) if thumbnail_path else None,
                         file_metadata=_without_print_name(metadata) if metadata else None,
                         created_by_id=actor.id if actor else None,
+                        clears_plate=clears_plate,
                     )
                     db.add(library_file)
                     await db.flush()
@@ -4118,6 +4217,7 @@ async def add_files_to_queue(
                 position=max_position,
                 status="pending",
                 confirm_outcome=confirm_outcome,
+                clears_plate=bool(lib_file.clears_plate),
                 # Without this the row is ownerless, and `queue:read_own` filters
                 # on `created_by_id` — so the user who queued the file could not
                 # see it in their own queue.
@@ -4929,6 +5029,40 @@ def _declined_source_keys(offered: list[DesignOverride], requested: list[str] | 
     return {override.key for override in offered} - set(requested)
 
 
+_PROCESS_SLOT_KEYS = ("enable_support", *SUPPORT_SLOT_KEYS, *REGION_SLOT_KEYS)
+
+
+def _process_filament_slots(process_json: str, source_3mf_bytes: bytes) -> set[int] | None:
+    """The support and region-picker slots of the settings the slice runs with (#3736).
+
+    Starts from the source 3MF's settings for those keys and lets every key the
+    process JSON sets win: the #1881 carry, the design picks and the slice
+    dialog's own settings are all written into it. A standard preset arrives
+    as an ``inherits`` stub without these keys, so the file's values still
+    count there, as before. ``None`` when the process JSON can't be read, and
+    the caller then reads the file alone.
+    """
+    from io import BytesIO
+
+    try:
+        process_cfg = json.loads(process_json)
+    except (TypeError, json.JSONDecodeError):
+        return None
+    if not isinstance(process_cfg, dict):
+        return None
+    merged: dict[str, object] = {}
+    try:
+        with zipfile.ZipFile(BytesIO(source_3mf_bytes), "r") as zf:
+            if "Metadata/project_settings.config" in zf.namelist():
+                src_cfg = json.loads(zf.read("Metadata/project_settings.config").decode("utf-8"))
+                if isinstance(src_cfg, dict):
+                    merged.update({k: src_cfg[k] for k in _PROCESS_SLOT_KEYS if k in src_cfg})
+    except (zipfile.BadZipFile, json.JSONDecodeError, UnicodeDecodeError, OSError, KeyError):
+        pass
+    merged.update({k: process_cfg[k] for k in _PROCESS_SLOT_KEYS if k in process_cfg})
+    return process_slots_in_config(merged)
+
+
 def _patch_process_support_settings(
     process_json: str,
     source_3mf_bytes: bytes,
@@ -5350,8 +5484,15 @@ async def _run_slicer_with_fallback(
     if is_3mf and request.plate != 0:
         from backend.app.services.slicer_3mf_convert import plate_used_slots, substitute_unused_plate_filaments
 
-        filament_jsons = substitute_unused_plate_filaments(primary_bytes, request.plate or 1, filament_jsons)
-        used_slots = plate_used_slots(primary_bytes, request.plate or 1)
+        # The support slots of the settings the slice runs with, not of the
+        # file: a support slot picked in the slice dialog is in no file, and
+        # one the dialog or an unticked design key switched off is still in
+        # it (#3736). The embedded-settings path slices with the file's own.
+        support_slots = None if embedded_mode else _process_filament_slots(presets["process"], primary_bytes)
+        filament_jsons = substitute_unused_plate_filaments(
+            primary_bytes, request.plate or 1, filament_jsons, support_slots
+        )
+        used_slots = plate_used_slots(primary_bytes, request.plate or 1, support_slots)
 
     # Dual-nozzle printers: which extruder each filament prints from. Without
     # a map the CLI puts every filament on one extruder, so the printer swaps
@@ -6458,6 +6599,7 @@ async def get_file(
         last_printed_at=file.last_printed_at,
         notes=file.notes,
         external_url=file.external_url,
+        clears_plate=bool(file.clears_plate),
         photos=list(file.photos or []),
         source_url=file.source_url,
         duplicates=duplicates if duplicates else None,
@@ -6632,6 +6774,7 @@ async def update_file(
             Permission.LIBRARY_UPDATE_OWN,
         )
     ),
+    actor: User | ApiKeyActor | None = RequestActor,
 ):
     """Update a file's metadata."""
     user, can_modify_all = auth_result
@@ -6646,6 +6789,11 @@ async def update_file(
     if not can_modify_all:
         if file.created_by_id != user.id:
             raise HTTPException(status_code=403, detail="You can only update your own files")
+
+    # Switching plate clearing on takes printers:clear_plate (#3576); a file
+    # that already has it keeps it through an edit of its other fields.
+    if data.clears_plate and not file.clears_plate:
+        require_clear_plate_permission(actor)
 
     if data.filename is not None:
         # Bambu printer SD cards are FAT32/exFAT; reject the same set Bambu
@@ -6691,6 +6839,9 @@ async def update_file(
 
     if data.external_url is not None:
         file.external_url = data.external_url.strip() or None
+
+    if data.clears_plate is not None:
+        file.clears_plate = data.clears_plate
 
     await db.commit()
     await db.refresh(file)

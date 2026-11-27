@@ -6,7 +6,7 @@ import { MobileTabs, type MobileTabMeta } from '../../mobile/MobileTabs';
 import { QueueFilterSheet, type QueueFilterSheetProps } from './QueueFilterSheet';
 import { hasActiveQueueFilter } from './queueFilters';
 
-export type QueueTabId = 'queue' | 'batches' | 'history' | 'timeline' | 'pipelines';
+export type QueueTabId = 'queue' | 'todo' | 'batches' | 'history' | 'timeline' | 'pipelines';
 
 export interface QueueTabMeta extends MobileTabMeta<QueueTabId> {
   icon: LucideIcon;

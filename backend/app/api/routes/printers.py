@@ -9,7 +9,7 @@ from pathlib import Path
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import FileResponse, Response
-from sqlalchemy import delete, func, select
+from sqlalchemy import delete, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.background import BackgroundTask
 
@@ -74,8 +74,10 @@ from backend.app.services.bambu_ftp import (
     list_files_result_async,
 )
 from backend.app.services.hms_actions import HMSAction
+from backend.app.services.inventory_stock import inventory_stock
 from backend.app.services.panda_breath import panda_breath_service
 from backend.app.services.pause_eta import next_pause
+from backend.app.services.plate_changer import clear_count_unknown
 from backend.app.services.print_storage import (
     external_storage_warning,
     ftp_probe_paths,
@@ -331,6 +333,42 @@ async def list_usb_cameras(
     return {"cameras": cameras}
 
 
+@router.get("/inventory-filaments")
+async def get_inventory_filaments(
+    _=RequirePermissionIfAuthEnabled(Permission.QUEUE_CREATE, Permission.INVENTORY_READ),
+    db: AsyncSession = Depends(get_db, scope="function"),
+):
+    """Built-in inventory stock per type + colour + variant, for the filament override (#3590).
+
+    It is the inventory's stock, so the caller needs ``inventory:read`` next to
+    ``queue:create`` (an API key: Queue and Read Status), like the inventory's
+    own read routes. Not printer-specific, so no printer scope applies. In
+    Spoolman mode there is no built-in stock: ``inventory_available`` is False
+    and the list empty.
+    """
+    entries = await inventory_stock(db)
+    if entries is None:
+        return {"inventory_available": False, "filaments": []}
+    return {
+        "inventory_available": True,
+        "filaments": [
+            {
+                "type": e.type,
+                "color": e.color,
+                "tray_info_idx": e.tray_info_idx,
+                "subtype": e.subtype,
+                "color_name": e.color_name,
+                "rgba": e.rgba,
+                "extra_colors": e.extra_colors,
+                "effect_type": e.effect_type,
+                "spool_count": e.spool_count,
+                "remaining_grams": e.remaining_grams,
+            }
+            for e in entries
+        ],
+    }
+
+
 @router.get("/available-filaments")
 async def get_available_filaments(
     model: str = Query(..., description="Target printer model"),
@@ -442,11 +480,66 @@ async def update_printer(
 
     ip_changed = "ip_address" in update_data and update_data["ip_address"] != printer.ip_address
 
+    # The display flag is NOT NULL; an explicit null means "unchanged" (#3575)
+    if update_data.get("plate_changer_show_count", True) is None:
+        update_data.pop("plate_changer_show_count")
+
+    # Plate changer count (#3575): keep plates_remaining consistent with the capacity.
+    plates_before = (printer.plate_capacity, printer.plates_remaining)
+    clamp_plates_to: int | None = None
+    if "plate_capacity" in update_data or "plates_remaining" in update_data:
+        capacity = update_data.get("plate_capacity", printer.plate_capacity)
+        sent_remaining = update_data.get("plates_remaining")
+        if capacity is None:
+            update_data["plates_remaining"] = None
+        elif sent_remaining is not None:
+            if sent_remaining > capacity:
+                raise HTTPException(400, "plates_remaining cannot exceed plate_capacity")
+        elif printer.plate_capacity is None or printer.plates_remaining is None:
+            # Just turned on: the changer starts full.
+            update_data["plates_remaining"] = capacity
+        else:
+            # An explicit null with a capacity set means "unchanged", never NULL.
+            update_data.pop("plates_remaining", None)
+            # Clamped in SQL below: a print finishing meanwhile may count down.
+            clamp_plates_to = capacity
+
+    # Only a real user reset clears the "unbooked print" mark. The edit dialog
+    # repeats the unchanged capacity on every save (e.g. a rename), which is not one.
+    count_reset = (
+        "plate_capacity" in update_data and update_data["plate_capacity"] != plates_before[0]
+    ) or update_data.get("plates_remaining") is not None
+
     for field, value in update_data.items():
         setattr(printer, field, value)
 
+    if clamp_plates_to is not None:
+        await db.execute(
+            update(Printer)
+            .where(Printer.id == printer_id, Printer.plates_remaining > clamp_plates_to)
+            .values(plates_remaining=clamp_plates_to)
+            .execution_options(synchronize_session=False)
+        )
+
     await db.commit()
     await db.refresh(printer)
+
+    if count_reset:
+        clear_count_unknown(printer_id)
+
+    if (printer.plate_capacity, printer.plates_remaining) != plates_before:
+        try:
+            await ws_manager.send_printer_plates_changed(printer_id, printer.plates_remaining, printer.plate_capacity)
+        except Exception as e:
+            logger.warning("Failed to broadcast plate changer count for printer %s: %s", printer_id, e)
+
+    # The name the status callbacks publish with is cached at connect: without
+    # this a rename reached MQTT and Home Assistant discovery (#3724) only with
+    # the next reconnect.
+    if "name" in update_data:
+        cached = printer_manager.get_printer(printer_id)
+        if cached is not None:
+            cached.name = printer.name
 
     if access_moved:
         await ws_manager.refresh_printer_scopes()
@@ -549,6 +642,12 @@ async def delete_printer(
 
     printer_manager.disconnect_printer(printer_id)
     wled_manager.remove_printer(printer_id)
+    try:
+        from backend.app.services.mqtt_relay import mqtt_relay
+
+        await mqtt_relay.on_printer_removed(printer.serial_number)
+    except Exception as e:
+        logger.warning("Could not remove printer %s from Home Assistant discovery: %s", printer_id, e)
 
     # Locked from the archive sweep to the commit (PostgreSQL; SQLite's single
     # writer serialises this anyway). A print start adopting or writing an
@@ -3714,6 +3813,35 @@ async def clear_plate(
             await db.commit()
 
     return {"success": True, "message": "Plate cleared, next print will start shortly"}
+
+
+@router.post("/{printer_id}/refill-plates", response_model=PrinterResponse)
+async def refill_plates(
+    printer_id: int,
+    _=RequirePrinterPermissionIfAuthEnabled(Permission.PRINTERS_CLEAR_PLATE),
+    db: AsyncSession = Depends(get_db, scope="function"),
+):
+    """Reset the plate changer count after it was refilled and its bin emptied (#3575)."""
+    result = await db.execute(select(Printer).where(Printer.id == printer_id))
+    printer = result.scalar_one_or_none()
+    if not printer:
+        raise HTTPException(404, "Printer not found")
+    if printer.plate_capacity is None:
+        raise HTTPException(400, "This printer has no plate changer capacity set")
+
+    # Like clear-plate, deliberately not gated on the printer being connected:
+    # it only changes Fenrir-side state.
+    printer.plates_remaining = printer.plate_capacity
+    await db.commit()
+    await db.refresh(printer)
+    clear_count_unknown(printer_id)
+
+    try:
+        await ws_manager.send_printer_plates_changed(printer_id, printer.plates_remaining, printer.plate_capacity)
+    except Exception as e:
+        logger.warning("Failed to broadcast plate changer count for printer %s: %s", printer_id, e)
+
+    return printer
 
 
 @router.post("/{printer_id}/print/pause")

@@ -20,7 +20,7 @@ import type {
 } from '../../api/client';
 import { ContextMenu, type ContextMenuItem } from '../ContextMenu';
 import { formatDate } from '../../utils/date';
-import { FOLDER_DRAG_TYPE } from '../../utils/libraryFolders';
+import { FOLDER_DRAG_TYPE, FILES_DRAG_TYPE } from '../../utils/libraryFolders';
 import { type TFunction } from './fileTypes';
 
 // Folder drag and drop (#3305). The page owns the dragged folder (so drop
@@ -50,7 +50,8 @@ export interface FolderDragProps {
 function useFolderDropTarget(folderDrag: FolderDragProps | undefined, destinationId: number | null) {
   const key = useId();
   if (!folderDrag) return { isOver: false, handlers: {} };
-  const isFolderDrag = (e: DragEvent) => e.dataTransfer.types.includes(FOLDER_DRAG_TYPE);
+  const isFolderDrag = (e: DragEvent) =>
+    e.dataTransfer.types.includes(FOLDER_DRAG_TYPE) || e.dataTransfer.types.includes(FILES_DRAG_TYPE);
   const claim = (e: DragEvent) => {
     e.stopPropagation();
     const accepted = folderDrag.canDropOn(destinationId);

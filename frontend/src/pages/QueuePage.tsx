@@ -66,8 +66,10 @@ import {
   PlayCircle,
   Workflow,
   ThumbsUp,
+  Eraser,
+  ListChecks,
 } from 'lucide-react';
-import { api, ApiError } from '../api/client';
+import { api } from '../api/client';
 import { PipelineRunsView } from './PipelineRunsPage';
 import { type TimeFormat, formatETA, formatDuration, formatRelativeTime, parseUTCDate } from '../utils/date';
 import { getBedTypeInfo } from '../utils/bedType';
@@ -85,6 +87,9 @@ import { ConfirmModal } from '../components/ConfirmModal';
 import { PrintModal } from '../components/PrintModal';
 import { useToast } from '../contexts/ToastContext';
 import { useSliceJobPercent } from '../hooks/useSliceJobPercent';
+import { QueueTodoList } from '../components/QueueTodoList';
+import { useQueueTodo } from '../hooks/useQueueTodo';
+import { useStartQueueItem } from '../hooks/useStartQueueItem';
 import { useAuth } from '../contexts/AuthContext';
 import { QueueStatsBar } from '../components/QueueStatsBar';
 import { useIsMobile } from '../hooks/useIsMobile';
@@ -368,6 +373,7 @@ function BulkEditModal({
   onClose,
   isSaving,
   canControlPrinter,
+  canClearPlate,
   hasGcodeSnippets,
   t,
 }: {
@@ -377,6 +383,8 @@ function BulkEditModal({
   onClose: () => void;
   isSaving: boolean;
   canControlPrinter: boolean;
+  /** Without it plate clearing can be switched off, not on (#3576). */
+  canClearPlate: boolean;
   hasGcodeSnippets: boolean;
   t: (key: string, options?: Record<string, unknown>) => string;
 }) {
@@ -392,6 +400,7 @@ function BulkEditModal({
   const [timelapse, setTimelapse] = useState<boolean | 'unchanged'>('unchanged');
   const [useAms, setUseAms] = useState<boolean | 'unchanged'>('unchanged');
   const [confirmOutcome, setConfirmOutcome] = useState<boolean | 'unchanged'>('unchanged');
+  const [clearsPlate, setClearsPlate] = useState<boolean | 'unchanged'>('unchanged');
   const [nozzleOffsetCali, setNozzleOffsetCali] = useState<CalibrationMode | 'unchanged'>('unchanged');
 
   // Show the dual-nozzle-only toggle when the user has at least one
@@ -413,6 +422,7 @@ function BulkEditModal({
     if (timelapse !== 'unchanged') data.timelapse = timelapse;
     if (useAms !== 'unchanged') data.use_ams = useAms;
     if (confirmOutcome !== 'unchanged') data.confirm_outcome = confirmOutcome;
+    if (clearsPlate !== 'unchanged') data.clears_plate = clearsPlate;
     if (nozzleOffsetCali !== 'unchanged') data.nozzle_offset_cali = nozzleOffsetCali;
     onSave(data);
   };
@@ -420,7 +430,7 @@ function BulkEditModal({
   const hasChanges = printerId !== 'unchanged' || manualStart !== 'unchanged' || autoOffAfter !== 'unchanged' ||
     requirePreviousSuccess !== 'unchanged' || bedLevelling !== 'unchanged' || flowCali !== 'unchanged' ||
     vibrationCali !== 'unchanged' || layerInspect !== 'unchanged' || timelapse !== 'unchanged' || useAms !== 'unchanged' ||
-    confirmOutcome !== 'unchanged' || nozzleOffsetCali !== 'unchanged' || gcodeInjection !== 'unchanged';
+    confirmOutcome !== 'unchanged' || clearsPlate !== 'unchanged' || nozzleOffsetCali !== 'unchanged' || gcodeInjection !== 'unchanged';
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-overlay-in">
@@ -487,6 +497,16 @@ function BulkEditModal({
               <TriStateToggle label={t('queue.bulkEdit.timelapse')} value={timelapse} onChange={setTimelapse} t={t} />
               <TriStateToggle label={t('queue.bulkEdit.useAms')} value={useAms} onChange={setUseAms} t={t} />
               <TriStateToggle label={t('queue.bulkEdit.confirmOutcome')} value={confirmOutcome} onChange={setConfirmOutcome} t={t} />
+              <div title={t('queue.bulkEdit.clearsPlateHint')}>
+                <TriStateToggle
+                  label={t('queue.bulkEdit.clearsPlate')}
+                  value={clearsPlate}
+                  onChange={setClearsPlate}
+                  onDisabledTitle={canClearPlate ? undefined : t('printers.permission.noControl')}
+                  t={t}
+                />
+                <p className="text-[11px] text-bambu-gray mt-0.5">{t('queue.bulkEdit.clearsPlateHint')}</p>
+              </div>
               {hasDualNozzlePrinter && (
                 <CalibrationModeToggle label={t('queue.bulkEdit.nozzleOffsetCali')} value={nozzleOffsetCali} onChange={setNozzleOffsetCali} t={t} />
               )}
@@ -514,12 +534,15 @@ function TriStateToggle({
   value,
   onChange,
   disabled,
+  onDisabledTitle,
   t,
 }: {
   label: string;
   value: boolean | 'unchanged';
   onChange: (val: boolean | 'unchanged') => void;
   disabled?: boolean;
+  /** Set, only "on" is disabled and shows this as its hint. */
+  onDisabledTitle?: string;
   t: (key: string) => string;
 }) {
   return (
@@ -542,8 +565,9 @@ function TriStateToggle({
         </button>
         <button
           onClick={() => onChange(true)}
-          disabled={disabled}
-          className={`px-2 py-1 text-xs rounded ${value === true ? 'bg-bambu-green/20 text-bambu-green' : 'text-bambu-gray hover:text-white'} disabled:cursor-not-allowed`}
+          disabled={disabled || !!onDisabledTitle}
+          title={onDisabledTitle}
+          className={`px-2 py-1 text-xs rounded ${value === true ? 'bg-bambu-green/20 text-bambu-green' : 'text-bambu-gray hover:text-white'} disabled:cursor-not-allowed ${onDisabledTitle ? 'opacity-50' : ''}`}
         >
           {t('common.on')}
         </button>
@@ -1075,6 +1099,28 @@ function SortableQueueItem({
                 {t('queue.badges.confirmOutcome')}
               </span>
             )}
+            {(() => {
+              // Alternatives decide per slice which printer clears its own plate (#3576).
+              // Only a pending job still has an open choice; once it runs or ends, the
+              // item's own flag is the winner's value.
+              const variants = item.status === 'pending' ? (item.variants ?? []) : [];
+              const flagged = variants.filter((v) => v.clears_plate);
+              const partial = variants.length > 1 && flagged.length > 0 && flagged.length < variants.length;
+              if (!partial && !item.clears_plate) return null;
+              return (
+                <span
+                  title={
+                    partial
+                      ? t('queue.badges.clearsPlatePartialTitle', { models: flagged.map((v) => v.target_model).join(' / ') })
+                      : t('queue.badges.clearsPlateTitle')
+                  }
+                  className="text-[10px] sm:text-xs px-1.5 sm:px-2 py-0.5 bg-cyan-50 dark:bg-cyan-500/10 text-cyan-700 dark:text-cyan-300 rounded-full border border-cyan-200 dark:border-cyan-500/20 flex items-center gap-1"
+                >
+                  <Eraser className="w-2.5 h-2.5 sm:w-3 sm:h-3" />
+                  {partial ? t('queue.badges.clearsPlatePartial') : t('queue.badges.clearsPlate')}
+                </span>
+              );
+            })()}
           </div>
 
           {item.status === 'slicing' && <SliceProgress jobId={item.slice_job_id} />}
@@ -1916,9 +1962,10 @@ export function QueuePage() {
     const url = search.get('tab');
     // A link to one batch (/queue?batch=<id>) opens the tab that shows it.
     if (search.get('batch')) return 'batches';
-    if (url === 'pipelines' || url === 'history' || url === 'timeline' || url === 'queue' || url === 'batches') {
+    if (url === 'pipelines' || url === 'history' || url === 'timeline' || url === 'queue' || url === 'batches' || url === 'todo') {
       return url;
     }
+    // The To do tab is not restored: it is empty again once the work is done.
     const saved = localStorage.getItem('queue.activeTab');
     if (saved === 'history' || saved === 'timeline' || saved === 'pipelines' || saved === 'batches') return saved;
     return 'queue';
@@ -2062,6 +2109,7 @@ export function QueuePage() {
     mutationFn: (id: number) => api.cancelQueueItem(id),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['queue'] });
+      queryClient.invalidateQueries({ queryKey: ['queue-todo'] }); // #3615
       showToast(t('queue.toast.cancelled'));
     },
     onError: () => showToast(t('queue.toast.cancelFailed'), 'error'),
@@ -2071,6 +2119,7 @@ export function QueuePage() {
     mutationFn: (id: number) => api.removeFromQueue(id),
     onSuccess: (result) => {
       queryClient.invalidateQueries({ queryKey: ['queue'] });
+      queryClient.invalidateQueries({ queryKey: ['queue-todo'] }); // #3615
       queryClient.invalidateQueries({ queryKey: ['batches'] });
       // The backend keeps an order's last run for a plate, cancelled rather
       // than deleted, so the order can still re-queue it (#2960). Say so:
@@ -2084,63 +2133,16 @@ export function QueuePage() {
     mutationFn: (id: number) => api.stopQueueItem(id),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['queue'] });
+      queryClient.invalidateQueries({ queryKey: ['queue-todo'] }); // #3615
       showToast(t('queue.toast.stopped'));
     },
     onError: () => showToast(t('queue.toast.stopFailed'), 'error'),
   });
 
-  // Filament-deficit confirmation state (#1496). When the backend returns
-  // 409 with `code=insufficient_filament` we stash the deficit + item id
-  // here; the modal at the bottom of the page reads it and the "Print
-  // Anyway" path re-issues the start with `skipFilamentCheck=true`.
-  const [filamentShortConfirm, setFilamentShortConfirm] = useState<{
-    itemId: number;
-    deficit: Array<{
-      slot_id: number;
-      required_grams: number;
-      remaining_grams: number | null;
-      filament_type?: string | null;
-      printer_name?: string | null;
-    }>;
-  } | null>(null);
-
-  // A filament the printer has no tray for at all (#2799): 409 with
-  // `code=unmatched_filament` and the missing filaments. Same "Print Anyway"
-  // path as the deficit above.
-  const [filamentMissingConfirm, setFilamentMissingConfirm] = useState<{
-    itemId: number;
-    missing: string[];
-  } | null>(null);
-
-  const startMutation = useMutation({
-    mutationFn: ({ id, skipFilamentCheck }: { id: number; skipFilamentCheck?: boolean }) =>
-      api.startQueueItem(id, { skipFilamentCheck }),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['queue'] });
-      showToast(t('queue.toast.released'));
-      setFilamentShortConfirm(null);
-      setFilamentMissingConfirm(null);
-    },
-    onError: (error: unknown, variables) => {
-      if (error instanceof ApiError && error.status === 409 && error.code === 'insufficient_filament') {
-        const deficitRaw = (error.detail?.deficit ?? []) as Array<{
-          slot_id: number;
-          required_grams: number;
-          remaining_grams: number | null;
-          filament_type?: string | null;
-          printer_name?: string | null;
-        }>;
-        setFilamentShortConfirm({ itemId: variables.id, deficit: deficitRaw });
-        return;
-      }
-      if (error instanceof ApiError && error.status === 409 && error.code === 'unmatched_filament') {
-        const missing = (error.detail?.missing ?? []) as string[];
-        setFilamentMissingConfirm({ itemId: variables.id, missing });
-        return;
-      }
-      showToast(t('queue.toast.startFailed'), 'error');
-    },
-  });
+  // Start with the filament "Print anyway" confirmations (#1496, #2799),
+  // shared with the "To do" list (#3615).
+  const { startMutation, modals: startModals } = useStartQueueItem();
+  const { data: queueTodo, isLoading: queueTodoLoading } = useQueueTodo();
 
   const reorderMutation = useMutation({
     mutationFn: (items: { id: number; position: number }[]) => api.reorderQueue(items),
@@ -2162,6 +2164,7 @@ export function QueuePage() {
     },
     onSettled: () => {
       queryClient.invalidateQueries({ queryKey: ['queue'] });
+      queryClient.invalidateQueries({ queryKey: ['queue-todo'] }); // #3615
     },
   });
 
@@ -2172,6 +2175,7 @@ export function QueuePage() {
     mutationFn: () => api.clearQueueHistory(historyFilters),
     onSuccess: ({ cleared, kept }) => {
       queryClient.invalidateQueries({ queryKey: ['queue'] });
+      queryClient.invalidateQueries({ queryKey: ['queue-todo'] }); // #3615
       queryClient.invalidateQueries({ queryKey: ['batches'] });
       showToast(
         kept > 0
@@ -2186,6 +2190,7 @@ export function QueuePage() {
     mutationFn: (data: PrintQueueBulkUpdate) => api.bulkUpdateQueue(data),
     onSuccess: (result) => {
       queryClient.invalidateQueries({ queryKey: ['queue'] });
+      queryClient.invalidateQueries({ queryKey: ['queue-todo'] }); // #3615
       setSelectedItems([]);
       setShowBulkEditModal(false);
       const toast = bulkUpdateToast(result);
@@ -2203,6 +2208,7 @@ export function QueuePage() {
     },
     onSuccess: (count) => {
       queryClient.invalidateQueries({ queryKey: ['queue'] });
+      queryClient.invalidateQueries({ queryKey: ['queue-todo'] }); // #3615
       setSelectedItems([]);
       showToast(t('queue.toast.bulkCancelled', { count }));
     },
@@ -2222,7 +2228,10 @@ export function QueuePage() {
       else showToast(t('queue.toast.duplicated', { count: added }));
     },
     onError: () => showToast(t('queue.toast.duplicateFailed'), 'error'),
-    onSettled: () => queryClient.invalidateQueries({ queryKey: ['queue'] }),
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: ['queue'] });
+      queryClient.invalidateQueries({ queryKey: ['queue-todo'] }); // #3615
+    },
   });
   const runDuplicate = duplicateMutation.mutate;
   const duplicateContext = useMemo(
@@ -2239,6 +2248,7 @@ export function QueuePage() {
     mutationFn: (printerId: number) => api.resumeQueueAfterFailure(printerId),
     onSuccess: (result) => {
       queryClient.invalidateQueries({ queryKey: ['queue'] });
+      queryClient.invalidateQueries({ queryKey: ['queue-todo'] }); // #3615
       setResumeConfirm(null);
       showToast(
         t('queue.toast.resumedAfterFailure', {
@@ -2254,6 +2264,7 @@ export function QueuePage() {
     mutationFn: (model: string) => api.resumeModelQueueAfterFailure(model),
     onSuccess: (result) => {
       queryClient.invalidateQueries({ queryKey: ['queue'] });
+      queryClient.invalidateQueries({ queryKey: ['queue-todo'] }); // #3615
       setResumeModelConfirm(null);
       showToast(t('queue.toast.resumedModelAfterFailure', { count: result.acknowledged }));
     },
@@ -2264,6 +2275,7 @@ export function QueuePage() {
     mutationFn: (data: { name: string; item_ids: number[] }) => api.createBatch(data),
     onSuccess: (batch) => {
       queryClient.invalidateQueries({ queryKey: ['queue'] });
+      queryClient.invalidateQueries({ queryKey: ['queue-todo'] }); // #3615
       setSelectedItems([]);
       setGroupBatchModal(false);
       // New batches start expanded so the user sees what they just grouped.
@@ -2277,6 +2289,7 @@ export function QueuePage() {
     mutationFn: (id: number) => api.ungroupBatch(id),
     onSuccess: (result) => {
       queryClient.invalidateQueries({ queryKey: ['queue'] });
+      queryClient.invalidateQueries({ queryKey: ['queue-todo'] }); // #3615
       setUngroupBatchId(null);
       showToast(t('queue.toast.batchUngrouped', { count: result.ungrouped_count }));
     },
@@ -2888,6 +2901,8 @@ export function QueuePage() {
 
   const tabList: QueueTabMeta[] = [
     { id: 'queue', label: t('queue.tabs.queue'), icon: Clock, count: pendingItems.length + activeItems.length },
+    // #3615: same query as the To do button in the navigation, so the counts agree.
+    { id: 'todo', label: t('queueTodo.title'), icon: ListChecks, count: queueTodo?.count ?? 0 },
     { id: 'batches', label: t('queue.tabs.batches'), icon: Package, count: activeBatchCount },
     { id: 'history', label: t('queue.tabs.history'), icon: ListOrdered, count: historyTotal },
     { id: 'timeline', label: t('queue.tabs.timeline'), icon: GanttChart, count: null },
@@ -2971,6 +2986,18 @@ export function QueuePage() {
   const renderTab = (tab: QueueTabId): ReactNode => {
     if (tab === 'pipelines') return <PipelineRunsView />;
     if (tab === 'batches') return <BatchOrdersView hasPermission={hasPermission} t={t} focusBatchId={focusBatchId} />;
+    if (tab === 'todo') {
+      // #3615: everything the queue waits on, grouped by printer.
+      if (queueTodoLoading) return <div className="text-center py-12 text-bambu-gray">{t('common.loading')}</div>;
+      return queueTodo && queueTodo.count > 0 && queueTodo.groups.some((group) => group.entries.length > 0) ? (
+        <QueueTodoList todo={queueTodo} onOpenQueue={() => setActiveTab('queue')} />
+      ) : (
+        <Card className="p-12 text-center border-dashed" data-testid="queue-todo-empty">
+          <ListChecks className="w-16 h-16 text-bambu-gray mx-auto mb-4 opacity-50" />
+          <p className="text-bambu-gray max-w-md mx-auto">{t('queueTodo.empty')}</p>
+        </Card>
+      );
+    }
     if (isLoading || (tab === 'history' && historyLoading)) {
       return <SkeletonGrid count={5} gridClassName="grid-cols-1" cardClassName="h-28" />;
     }
@@ -3333,47 +3360,7 @@ export function QueuePage() {
       )}
 
       {/* Confirm Action Modal */}
-      {filamentShortConfirm && (
-        <ConfirmModal
-          title={t('queue.filamentShort.confirmTitle')}
-          message={
-            t('queue.filamentShort.confirmIntro') + '\n\n' +
-            filamentShortConfirm.deficit
-              .map((d) => {
-                const line = t('queue.filamentShort.lineItem', {
-                  slot: d.slot_id,
-                  required: Math.round(d.required_grams),
-                  remaining:
-                    d.remaining_grams == null
-                      ? t('queue.filamentShort.unknown')
-                      : Math.round(d.remaining_grams),
-                });
-                // An "any model" job lists each printer of the model (#3659).
-                return d.printer_name ? `${d.printer_name}: ${line}` : line;
-              })
-              .join('\n')
-          }
-          confirmText={t('queue.filamentShort.printAnyway')}
-          variant="warning"
-          onConfirm={() => {
-            startMutation.mutate({ id: filamentShortConfirm.itemId, skipFilamentCheck: true });
-          }}
-          onCancel={() => setFilamentShortConfirm(null)}
-        />
-      )}
-
-      {filamentMissingConfirm && (
-        <ConfirmModal
-          title={t('queue.filamentMissing.confirmTitle')}
-          message={t('queue.filamentMissing.confirmIntro') + '\n\n' + filamentMissingConfirm.missing.join('\n')}
-          confirmText={t('queue.filamentShort.printAnyway')}
-          variant="warning"
-          onConfirm={() => {
-            startMutation.mutate({ id: filamentMissingConfirm.itemId, skipFilamentCheck: true });
-          }}
-          onCancel={() => setFilamentMissingConfirm(null)}
-        />
-      )}
+      {startModals}
 
       {confirmAction && (
         <ConfirmModal
@@ -3463,6 +3450,7 @@ export function QueuePage() {
           onClose={() => setShowBulkEditModal(false)}
           isSaving={bulkUpdateMutation.isPending}
           canControlPrinter={hasPermission('printers:control')}
+          canClearPlate={hasPermission('printers:clear_plate')}
           hasGcodeSnippets={hasGcodeSnippets(settings)}
           t={t}
         />
@@ -3506,7 +3494,7 @@ export function QueuePage() {
         ? () => setShowClearHistoryConfirm(true)
         : null;
     const filters =
-      activeTab === 'pipelines' || activeTab === 'batches'
+      activeTab === 'pipelines' || activeTab === 'batches' || activeTab === 'todo'
         ? null
         : {
             printers: printers ?? [],
@@ -3539,7 +3527,7 @@ export function QueuePage() {
           onClearHistory={clearHistory}
           renderTab={(tab) => (
             <>
-              {tab !== 'pipelines' && tab !== 'batches' && (
+              {tab !== 'pipelines' && tab !== 'batches' && tab !== 'todo' && (
                 <QueueStatsBar
                   compact
                   activeCount={activeItems.length}
@@ -3601,7 +3589,7 @@ export function QueuePage() {
       </div>
 
       {/* Summary Stats — about the print queue, not pipelines. */}
-      {activeTab !== 'pipelines' && activeTab !== 'batches' && <QueueStatsBar
+      {activeTab !== 'pipelines' && activeTab !== 'batches' && activeTab !== 'todo' && <QueueStatsBar
         activeCount={activeItems.length}
         pendingCount={pendingItems.length}
         totalTime={totalQueueTime}
@@ -3615,7 +3603,7 @@ export function QueuePage() {
       {/* Filters — about the print queue items (printer / status / location).
           The Pipelines tab has its own pipeline + status filters inside the
           dashboard, so this row is hidden when that tab is active. */}
-      {activeTab !== 'pipelines' && activeTab !== 'batches' && (
+      {activeTab !== 'pipelines' && activeTab !== 'batches' && activeTab !== 'todo' && (
       <div className="flex flex-wrap items-center gap-2 sm:gap-4 mb-6">
         <select
           className="px-2 sm:px-3 py-2 text-sm sm:text-base bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none min-w-0 flex-1 sm:flex-none"

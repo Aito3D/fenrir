@@ -47,6 +47,7 @@ import { SpoolCatalogSettings } from '../components/SpoolCatalogSettings';
 import { ThreeDfpSettings } from '../components/ThreeDfpSettings';
 import { ColorCatalogSettings } from '../components/ColorCatalogSettings';
 import { ProfileDefaultsSettings } from '../components/ProfileDefaultsSettings';
+import { LabelPrinterSettings } from '../components/LabelPrinterSettings';
 import { ExternalLinksSettings } from '../components/ExternalLinksSettings';
 import { VirtualPrinterList } from '../components/VirtualPrinterList';
 import { SpoolBuddySettings } from '../components/SpoolBuddySettings';
@@ -109,6 +110,7 @@ registerSettingsSearch({ labelKey: 'settings.tempFanPresetsTitle', labelFallback
 registerSettingsSearch({ labelKey: 'settings.staggeredStart', labelFallback: 'Staggered Start', tab: 'queue', keywords: 'staggered batch delay start queue group', anchor: 'card-staggered' });
 registerSettingsSearch({ labelKey: 'settings.plateClear', labelFallback: 'Plate-Clear Confirmation', tab: 'queue', keywords: 'plate clear confirm auto queue', anchor: 'card-plate' });
 registerSettingsSearch({ labelKey: 'settings.dispatchOrderTitle', labelFallback: 'Printer Order for Any-Model Jobs', tab: 'queue', keywords: 'printer order any model dispatch pick wear hours least recently used idle priority farm balance', anchor: 'card-dispatch-order' });
+registerSettingsSearch({ labelKey: 'settings.inventoryColoursTitle', labelFallback: 'Inventory Colours in the Filament Override', tab: 'queue', keywords: 'inventory colours colors filament override stock spool print dialog out of stock', anchor: 'card-inventory-colours' }); // (#3590)
 registerSettingsSearch({ labelKey: 'settings.concurrentUploadsTitle', labelFallback: 'Concurrent Uploads', tab: 'queue', keywords: 'concurrent parallel upload transfer ftp queue slow farm simultaneous', anchor: 'card-concurrent-uploads' });
 registerSettingsSearch({ labelKey: 'settings.gcodeInjection', labelFallback: 'G-code Injection', tab: 'queue', keywords: 'gcode injection start end autoprint farmloop swapmod autoclear printflow', anchor: 'card-gcode' });
 registerSettingsSearch({ labelKey: 'settings.slicerCard', labelFallback: 'Slicer', tab: 'queue', keywords: 'slicer orcaslicer bambustudio orca bambu api sidecar url docker preferred', anchor: 'card-slicer' });
@@ -118,6 +120,7 @@ registerSettingsSearch({ labelKey: 'settings.filamentChecks', tab: 'filament', k
 registerSettingsSearch({ labelKey: 'settings.printModal', tab: 'filament', keywords: 'print modal custom mapping', anchor: 'card-printmodal' });
 registerSettingsSearch({ labelKey: 'settings.amsDisplayThresholds', tab: 'filament', keywords: 'ams humidity temperature threshold history retention', anchor: 'card-amsthresholds' });
 registerSettingsSearch({ labelKey: 'inventory.profileDefaults.title', tab: 'filament', keywords: 'profile default k-profile k factor pressure advance slicer preset new spool', anchor: 'card-profiledefaults' });
+registerSettingsSearch({ labelKey: 'settings.labelPrinter.title', labelFallback: 'Label printer', tab: 'filament', keywords: 'label printer brother ql direct print spool labels tape network', anchor: 'card-label-printer' });
 registerSettingsSearch({ labelKey: 'settings.externalUrl', tab: 'network', keywords: 'external url reverse proxy public notification link', anchor: 'card-externalurl' });
 registerSettingsSearch({ labelKey: 'settings.ftpRetry', tab: 'network', keywords: 'ftp retry upload retries backoff', anchor: 'card-ftpretry' });
 registerSettingsSearch({ labelKey: 'settings.homeAssistant', tab: 'network', keywords: 'home assistant ha hass mqtt integration', anchor: 'card-ha' });
@@ -872,6 +875,16 @@ export function SettingsPage() {
     refetchInterval: activeTab === 'network' ? 5000 : false, // Poll every 5s when on Network tab
   });
 
+  // Discovery prefixes the backend refuses (#3724), to say why next to the field.
+  const trimMqttPrefix = (value: string | undefined, fallback: string) =>
+    (value ?? '').trim().replace(/^\/+|\/+$/g, '') || fallback;
+  const mqttDiscoveryPrefix = trimMqttPrefix(localSettings?.mqtt_ha_discovery_prefix, 'homeassistant');
+  const mqttPrefixConflict = trimMqttPrefix(localSettings?.mqtt_topic_prefix, 'fenrir') === mqttDiscoveryPrefix;
+  const mqttPrefixWildcard = /[+#]/.test(mqttDiscoveryPrefix);
+  // What the backend would refuse to save: a wildcard always, equal prefixes only with discovery on.
+  const mqttDiscoveryInvalid =
+    mqttPrefixWildcard ||
+    (localSettings?.mqtt_enabled === true && localSettings?.mqtt_ha_discovery_enabled === true && mqttPrefixConflict);
   const pandaBreathOn = activeTab === 'network' && settings?.mqtt_enabled === true && settings?.panda_breath_enabled === true;
   const { data: pandaBreathStatus } = useQuery({
     queryKey: ['panda-breath-status'],
@@ -1381,6 +1394,8 @@ export function SettingsPage() {
       baseline.mqtt_password !== localSettings.mqtt_password ||
       baseline.mqtt_topic_prefix !== localSettings.mqtt_topic_prefix ||
       baseline.mqtt_use_tls !== localSettings.mqtt_use_tls ||
+      baseline.mqtt_ha_discovery_enabled !== localSettings.mqtt_ha_discovery_enabled ||
+      baseline.mqtt_ha_discovery_prefix !== localSettings.mqtt_ha_discovery_prefix ||
       baseline.panda_breath_enabled !== localSettings.panda_breath_enabled ||
       baseline.external_url !== localSettings.external_url ||
       baseline.ha_enabled !== localSettings.ha_enabled ||
@@ -1416,6 +1431,7 @@ export function SettingsPage() {
       (baseline.queue_loaded_filament_first ?? false) !== (localSettings.queue_loaded_filament_first ?? false) ||
       (baseline.queue_max_wait_hours ?? null) !== (localSettings.queue_max_wait_hours ?? null) ||
       (baseline.model_dispatch_order ?? 'fewest_hours') !== (localSettings.model_dispatch_order ?? 'fewest_hours') ||
+      (baseline.filament_override_inventory ?? false) !== (localSettings.filament_override_inventory ?? false) ||
       (baseline.preheat_enabled ?? false) !== (localSettings.preheat_enabled ?? false) ||
       (baseline.preheat_filament_targets ?? '') !== (localSettings.preheat_filament_targets ?? '') ||
       (baseline.preheat_max_wait_seconds ?? 900) !== (localSettings.preheat_max_wait_seconds ?? 900) ||
@@ -1439,6 +1455,13 @@ export function SettingsPage() {
       (baseline.finance_budget_reset_timezone ?? 'UTC') !== (localSettings.finance_budget_reset_timezone ?? 'UTC');
 
     if (!hasChanges) {
+      return;
+    }
+
+    // The backend refuses these (#3724), and the page sends every field: one
+    // save refused would take the user's other edits down with it. The hint
+    // under the discovery prefix says what to fix; saving resumes once it is.
+    if (mqttDiscoveryInvalid) {
       return;
     }
 
@@ -1521,6 +1544,8 @@ export function SettingsPage() {
         mqtt_password: localSettings.mqtt_password,
         mqtt_topic_prefix: localSettings.mqtt_topic_prefix,
         mqtt_use_tls: localSettings.mqtt_use_tls,
+        mqtt_ha_discovery_enabled: localSettings.mqtt_ha_discovery_enabled,
+        mqtt_ha_discovery_prefix: localSettings.mqtt_ha_discovery_prefix,
         panda_breath_enabled: localSettings.panda_breath_enabled,
         external_url: localSettings.external_url,
         ha_enabled: localSettings.ha_enabled,
@@ -1561,6 +1586,7 @@ export function SettingsPage() {
         // null = no limit; never default to 48 here or clearing the field would not stick (#3587)
         queue_max_wait_hours: localSettings.queue_max_wait_hours ?? null,
         model_dispatch_order: localSettings.model_dispatch_order,
+        filament_override_inventory: localSettings.filament_override_inventory,
         preheat_enabled: localSettings.preheat_enabled,
         preheat_filament_targets: localSettings.preheat_filament_targets,
         preheat_max_wait_seconds: localSettings.preheat_max_wait_seconds,
@@ -1592,7 +1618,7 @@ export function SettingsPage() {
         clearTimeout(saveTimeoutRef.current);
       }
     };
-  }, [localSettings, settings, updateMutation, authEnabled, hasPermission, showToast, t]);
+  }, [localSettings, settings, updateMutation, authEnabled, hasPermission, showToast, t, mqttDiscoveryInvalid]);
 
   const secretsPendingReentry =
     settings && localSettings ? secretsToReenter(settings, localSettings, settingsSecretDestinations(settings)) : [];
@@ -1719,7 +1745,12 @@ export function SettingsPage() {
 
   // Cross-tab search is powered by the module-level registry in lib/settingsSearch.
   // Resolve i18n labels here so language changes take effect without re-registering.
-  const searchIndex = getSettingsSearchEntries().filter(e => (e.tab !== 'wled' || canManageWled) && (e.tab !== 'orders' || canSeeOrdersTab)).map(e => ({
+  // The inventory-colours card is not rendered in Spoolman mode (#3590), so its
+  // entry must not lead there either.
+  const searchIndex = getSettingsSearchEntries()
+    .filter(e => (e.tab !== 'wled' || canManageWled) && (e.tab !== 'orders' || canSeeOrdersTab))
+    .filter(e => e.anchor !== 'card-inventory-colours' || !localSettings?.spoolman_enabled)
+    .map(e => ({
     ...e,
     label: t(e.labelKey, e.labelFallback ?? e.labelKey),
   }));
@@ -3660,6 +3691,48 @@ export function SettingsPage() {
                     <p className="text-xs text-bambu-gray mt-1">
                       {t('settings.topicPrefixHint', { prefix: localSettings.mqtt_topic_prefix || 'fenrir' })}
                     </p>
+                  </div>
+
+                  {/* Home Assistant MQTT discovery (#3724) */}
+                  <div className="pt-3 mt-3 border-t border-bambu-dark-tertiary space-y-2">
+                    <div className="flex items-center justify-between gap-3">
+                      <div>
+                        <p className="text-white text-sm">{t('settings.haDiscovery.title')}</p>
+                        <p className="text-xs text-bambu-gray">{t('settings.haDiscovery.hint')}</p>
+                      </div>
+                      <label className="relative inline-flex items-center cursor-pointer shrink-0">
+                        <input
+                          type="checkbox"
+                          aria-label={t('settings.haDiscovery.title')}
+                          checked={localSettings.mqtt_ha_discovery_enabled ?? false}
+                          onChange={(e) => updateSetting('mqtt_ha_discovery_enabled', e.target.checked)}
+                          className="sr-only peer"
+                        />
+                        <div className="w-11 h-6 bg-bambu-dark-tertiary peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-bambu-green"></div>
+                      </label>
+                    </div>
+                    {localSettings.mqtt_ha_discovery_enabled && (
+                      <div>
+                        <label htmlFor="mqtt-ha-discovery-prefix" className="block text-sm text-bambu-gray mb-1">
+                          {t('settings.haDiscovery.prefix')}
+                        </label>
+                        <input
+                          id="mqtt-ha-discovery-prefix"
+                          type="text"
+                          value={localSettings.mqtt_ha_discovery_prefix ?? 'homeassistant'}
+                          onChange={(e) => updateSetting('mqtt_ha_discovery_prefix', e.target.value)}
+                          placeholder="homeassistant"
+                          className="w-full px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none"
+                        />
+                        {mqttPrefixWildcard || mqttPrefixConflict ? (
+                          <p role="alert" className="text-xs text-red-400 mt-1">
+                            {t(mqttPrefixWildcard ? 'settings.haDiscovery.prefixWildcard' : 'settings.haDiscovery.prefixConflict')}
+                          </p>
+                        ) : (
+                          <p className="text-xs text-bambu-gray mt-1">{t('settings.haDiscovery.prefixHint')}</p>
+                        )}
+                      </div>
+                    )}
                   </div>
 
                   {/* Connection Info */}
@@ -6743,6 +6816,42 @@ export function SettingsPage() {
             </CardContent>
           </Card>
 
+          {/* Inventory colours in the print dialog's filament override (#3590).
+              The print dialog has the same switch; this card is the other way in.
+              Not offered in Spoolman mode: the built-in inventory is not used there. */}
+          {!localSettings.spoolman_enabled && (
+          <Card id="card-inventory-colours">
+            <CardHeader>
+              <h3 className="text-base font-semibold text-white flex items-center gap-2">
+                <Palette className="w-4 h-4 text-bambu-green" />
+                {t('settings.inventoryColoursTitle', 'Inventory Colours in the Filament Override')}
+              </h3>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="flex-1 mr-4">
+                  <p className="text-sm text-white">
+                    {t('settings.inventoryColours', 'Show inventory colours')}
+                  </p>
+                  <p className="text-xs text-bambu-gray mt-1">
+                    {t('settings.inventoryColoursDescription', 'Offers colours from the built-in inventory that no printer has loaded, with their stock. A job waiting for such a colour says when none is left, and the "Filament Out of Stock" notification can be sent.')}
+                  </p>
+                </div>
+                <label className="relative inline-flex items-center cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={localSettings.filament_override_inventory ?? false}
+                    onChange={(e) => updateSetting('filament_override_inventory', e.target.checked)}
+                    aria-label={t('settings.inventoryColours', 'Show inventory colours')}
+                    className="sr-only peer"
+                  />
+                  <div className="w-11 h-6 bg-bambu-dark-tertiary peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-bambu-green"></div>
+                </label>
+              </div>
+            </CardContent>
+          </Card>
+          )}
+
           {/* Concurrent queue uploads (#2555) */}
           <Card id="card-concurrent-uploads">
             <CardHeader>
@@ -7066,6 +7175,7 @@ export function SettingsPage() {
 
           {/* Right Column (2/3) - Spool Catalog + Color Catalog */}
           <div className="lg:w-2/3 space-y-3">
+            <LabelPrinterSettings />
             <ProfileDefaultsSettings />
             <SpoolCatalogSettings />
             <ColorCatalogSettings />

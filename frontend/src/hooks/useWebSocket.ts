@@ -303,6 +303,11 @@ export function useWebSocket() {
     pendingPrinterStatus.current.clear();
 
     updates.forEach((statusData, id) => {
+      // A changed plate-clear gate changes the queue's "to do" list (#3615).
+      const before = queryClient.getQueryData<{ awaiting_plate_clear?: boolean }>(['printerStatus', id]);
+      if ('awaiting_plate_clear' in statusData && before?.awaiting_plate_clear !== statusData.awaiting_plate_clear) {
+        queryClient.invalidateQueries({ queryKey: ['queue-todo'] });
+      }
       queryClient.setQueryData(['printerStatus', id], (old: Record<string, unknown> | undefined) => {
         const merged = { ...old, ...statusData };
         if (merged.wifi_signal == null && old?.wifi_signal != null) {
@@ -394,6 +399,8 @@ export function useWebSocket() {
     queryClient.invalidateQueries({ queryKey: ['slotPresets'] });
     // Both modes' bindings, which the print dialog prices and weighs slots from.
     queryClient.invalidateQueries({ queryKey: ['printer-inventory-remain'] });
+    // Loaded filament can release a job's filament hold (#3615).
+    queryClient.invalidateQueries({ queryKey: ['queue-todo'] });
   }, [queryClient]);
 
   const handleMessage = useCallback((message: WebSocketMessage) => {
@@ -412,6 +419,7 @@ export function useWebSocket() {
         // A queued job just left "pending": the sidebar badge follows. Debounced
         // like the archive refresh below: a batch starts several jobs in a row.
         debouncedInvalidate('queue');
+        queryClient.invalidateQueries({ queryKey: ['queue-todo'] });
         break;
 
       case 'missing_spool_assignment': {
@@ -453,6 +461,9 @@ export function useWebSocket() {
         debouncedInvalidate('archive');
         debouncedInvalidate('archive-runs');
         debouncedInvalidate('calendar-runs');
+        // Last: these refreshes run 500 ms apart, and the fork's sidebar badge
+        // ('queue') keeps its place in the line (#3615 put this one first).
+        debouncedInvalidate('queue-todo');
         break;
 
       case 'print_confirm_request': {
@@ -534,6 +545,13 @@ export function useWebSocket() {
         // The backend fetched a newer feed: re-read the list so the sidebar dot
         // and the banner appear without a reload. The event says nothing itself.
         debouncedInvalidate('announcements');
+        break;
+
+      case 'printer_plates_changed':
+        // A plate changer count moved: a plate was used, or it was refilled (#3575).
+        debouncedInvalidate('printers');
+        // An empty plate changer is an entry of the To do list (#3615).
+        debouncedInvalidate('queue-todo');
         break;
 
       case 'printer_locations_changed':
@@ -726,16 +744,23 @@ export function useWebSocket() {
         // them. One per item, so a batch dispatch is a burst: coalesced into a
         // single refetch rather than N cancel-and-restart cycles.
         debouncedInvalidate('queue');
+        queryClient.invalidateQueries({ queryKey: ['queue-todo'] });
         window.dispatchEvent(new CustomEvent('fenrir:dispatch-toast', { detail: message }));
         break;
       case 'queue_item_uploading':
       case 'queue_item_upload_progress':
+        // Progress ticks many times a second and change nothing the to-do
+        // list shows (#3615); only the transitions do.
+        if (message.type !== 'queue_item_upload_progress') {
+          queryClient.invalidateQueries({ queryKey: ['queue-todo'] });
+        }
         window.dispatchEvent(new CustomEvent('fenrir:dispatch-toast', { detail: message }));
         break;
       // Every queue / pending-upload write route announces itself (services/queue_events.py),
       // so the sidebar badges no longer need a 5 s poll; Layout keeps a 60 s fallback.
       case 'queue_changed':
         queryClient.invalidateQueries({ queryKey: ['queue'] });
+        queryClient.invalidateQueries({ queryKey: ['queue-todo'] });
         break;
       case 'pending_uploads_changed':
         queryClient.invalidateQueries({ queryKey: ['pending-uploads'] });

@@ -6,6 +6,8 @@ import { useTheme } from '../contexts/ThemeContext';
 import { InstallAppButton } from './InstallAppButton';
 import { NotificationBell } from './NotificationBell';
 import { SwitchbarPopover } from './SwitchbarPopover';
+import { QueueTodoLauncher } from './QueueTodoLauncher';
+import { useQueueTodoAutoRefresh } from '../hooks/useQueueTodo';
 import { useQuery, useQueries } from '@tanstack/react-query';
 import { api, supportApi, pendingUploadsApi, type Permission } from '../api/client';
 import { getIconByName } from './IconPicker';
@@ -311,6 +313,7 @@ export function Layout() {
     refetchOnWindowFocus: true,
   });
   const pendingQueueCount = queueItems?.length ?? 0;
+  useQueueTodoAutoRefresh(); // #3615: the to-do list follows the queue poll
 
   // Fetch pending uploads count for archive badge (virtual printer review items)
   const { data: pendingUploadsData } = useQuery({
@@ -664,7 +667,9 @@ export function Layout() {
               {t(topBarTitleKey)}
             </span>
           )}
-          <div className="ml-auto -mr-2">
+          <div className="ml-auto -mr-2 flex items-center">
+            {/* What the queue waits on (#3615) */}
+            <QueueTodoLauncher />
             <NotificationBell />
           </div>
         </header>
@@ -856,6 +861,7 @@ export function Layout() {
                     )}
                   </div>
                 )}
+                {!isSidebarCompact && <QueueTodoLauncher sidebarExpanded />}
                 {announcementsVisible && (
                   <button
                     onClick={() => openAnnouncements()}
@@ -969,6 +975,7 @@ export function Layout() {
                   )}
                 </div>
               )}
+              <QueueTodoLauncher sidebarExpanded={sidebarExpanded} />
               {announcementsVisible && (
                 <button
                   onClick={() => openAnnouncements()}

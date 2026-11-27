@@ -80,6 +80,9 @@ class QueueVariantCreate(BaseModel):
     # live rack at dispatch; null means "assign them for me".
     nozzle_rack_choice: dict[int, int] | None = None
     filament_overrides: list[dict] | None = None
+    # Whether this printer's slice clears its own plate (#3576); null takes the
+    # candidate file's flag.
+    clears_plate: bool | None = None
 
 
 class PrintQueueItemCreate(BaseModel):
@@ -120,6 +123,9 @@ class PrintQueueItemCreate(BaseModel):
     nozzle_offset_cali: TriState = "auto"
     # Ask for a post-print outcome verdict when this job completes (#1898)
     confirm_outcome: bool = False
+    # The file clears its own plate (#3576). None = take it from the library file,
+    # else the cross-model alternatives, else the archive, else False.
+    clears_plate: bool | None = None
     # Preheat / heat-soak per-item override (#1468). 'inherit' uses the global
     # preheat_enabled setting; 'on' / 'off' force the decision. The chamber
     # target falls through: this override → max(filament-map[loaded tray]) → 0.
@@ -181,6 +187,7 @@ class PrintQueueItemUpdate(IgnoresNullForRequiredColumns):
     use_ams: bool | None = None
     nozzle_offset_cali: TriState | None = None
     confirm_outcome: bool | None = None
+    clears_plate: bool | None = None
     preheat_override: Literal["inherit", "on", "off"] | None = None
     preheat_chamber_target_override: int | None = Field(default=None, ge=0, le=MAX_CHAMBER_TEMP_C)
     # Auto-print G-code injection
@@ -206,6 +213,7 @@ class QueueVariantSummary(BaseModel):
     filename: str
     target_model: str
     position: int
+    clears_plate: bool = False
 
 
 class ColorSubstitution(BaseModel):
@@ -257,6 +265,7 @@ class PrintQueueItemResponse(BaseModel):
     use_ams: bool = True
     nozzle_offset_cali: TriState = "auto"
     confirm_outcome: bool = False
+    clears_plate: bool = False
     preheat_override: Literal["inherit", "on", "off"] = "inherit"
     preheat_chamber_target_override: int | None = None
     status: Literal["pending", "printing", "completed", "failed", "skipped", "cancelled", "slicing", "slice_failed"]
@@ -428,6 +437,7 @@ class PrintQueueBulkUpdate(IgnoresNullForRequiredColumns):
     use_ams: bool | None = None
     nozzle_offset_cali: TriState | None = None
     confirm_outcome: bool | None = None
+    clears_plate: bool | None = None
     preheat_override: Literal["inherit", "on", "off"] | None = None
     preheat_chamber_target_override: int | None = Field(default=None, ge=0, le=MAX_CHAMBER_TEMP_C)
     # Auto-print G-code injection
@@ -608,3 +618,76 @@ class PrintBatchResponse(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+class QueueTodoShortTray(BaseModel):
+    """The tray of a spool that holds too little for the job (#3137)."""
+
+    # The slot as the inventory stores it: 255 is the external holder, 128 and up an AMS-HT.
+    ams_id: int
+    tray_id: int
+    # What the spool has left; None when the amount is not known.
+    remaining_grams: float | None = None
+
+
+class QueueTodoFilament(BaseModel):
+    """One filament a waiting job needs loaded (#3615). ``color`` is "#RRGGBB" or empty."""
+
+    type: str
+    color: str = ""
+    color_name: str = ""
+    # No spool in the inventory has any of it left (#3590): it has to be bought, not loaded.
+    no_stock: bool = False
+    # The nozzle a dual-nozzle file wants it on: 0 right, 1 left, None when it names none.
+    nozzle: int | None = None
+    # The filament is loaded, but its spool holds less than the job needs (#3137).
+    short: bool = False
+    # The tray of that spool. Empty when it is not known, or when the entry lists several printers.
+    short_trays: list[QueueTodoShortTray] = []
+    # What the job prints of a short filament, in grams; None when it is not short.
+    required_grams: float | None = None
+
+
+class QueueTodoJob(BaseModel):
+    id: int
+    name: str
+    # Whether the caller may start it now; only meaningful for a staged job.
+    can_start: bool = False
+
+
+class QueueTodoPrinter(BaseModel):
+    id: int
+    name: str
+
+
+class QueueTodoEntry(BaseModel):
+    kind: Literal[
+        "plate_clear",
+        "plate_changer_empty",
+        "load_filament",
+        "start_staged",
+        "sensor_interlock",
+        "power_on_failed",
+    ]
+    jobs: list[QueueTodoJob]
+    # What a load_filament entry waits for: filaments to load, or spools that are too short.
+    filaments: list[QueueTodoFilament] = []
+    # Printers where loading ``filaments`` lets a model job start; empty for other kinds.
+    printers: list[QueueTodoPrinter] = []
+    detail: str | None = None
+    # plate_changer_empty: the count a refill resets the plate changer to (#3575).
+    plate_capacity: int | None = None
+
+
+class QueueTodoGroup(BaseModel):
+    printer_id: int | None = None
+    printer_name: str
+    target_model: str | None = None
+    # The printer's model (a model group's target model), for naming its slots.
+    printer_model: str | None = None
+    entries: list[QueueTodoEntry]
+
+
+class QueueTodoResponse(BaseModel):
+    count: int
+    groups: list[QueueTodoGroup]

@@ -2136,6 +2136,7 @@ endsolid cube"""
                         file=upload,
                         folder_id=None,
                         generate_stl_thumbnails=True,
+                        clears_plate=False,
                         db=session,
                         current_user=None,
                         actor=None,  # upstream #3201: ownership actor, None with auth off

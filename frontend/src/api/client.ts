@@ -463,6 +463,30 @@ export interface OverlayStatus {
 }
 
 // Printer types
+
+// Built-in inventory entries offered as filament overrides (#3590).
+/** One inventory entry (type + colour + variant). */
+export interface InventoryFilament {
+  type: string;
+  /** "#RRGGBB" */
+  color: string;
+  /** Specific Bambu variant id, '' when the spool's preset resolves to none. */
+  tray_info_idx: string;
+  subtype: string;
+  color_name: string;
+  rgba: string | null;
+  extra_colors: string | null;
+  effect_type: string | null;
+  spool_count: number;
+  remaining_grams: number;
+}
+
+export interface InventoryFilamentsResponse {
+  /** False in Spoolman mode, where there is no built-in inventory. */
+  inventory_available: boolean;
+  filaments: InventoryFilament[];
+}
+
 // Printer locations (groups) and their appearance (#2962). `id` is null for a
 // location only printers carry, with no row of its own yet.
 export interface PrinterLocation {
@@ -534,6 +558,9 @@ export interface Printer {
   external_camera_snapshot_url: string | null;  // optional single-frame override (#1177)
   camera_rotation: number;  // 0, 90, 180, 270 degrees
   camera_light_auto: boolean;  // picked for the chamber light when camera_light_mode is 'selected' (#1655)
+  plate_capacity: number | null;  // plates the plate changer holds; null = no counting (#3575)
+  plate_changer_show_count: boolean;  // show the plate count on the printer card (#3575)
+  plates_remaining: number | null;  // plates left before a refill / bin emptying is due (#3575)
   plate_detection_enabled: boolean;  // Check plate before print
   plate_detection_roi?: PlateDetectionROI;  // ROI for plate detection
   // RTSP-capable model (X1/H2/P2) — when camera_engine is 'go2rtc' these
@@ -917,6 +944,9 @@ export interface PrinterCreate {
   external_camera_snapshot_url?: string | null;
   camera_rotation?: number;
   camera_light_auto?: boolean;
+  plate_capacity?: number | null;
+  plates_remaining?: number | null;
+  plate_changer_show_count?: boolean;
   plate_detection_enabled?: boolean;
   plate_detection_roi?: PlateDetectionROI;
   wear_cost_per_hour?: number | null;
@@ -1011,6 +1041,8 @@ export interface Archive {
   aito_task_id?: number | null;
   order_id?: number | null;
   id: number;
+  // The file clears its own plate; reprints start with this setting (#3576)
+  clears_plate: boolean;
   printer_id: number | null;
   project_id: number | null;
   project_name: string | null;
@@ -1780,6 +1812,9 @@ export interface AppSettings {
   mqtt_password: string;
   mqtt_topic_prefix: string;
   mqtt_use_tls: boolean;
+  // Home Assistant MQTT discovery for the relay (#3724)
+  mqtt_ha_discovery_enabled: boolean;
+  mqtt_ha_discovery_prefix: string;
   // BIQU Panda Breath heaters on the same broker (#1466)
   panda_breath_enabled: boolean;
   // External URL for notifications
@@ -1866,6 +1901,8 @@ export interface AppSettings {
   require_plate_clear: boolean;
   // Shortest job first scheduling
   queue_shortest_first: boolean;
+  // Offer the built-in inventory's colours in the print dialog's filament override (#3590).
+  filament_override_inventory: boolean;
   // Which printer an any-model job takes when several can run it (#2915).
   model_dispatch_order: ModelDispatchOrder;
   // How many printers the queue may upload to at once (#2555). 1 restores the
@@ -1962,7 +1999,19 @@ export interface AppSettings {
   location_sensor_alert_defaults: string;
   // Markdown on the Connect slicer page, above the user's virtual printers (#3602).
   virtual_printer_connect_instructions: string;
+  // Direct label printing (#3612). Optional: older payloads lack them.
+  label_printer_type?: LabelPrinterType;
+  label_printer_host?: string;
+  label_printer_model?: LabelPrinterModel;
+  label_printer_tape?: LabelPrinterTape;
 }
+
+// Direct label printing (#3612). Mirror of backend label_printers.
+export type LabelPrinterType = '' | 'brother_ql';
+export const LABEL_PRINTER_MODELS = ['QL-800', 'QL-810W', 'QL-820NWB'] as const;
+export type LabelPrinterModel = (typeof LABEL_PRINTER_MODELS)[number];
+export const LABEL_PRINTER_TAPES = ['12', '29', '38', '50', '54', '62'] as const;
+export type LabelPrinterTape = (typeof LABEL_PRINTER_TAPES)[number];
 
 export type AppSettingsUpdate = Partial<Omit<AppSettings, 'octoeverywhere_api_key_configured'>>;
 
@@ -1972,7 +2021,11 @@ export type UiPrefs = Record<string, unknown>;
 // Settings as a page sees them: everything from GET /settings for a user who
 // may read it, otherwise the subset /settings/ui-preferences and
 // /settings/ui-flags serve, which reports G-code snippets only as set or not.
-export type UiSettings = Partial<AppSettings> & { has_gcode_snippets?: boolean };
+export type UiSettings = Partial<AppSettings> & {
+  has_gcode_snippets?: boolean;
+  // Derived by /settings/ui-flags: a label printer type and address are set (#3612).
+  label_printer_configured?: boolean;
+};
 
 // MQTT relay status
 export interface MQTTStatus {
@@ -3205,6 +3258,48 @@ export interface DiscoveredTasmotaDevice {
 }
 
 // Print Queue types
+// "To do" list of everything the queue waits on (#3615).
+export type QueueTodoKind =
+  | 'plate_clear'
+  | 'plate_changer_empty'
+  | 'load_filament'
+  | 'start_staged'
+  | 'sensor_interlock'
+  | 'power_on_failed';
+export interface QueueTodoFilament {
+  type: string;
+  color: string;
+  color_name: string;
+  no_stock: boolean;
+  // The nozzle a dual-nozzle file wants it on: 0 right, 1 left; null when it names none.
+  nozzle?: number | null;
+  // Loaded, but its spool holds less than the job needs (#3137): not a filament to load.
+  short?: boolean;
+  // The tray of that spool; empty when it is not known or the entry lists several printers.
+  short_trays?: { ams_id: number; tray_id: number; remaining_grams: number | null }[];
+  // What the job prints of a short filament, in grams.
+  required_grams?: number | null;
+}
+export interface QueueTodoEntry {
+  kind: QueueTodoKind;
+  jobs: { id: number; name: string; can_start: boolean }[];
+  filaments: QueueTodoFilament[];
+  // Model-group load_filament: printers where loading lets the job start.
+  printers: { id: number; name: string }[];
+  detail: string | null;
+  // plate_changer_empty: the count a refill resets the plate changer to (#3575).
+  plate_capacity?: number | null;
+}
+export interface QueueTodoGroup {
+  printer_id: number | null;
+  printer_name: string;
+  target_model: string | null;
+  // The printer's model (a model group's target model), for naming its slots.
+  printer_model?: string | null;
+  entries: QueueTodoEntry[];
+}
+export interface QueueTodo { count: number; groups: QueueTodoGroup[] }
+
 export interface PrintQueueItem {
   id: number;
   revision_id?: number | null;  // Fenrir: the library file's project revision
@@ -3222,6 +3317,8 @@ export interface PrintQueueItem {
     filename: string;
     target_model: string;
     position: number;
+    // This alternative's slice clears its own plate (#3576)
+    clears_plate: boolean;
   }>;
   // Either archive_id OR library_file_id must be set (archive created at print start)
   archive_id: number | null;
@@ -3262,6 +3359,8 @@ export interface PrintQueueItem {
   nozzle_offset_cali: CalibrationMode;
   // Ask for a post-print outcome verdict when this job completes (#1898)
   confirm_outcome: boolean;
+  // The file clears its own plate: no plate confirmation after a successful print (#3576)
+  clears_plate: boolean;
   preheat_override: 'inherit' | 'on' | 'off';
   preheat_chamber_target_override: number | null;
   status: 'pending' | 'slicing' | 'slice_failed' | 'printing' | 'completed' | 'failed' | 'skipped' | 'cancelled';
@@ -3428,6 +3527,8 @@ export interface PrintQueueItemCreate {
   nozzle_offset_cali?: CalibrationMode;
   // Ask for a post-print outcome verdict when this job completes (#1898)
   confirm_outcome?: boolean;
+  // Omitted on create: taken from the library file, else the archive (#3576)
+  clears_plate?: boolean;
   preheat_override?: 'inherit' | 'on' | 'off';
   preheat_chamber_target_override?: number | null;
   // Auto-print G-code injection
@@ -3462,6 +3563,8 @@ export interface QueueVariantCreate {
   ams_mapping?: number[] | null;
   nozzle_mapping?: number[] | null;
   filament_overrides?: Array<{ slot_id: number; type: string; color: string; color_name?: string; tray_info_idx?: string; force_color_match?: boolean }> | null;
+  /** This alternative's slice clears its own plate (#3576); omit to take the file's flag. */
+  clears_plate?: boolean;
 }
 
 export interface PrintBatchCreate {
@@ -3522,6 +3625,8 @@ export interface PrintQueueItemUpdate {
   nozzle_offset_cali?: CalibrationMode;
   // Ask for a post-print outcome verdict when this job completes (#1898)
   confirm_outcome?: boolean;
+  // Omitted = unchanged (#3576)
+  clears_plate?: boolean;
   preheat_override?: 'inherit' | 'on' | 'off';
   preheat_chamber_target_override?: number | null;
   // Auto-print G-code injection
@@ -3551,6 +3656,8 @@ export interface PrintQueueBulkUpdate {
   nozzle_offset_cali?: CalibrationMode;
   // Ask for a post-print outcome verdict when this job completes (#1898)
   confirm_outcome?: boolean;
+  // Omitted = unchanged (#3576)
+  clears_plate?: boolean;
   preheat_override?: 'inherit' | 'on' | 'off';
   preheat_chamber_target_override?: number | null;
   // Auto-print G-code injection
@@ -3718,8 +3825,10 @@ export interface NotificationProvider {
   // Build plate detection
   on_plate_not_empty: boolean;
   on_plate_clear_required: boolean;
+  on_plate_changer_empty: boolean;
   // Post-print outcome confirmation (#1898)
   on_print_confirm_request: boolean;
+  on_filament_out_of_stock: boolean;
   telegram_verdict_mode: TelegramVerdictMode;
   // Bed cooled
   on_bed_cooled: boolean;
@@ -3791,8 +3900,10 @@ export interface NotificationProviderCreate {
   // Build plate detection
   on_plate_not_empty?: boolean;
   on_plate_clear_required?: boolean;
+  on_plate_changer_empty?: boolean;
   // Post-print outcome confirmation (#1898)
   on_print_confirm_request?: boolean;
+  on_filament_out_of_stock?: boolean;
   telegram_verdict_mode?: TelegramVerdictMode;
   // Bed cooled
   on_bed_cooled?: boolean;
@@ -3857,8 +3968,10 @@ export interface NotificationProviderUpdate {
   // Build plate detection
   on_plate_not_empty?: boolean;
   on_plate_clear_required?: boolean;
+  on_plate_changer_empty?: boolean;
   // Post-print outcome confirmation (#1898)
   on_print_confirm_request?: boolean;
+  on_filament_out_of_stock?: boolean;
   telegram_verdict_mode?: TelegramVerdictMode;
   // Bed cooled
   on_bed_cooled?: boolean;
@@ -4445,12 +4558,28 @@ export interface SavedLabelTemplate {
 }
 
 // A built-in template, or "custom" with the sheet itself in ``layout``.
-export type SpoolLabelRequestTemplate = SpoolLabelTemplate | 'custom';
+export type SpoolLabelRequestTemplate = SpoolLabelTemplate | 'custom' | 'roll';
+
+// Continuous label-printer tape cut to a length (#3612). Mirror of
+// backend RollSpec: length_mm is 20..200.
+export const ROLL_MIN_LENGTH_MM = 20;
+export const ROLL_MAX_LENGTH_MM = 200;
+export const DEFAULT_ROLL_LENGTH_MM = 40;
+// Caps the server puts on one print request: labels, and metres of tape as
+// labels x length. Mirror of backend MAX_PRINT_LABELS_PER_REQUEST and
+// MAX_PRINT_TAPE_MM.
+export const MAX_PRINT_LABELS_PER_REQUEST = 100;
+export const MAX_PRINT_TAPE_MM = 4000;
+export interface LabelRollSpec {
+  tape: string;
+  length_mm: number;
+}
 
 export interface PrintSpoolLabelsRequest {
   spool_ids: number[];
   template: SpoolLabelRequestTemplate;
   layout?: LabelSheetLayout;
+  roll?: LabelRollSpec;
   monochrome: boolean;
   starting_position: number;
   fields?: SpoolLabelField[];
@@ -4458,10 +4587,43 @@ export interface PrintSpoolLabelsRequest {
   dpi?: 203 | 300 | 600;
 }
 
+// Direct print: the download body without output format, resolution and
+// starting position (a roll has no sheet positions) (#3612).
+export type DirectPrintLabelsRequest = Omit<PrintSpoolLabelsRequest, 'format' | 'dpi' | 'starting_position'>;
+
+// A print request is accepted as a job (202) that the backend works off in
+// the background; GET /labels/print-jobs/{id} reports how far it is.
+export interface LabelPrintJobAccepted {
+  job_id: string;
+  total: number;
+}
+
+export type LabelPrintJobState = 'queued' | 'printing' | 'done' | 'failed';
+
+export interface LabelPrintJob {
+  job_id: string;
+  state: LabelPrintJobState;
+  printed: number;
+  total: number;
+  error: string | null;
+}
+
+export interface LabelPrinterTestRequest {
+  type: LabelPrinterType;
+  host: string;
+  model: LabelPrinterModel;
+  tape: LabelPrinterTape;
+}
+
+export interface LabelPrinterTestResult {
+  status: { media_width_mm: number | null; media_type: string | null; errors: string[] } | null;
+}
+
 export interface PreviewSpoolLabelRequest {
   spool_id: number;
   template: SpoolLabelRequestTemplate;
   layout?: LabelSheetLayout;
+  roll?: LabelRollSpec;
   monochrome: boolean;
   fields: SpoolLabelField[];
 }
@@ -4501,6 +4663,7 @@ export interface ProjectLabelItem {
 interface ProjectLabelOptions {
   template: SpoolLabelRequestTemplate;
   layout?: LabelSheetLayout | null;
+  roll?: LabelRollSpec;
   monochrome?: boolean;
   fields?: ProjectLabelField[] | null;
 }
@@ -4513,6 +4676,10 @@ export interface PrintProjectLabelsRequest extends ProjectLabelOptions {
 }
 
 export type PreviewProjectLabelRequest = ProjectLabelItem & ProjectLabelOptions;
+
+// Direct print of project labels (#3612): the download body without output
+// format, resolution and starting position, like DirectPrintLabelsRequest.
+export type DirectPrintProjectLabelsRequest = Omit<PrintProjectLabelsRequest, 'format' | 'dpi' | 'starting_position'>;
 
 export interface InventorySpool {
   id: number;
@@ -6725,6 +6892,14 @@ export type Permission =
   | 'revenue:manage_notes' | 'revenue:sync' | 'revenue:view_customers' | 'revenue:view_margin'
   | 'websocket:connect';
 
+// Permissions the backend only honours for admins (#3729): the user and group
+// write routes also require admin status, since a non-admin holding them could
+// otherwise make themselves admin. Granting them to another group does nothing.
+export const ADMIN_ONLY_PERMISSIONS: ReadonlySet<Permission> = new Set<Permission>([
+  'users:create', 'users:update', 'users:delete',
+  'groups:create', 'groups:update', 'groups:delete',
+]);
+
 // Group types
 export interface GroupBrief {
   id: number;
@@ -7583,6 +7758,8 @@ export const api = {
     if (location) params.set('location', location);
     return request<Array<{ type: string; color: string; tray_info_idx: string; tray_sub_brands: string; extruder_id: number | null }>>(`/printers/available-filaments?${params}`);
   },
+  // Built-in inventory grouped by type + colour (+ variant) for the override picker (#3590).
+  getInventoryFilaments: () => request<InventoryFilamentsResponse>('/printers/inventory-filaments'),
   getPrinterLocations: () => request<PrinterLocation[]>('/printer-locations/'),
   createPrinterLocation: (data: { name: string; icon?: string | null; color?: string | null }) =>
     request<PrinterLocation>('/printer-locations/', { method: 'POST', body: JSON.stringify(data) }),
@@ -7637,6 +7814,10 @@ export const api = {
     }),
   clearPlate: (printerId: number) =>
     request<{ success: boolean; message: string }>(`/printers/${printerId}/clear-plate`, {
+      method: 'POST',
+    }),
+  refillPlates: (printerId: number) =>
+    request<Printer>(`/printers/${printerId}/refill-plates`, {
       method: 'POST',
     }),
 
@@ -9085,6 +9266,7 @@ export const api = {
     if (targetModel) params.set('target_model', targetModel);
     return request<PrintQueueItem[]>(`/queue/?${params}`);
   },
+  getQueueTodo: () => request<QueueTodo>('/queue/todo'),
   // History (completed / failed / skipped / cancelled), one page at a time.
   getQueueHistory: (params: QueueHistoryParams) =>
     request<QueueHistoryPage>(`/queue/history?${queueHistorySearch(params)}`),
@@ -9748,6 +9930,20 @@ export const api = {
     postForBlob('/inventory/labels', data),
   printSpoolmanSpoolLabels: (data: PrintSpoolLabelsRequest): Promise<Blob> =>
     postForBlob('/spoolman/labels', data),
+  // Send labels straight to the configured label printer (#3612): spool
+  // labels of either inventory, or project labels (#3655).
+  printLabelsToPrinter: (
+    source: 'inventory' | 'spoolman' | 'projects',
+    data: DirectPrintLabelsRequest | DirectPrintProjectLabelsRequest,
+  ) =>
+    request<LabelPrintJobAccepted>(`/${source}/labels/print`, { method: 'POST', body: JSON.stringify(data) }),
+  getLabelPrintJob: (jobId: string) =>
+    request<LabelPrintJob>(`/labels/print-jobs/${encodeURIComponent(jobId)}`),
+  testLabelPrinter: (data?: LabelPrinterTestRequest) =>
+    request<LabelPrinterTestResult>('/settings/label-printer/test', {
+      method: 'POST',
+      ...(data ? { body: JSON.stringify(data) } : {}),
+    }),
   previewSpoolLabel: (data: PreviewSpoolLabelRequest, signal?: AbortSignal): Promise<Blob> =>
     postForBlob('/inventory/labels/preview', data, signal),
   previewSpoolmanSpoolLabel: (data: PreviewSpoolLabelRequest, signal?: AbortSignal): Promise<Blob> =>
@@ -11327,6 +11523,7 @@ export const api = {
     tagIds: number[] = [],
     limit?: number,
     offset?: number,
+    withVariantMembers = false,
   ) => {
     const params = new URLSearchParams();
     if (folderId !== undefined && folderId !== null) {
@@ -11354,6 +11551,9 @@ export const api = {
     // Optional so every pre-existing caller keeps getting the server default.
     if (limit !== undefined) params.set('limit', String(limit));
     if (offset !== undefined) params.set('offset', String(offset));
+    // Also list the members of the groups in the result that sit in other
+    // folders or outside the filter, flagged `variant_elsewhere` (#3628).
+    if (withVariantMembers) params.set('with_variant_members', 'true');
     return request<LibraryFileListItem[]>(`/library/files?${params}`);
   },
   /** Pages through `getLibraryFiles` at the server's max page size until a
@@ -11394,6 +11594,7 @@ export const api = {
     if (p.direction) params.set('direction', p.direction);
     params.set('limit', String(p.limit));
     params.set('offset', String(p.offset));
+    if (p.withVariantMembers) params.set('with_variant_members', 'true');
     const headers: Record<string, string> = {};
     if (authToken) headers['Authorization'] = `Bearer ${authToken}`;
     const response = await fetch(`${API_BASE}/library/files?${params}`, {
@@ -11455,19 +11656,26 @@ export const api = {
     }),
   getVariantGroup: (groupId: number) =>
     request<VariantGroup>(`/library/variant-groups/${groupId}`),
+  // Ungroup: the files themselves are kept.
+  deleteVariantGroup: (groupId: number) =>
+    request<void>(`/library/variant-groups/${groupId}`, { method: 'DELETE' }),
+  removeVariantGroupMember: (groupId: number, fileId: number) =>
+    request<void>(`/library/variant-groups/${groupId}/members/${fileId}`, { method: 'DELETE' }),
 
   getLibraryFile: (id: number) => request<LibraryFile>(`/library/files/${id}`),
   getLibraryFileHistory: (id: number) => request<LibraryFileHistory>(`/library/files/${id}/history`),
   uploadLibraryFile: async (
     file: File,
     folderId?: number | null,
-    generateStlThumbnails: boolean = true
+    generateStlThumbnails: boolean = true,
+    clearsPlate: boolean = false
   ): Promise<LibraryFileUploadResponse> => {
     const formData = new FormData();
     formData.append('file', file);
     const params = new URLSearchParams();
     if (folderId) params.set('folder_id', String(folderId));
     params.set('generate_stl_thumbnails', String(generateStlThumbnails));
+    if (clearsPlate) params.set('clears_plate', 'true');
     const headers: Record<string, string> = {};
     if (authToken) {
       headers['Authorization'] = `Bearer ${authToken}`;
@@ -11493,7 +11701,8 @@ export const api = {
     folderId?: number | null,
     preserveStructure: boolean = true,
     createFolderFromZip: boolean = false,
-    generateStlThumbnails: boolean = true
+    generateStlThumbnails: boolean = true,
+    clearsPlate: boolean = false
   ): Promise<ZipExtractResponse> => {
     const formData = new FormData();
     formData.append('file', file);
@@ -11502,6 +11711,7 @@ export const api = {
     params.set('preserve_structure', String(preserveStructure));
     params.set('create_folder_from_zip', String(createFolderFromZip));
     params.set('generate_stl_thumbnails', String(generateStlThumbnails));
+    if (clearsPlate) params.set('clears_plate', 'true');
     const headers: Record<string, string> = {};
     if (authToken) {
       headers['Authorization'] = `Bearer ${authToken}`;
@@ -12203,6 +12413,8 @@ export interface LibraryFileDuplicate {
 
 export interface LibraryFile {
   id: number;
+  // The file ends with a plate change or push-off (#3576)
+  clears_plate: boolean;
   folder_id: number | null;
   folder_name: string | null;
   project_id: number | null;
@@ -12252,6 +12464,7 @@ export interface LibraryTagSummary {
 
 export interface LibraryFileListItem {
   id: number;
+  clears_plate: boolean;
   folder_id: number | null;
   is_external: boolean;
   filename: string;
@@ -12282,6 +12495,16 @@ export interface LibraryFileListItem {
   // matching rows on screen. 0 when the file is not grouped.
   variant_group_id?: number | null;
   variant_count?: number;
+  // Only with `with_variant_members=true` (#3628): the group's name and this
+  // file's place in it, whether the caller may change the group (ungroup it,
+  // take a version out; false when the server would refuse), whether the file
+  // was appended from outside the listing's folder or filter, and the folder
+  // it sits in then.
+  variant_group_name?: string | null;
+  variant_position?: number | null;
+  variant_group_editable?: boolean | null;
+  variant_elsewhere?: boolean;
+  folder_name?: string | null;
   // Metadata indicators (#3077). Optional for the same reason as `tags`: older
   // mocks construct list items without them. Read sites default to falsy.
   external_url?: string | null;
@@ -12315,6 +12538,9 @@ export interface LibraryFilesPageParams extends LibraryFilesScope {
   direction?: 'asc' | 'desc';
   limit: number;
   offset: number;
+  /** Also return the members of the page's variant groups that the page left
+   *  out, flagged `variant_elsewhere` (#3628). They come on top of `limit`. */
+  withVariantMembers?: boolean;
 }
 export interface LibraryFilesPage {
   items: LibraryFileListItem[];
@@ -12327,6 +12553,8 @@ export interface VariantGroupMember {
   filename: string;
   target_model: string;
   position: number;
+  // The member file clears its own plate (#3576)
+  clears_plate: boolean;
 }
 
 export interface VariantGroup {
@@ -12388,6 +12616,7 @@ export interface LibraryFileUpdate {
   project_id?: number | null;
   notes?: string | null;
   external_url?: string | null;
+  clears_plate?: boolean;
 }
 
 // Library trash (#1008)

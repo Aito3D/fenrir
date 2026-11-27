@@ -1,0 +1,1 @@
+import{t as e}from"./useQuery-D8Pdzbkf.js";import{p as t}from"./client-dKb7UPaN.js";function n(){let{data:n}=e({queryKey:[`settings`],queryFn:t.getSettings,staleTime:6e4});return n?.currency||`USD`}export{n as t};

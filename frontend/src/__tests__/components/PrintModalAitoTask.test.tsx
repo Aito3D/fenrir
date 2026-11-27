@@ -17,7 +17,7 @@ afterAll(() => configure({ asyncUtilTimeout: 1000 }));
 // Keys of the library-file queue body as upstream builds it (undefined values
 // are dropped by JSON). A new key here means the no-props body changed.
 const BASE_KEYS = [
-  'auto_off_after', 'bed_levelling', 'confirm_outcome', 'flow_cali', 'gcode_injection', 'insert_at_top',
+  'auto_off_after', 'bed_levelling', 'clears_plate', 'confirm_outcome', 'flow_cali', 'gcode_injection', 'insert_at_top',
   'insert_position', 'layer_inspect', 'library_file_id', 'manual_start', 'nozzle_offset_cali', 'plate_id',
   'preheat_chamber_target_override', 'preheat_override', 'printer_id', 'project_id', 'require_previous_success',
   'target_location', 'target_model', 'timelapse', 'vibration_cali',

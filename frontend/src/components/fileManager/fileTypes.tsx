@@ -1,8 +1,10 @@
 import {
+  Box,
   Image,
   FileText,
   FileSpreadsheet,
 } from 'lucide-react';
+import type { ContextMenuItem } from '../ContextMenu';
 import type {
   LibraryFileListItem,
 } from '../../api/client';
@@ -70,6 +72,25 @@ export function documentPreviewIcon(fileType: string) {
   if (fileType === 'pdf') return <FileText className="w-4 h-4" />;
   if (isSpreadsheetType(fileType)) return <FileSpreadsheet className="w-4 h-4" />;
   return <Image className="w-4 h-4" />;
+}
+
+// The "Preview" entry of a file's menu, or null for a file with no preview.
+// Shared by the card and by a version line of a group (#3628).
+export function previewMenuItem(
+  file: LibraryFileListItem,
+  onPreview: (file: LibraryFileListItem) => void,
+  canRead: boolean,
+  t: TFunction,
+): ContextMenuItem | null {
+  if (!isPreviewableLibraryFile(file)) return null;
+  const modelPreview = isModelPreview(file);
+  return {
+    label: modelPreview ? t('fileManager.preview3d') : t('fileManager.preview.open'),
+    icon: modelPreview ? <Box className="w-4 h-4" /> : documentPreviewIcon(file.file_type),
+    onClick: () => onPreview(file),
+    disabled: !canRead,
+    title: !canRead ? t('fileManager.noPermissionPreview') : undefined,
+  };
 }
 
 // Types the server renders a thumbnail for on request, STL through trimesh

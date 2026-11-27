@@ -27,6 +27,7 @@ from backend.app.core.auth import (
     RequirePrinterPermissionIfAuthEnabled,
     may_start_queue_item,
     probe_permissions_if_auth_enabled,  # Fenrir
+    require_clear_plate_permission,
     require_ownership_permission,
 )
 from backend.app.core.config import settings
@@ -65,10 +66,11 @@ from backend.app.schemas.print_queue import (
     PrintQueueItemResponse,
     PrintQueueItemUpdate,
     PrintQueueReorder,
+    QueueTodoResponse,
     QueueVariantCreate,
     QueueVariantSummary,
 )
-from backend.app.services import slicer_ams_pick
+from backend.app.services import plate_clear, slicer_ams_pick
 from backend.app.services.archive_cost_estimate import SpoolmanOnce
 from backend.app.services.filament_deficit import compute_deficit_for_queue_item
 from backend.app.services.filament_requirements import overrides_for_plate
@@ -77,6 +79,7 @@ from backend.app.services.finance_budget import (
     release_budget_reservation,
     validate_print_budget,
 )
+from backend.app.services.ha_sensor_manager import ha_sensor_manager
 from backend.app.services.print_batch import (
     BatchDispatchError,
     add_queue_item_clone,
@@ -88,6 +91,7 @@ from backend.app.services.print_batch import (
     refresh_batches_after,
 )
 from backend.app.services.print_cost_estimate import estimate_queue_source_cost
+from backend.app.services.printer_manager import printer_manager
 
 # Fenrir: production traceability (projects as a PDM, phase 4).
 from backend.app.services.project_print_trace import PrintTraceError, record_queued, resolve_print_context
@@ -95,9 +99,11 @@ from backend.app.services.queue_announcements import announce_queue_jobs_added
 from backend.app.services.queue_events import notify_queue_changed
 from backend.app.services.queue_item_printer import PRINTER_RESOLVED_DEFAULTS, drop_printer_resolved
 from backend.app.services.queue_position import lock_queue_positions, max_queue_position, next_queue_position
+from backend.app.services.queue_todo import TodoJob, build_todo
 from backend.app.services.queue_trace_summary import attach_trace_summaries
 from backend.app.utils.printer_models import (
     is_gcode_compatible,
+    normalize_printer_model,
 )
 from backend.app.utils.threemf_tools import (
     extract_plate_metadata_from_3mf,
@@ -129,6 +135,7 @@ def _variant_summaries(item: PrintQueueItem) -> list[QueueVariantSummary]:
             filename=v.library_file.filename if v.library_file else "",
             target_model=v.target_model,
             position=v.position,
+            clears_plate=bool(v.clears_plate),
         )
         for v in item.variants
     ]
@@ -468,6 +475,86 @@ async def _trusted_item_estimated_cost(
     return max(cost for cost in estimates if cost is not None)
 
 
+def _archive_display_name(archive: PrintArchive) -> str:
+    """What the queue row calls an archive's job: its print name, else its file."""
+    return archive.print_name or archive.filename
+
+
+def _library_display_name(library_file: LibraryFile) -> str:
+    """What the queue row calls a library file's job: its print name, else its file."""
+    metadata = library_file.file_metadata
+    return (metadata.get("print_name") if metadata else None) or library_file.filename
+
+
+def _queue_item_display_name(item: PrintQueueItem) -> str:
+    """The job's name as the queue row shows it, for the "To do" list (#3615).
+
+    The row is named in the frontend (``queueItemDisplayName``) from the fields
+    ``_enrich_response`` fills; this reads the same values in the same order:
+    the archive's name unless it is deleted, the library file's, the first
+    cross-model candidate's filename with "+N more" (#671), then "File #<id>"
+    of the archive or library file. A job with nothing left to point at, which
+    the row calls "File #null", is "#<item id>" here.
+    """
+    if item.archive is not None and item.archive.deleted_at is None and (name := _archive_display_name(item.archive)):
+        return name
+    if item.library_file is not None and (name := _library_display_name(item.library_file)):
+        return name
+    if variants := _variant_summaries(item):
+        others = len(variants) - 1
+        return f"{variants[0].filename} +{others} more" if others > 0 else variants[0].filename
+    file_id = item.archive_id if item.archive_id is not None else item.library_file_id
+    return f"File #{file_id}" if file_id is not None else f"#{item.id}"
+
+
+def _effective_clears_plate(item: PrintQueueItem) -> bool:
+    """What a pending job's plate clearing reads as (#3576).
+
+    A job with printer alternatives carries the flag per alternative; the item
+    column only holds whatever the last resolve (even a merely tried candidate)
+    folded onto the row, so it is not a reliable value until the job runs. A
+    pending job therefore reports "all alternatives clear" -- the strict reading
+    the create path stores. Printing / finished jobs keep the column, which holds
+    the winner's value.
+    """
+    if item.status == "pending" and "variants" not in inspect(item).unloaded and item.variants:
+        return all(bool(v.clears_plate) for v in item.variants)
+    return bool(item.clears_plate)
+
+
+def _switches_clears_plate_on(item: PrintQueueItem, update_data: dict) -> bool:
+    """Whether an edit turns a job's plate clearing on (#3576).
+
+    Only that needs printers:clear_plate. The value the job already has, sent
+    again by an edit that changes something else, grants nothing new; a job
+    with alternatives has it when every alternative does, as
+    ``_apply_clears_plate_update`` reads it.
+    """
+    if update_data.get("clears_plate") is not True:
+        return False
+    if item.variants:
+        return not all(bool(v.clears_plate) for v in item.variants)
+    return not item.clears_plate
+
+
+def _apply_clears_plate_update(item: PrintQueueItem, update_data: dict) -> None:
+    """Take ``clears_plate`` out of ``update_data``; set every alternative unless all already match.
+
+    A value every alternative already has is a no-op, so nothing is rewritten.
+    Any other explicit value (including "off" on a mixed job) is applied to the
+    item column and to every alternative. Without alternatives the field stays
+    in ``update_data`` and is written as usual.
+    """
+    if not item.variants or "clears_plate" not in update_data:
+        return
+    sent = update_data.pop("clears_plate")
+    if sent is None or all(bool(v.clears_plate) == bool(sent) for v in item.variants):
+        return
+    item.clears_plate = bool(sent)
+    for variant in item.variants:
+        variant.clears_plate = bool(sent)
+
+
 def _enrich_response(item: PrintQueueItem) -> PrintQueueItemResponse:
     """Add nested archive/printer/library_file info to response."""
     # Parse ams_mapping from JSON string BEFORE model_validate
@@ -565,6 +652,7 @@ def _enrich_response(item: PrintQueueItem) -> PrintQueueItemResponse:
         "use_ams": item.use_ams,
         "nozzle_offset_cali": item.nozzle_offset_cali,
         "confirm_outcome": item.confirm_outcome,
+        "clears_plate": _effective_clears_plate(item),
         "preheat_override": item.preheat_override,
         "preheat_chamber_target_override": item.preheat_chamber_target_override,
         "status": item.status,
@@ -607,7 +695,7 @@ def _enrich_response(item: PrintQueueItem) -> PrintQueueItemResponse:
         if item.archive.deleted_at is not None:
             response.archive_deleted = True
         else:
-            response.archive_name = item.archive.print_name or item.archive.filename
+            response.archive_name = _archive_display_name(item.archive)
             response.archive_thumbnail = item.archive.thumbnail_path
             response.print_time_seconds = item.archive.print_time_seconds
             response.filament_used_grams = item.archive.filament_used_grams
@@ -654,11 +742,7 @@ def _enrich_response(item: PrintQueueItem) -> PrintQueueItemResponse:
         response.slicer_ams_mapping = pick[0]
         response.archive_has_slicer_ams_mapping = True
     if item.library_file:
-        response.library_file_name = (
-            item.library_file.file_metadata.get("print_name") if item.library_file.file_metadata else None
-        )
-        if not response.library_file_name:
-            response.library_file_name = item.library_file.filename
+        response.library_file_name = _library_display_name(item.library_file)
         response.library_file_thumbnail = item.library_file.thumbnail_path
         # Get metadata from library file if no archive
         if not item.archive and item.library_file.file_metadata:
@@ -863,6 +947,168 @@ async def list_queue(
     responses = [_hide_aito_task(_enrich_response(item), can_read_aito) for item in items]
     await attach_trace_summaries(db, responses)
     return responses
+
+
+def _may_start_item(
+    actor: User | ApiKeyActor | None, item: PrintQueueItem, can_update_all: bool, printer_scope: PrinterScope
+) -> bool:
+    """Whether the start endpoint would let ``actor`` start ``item`` (#3615).
+
+    The same rules as ``start_queue_item``: ownership for those without
+    queue:update_all, the awaiting-review rule, and the model-target limit.
+    """
+    if actor is not None and not can_update_all:
+        # A key without an owner owns nothing, so it needs update_all.
+        if getattr(actor, "id", None) is None or not actor.has_permission(Permission.QUEUE_UPDATE_OWN.value):
+            return False
+    if not can_update_all and actor is not None:
+        if item.created_by_id is not None and item.created_by_id != actor.id:
+            return False
+    if not may_start_queue_item(actor, can_update_all, item.created_by_id):
+        return False
+    if item.printer_id is None and item.target_model:
+        try:
+            ensure_model_target_allowed(actor, printer_scope)
+        except HTTPException:
+            return False
+    return True
+
+
+@router.get("/todo", response_model=QueueTodoResponse)
+async def queue_todo(
+    db: AsyncSession = Depends(get_db, scope="function"),
+    auth_result: tuple[User | ApiKeyActor | None, bool] = Depends(
+        require_ownership_permission(
+            Permission.QUEUE_READ_ALL,
+            Permission.QUEUE_READ_OWN,
+        )
+    ),
+    printer_scope: PrinterScope = RequestPrinterScope,
+    actor: User | ApiKeyActor | None = RequestActor,
+):
+    """What the waiting queue needs a person for, grouped by printer (#3615)."""
+    from backend.app.api.routes.settings import get_setting, setting_is_true
+    from backend.app.services.print_scheduler import (
+        _could_take_printer,
+        plate_changer_reads_empty,
+        scheduler as _scheduler,
+    )
+
+    user, can_read_all = auth_result
+    query = (
+        select(PrintQueueItem)
+        .options(
+            selectinload(PrintQueueItem.archive).load_only(
+                PrintArchive.id, PrintArchive.deleted_at, PrintArchive.print_name, PrintArchive.filename
+            ),
+            selectinload(PrintQueueItem.library_file).load_only(
+                LibraryFile.id, LibraryFile.filename, LibraryFile.file_metadata
+            ),
+            selectinload(PrintQueueItem.variants).selectinload(PrintQueueVariant.library_file),
+        )
+        .where(PrintQueueItem.status == "pending")
+        .order_by(PrintQueueItem.position, PrintQueueItem.id)
+    )
+    if user is not None and not can_read_all:
+        query = query.where(PrintQueueItem.created_by_id == user.id)
+    if (clause := printer_scope.where(PrintQueueItem.printer_id)) is not None:
+        query = query.where(clause)
+    items = list((await db.execute(query)).scalars().all())
+
+    # Printers the caller may see, read once.
+    printer_query = select(
+        Printer.id,
+        Printer.name,
+        Printer.model,
+        Printer.location,
+        Printer.is_active,
+        Printer.plate_capacity,
+        Printer.plates_remaining,
+    )
+    if (clause := printer_scope.where_strict(Printer.id)) is not None:
+        printer_query = printer_query.where(clause)
+    printer_rows = (await db.execute(printer_query)).all()
+    printer_names = {row.id: row.name or "" for row in printer_rows}
+
+    # Whether the caller may start staged jobs at all, as the start endpoint reads it.
+    can_update_all = actor is None or actor.has_permission(Permission.QUEUE_UPDATE_ALL.value)
+
+    def model_key(model: str | None) -> str | None:
+        return (normalize_printer_model(model) or model or "").lower() or None
+
+    # The scheduler sends a model job only to the printers its creator may use
+    # (#1727), so its printer entries are limited to those; read once per creator.
+    creator_scopes: dict[int | None, PrinterScope] = {}
+
+    jobs: list[TodoJob] = []
+    for item in items:
+        if item.printer_id is not None:
+            if item.printer_id not in printer_names:
+                continue
+            ids = frozenset({item.printer_id})
+            key = label = None
+        else:
+            if item.created_by_id not in creator_scopes:
+                creator_scopes[item.created_by_id] = await _scheduler._creator_printer_scope(db, item.created_by_id)
+            creator_scope = creator_scopes[item.created_by_id]
+            ids = frozenset(
+                row.id
+                for row in printer_rows
+                if row.is_active
+                and creator_scope.allows(row.id)
+                and _could_take_printer(item, row.id, row.model)
+                and (not item.target_location or row.location == item.target_location)
+            )
+            key = model_key(item.target_model)
+            label = item.target_model
+        can_start = bool(item.manual_start) and _may_start_item(actor, item, can_update_all, printer_scope)
+        jobs.append(
+            TodoJob(
+                item.id,
+                _queue_item_display_name(item),
+                ids,
+                item.printer_id,
+                key,
+                label,
+                bool(item.manual_start),
+                can_start,
+            )
+        )
+
+    require_plate_clear = setting_is_true(await get_setting(db, "require_plate_clear"))
+    # A switched-off printer keeps the flag, so it is read for those too.
+    plate_ids = [
+        pid
+        for pid in printer_names
+        if plate_clear.applies(pid, require_plate_clear) and printer_manager.is_awaiting_plate_clear(pid)
+    ]
+    # Plate changers with no plate left (#3575), by capacity: a refill resets the count to it.
+    plate_changer_empty = {
+        row.id: row.plate_capacity
+        for row in printer_rows
+        if row.plate_capacity is not None and plate_changer_reads_empty(row.id, row.plates_remaining)
+    }
+    try:
+        interlock = {
+            pid: reason
+            for pid, reason in (await ha_sensor_manager.blocked_printers(db)).items()
+            if pid in printer_names
+        }
+    except Exception:
+        # An interlock lookup that fails shows no interlock, as for the scheduler.
+        interlock = {}
+    power_failed = [pid for pid in _scheduler.power_on_failed_printers() if pid in printer_names]
+
+    return build_todo(
+        jobs,
+        printer_names,
+        _scheduler.filament_holds_snapshot(),
+        plate_ids,
+        interlock,
+        power_failed,
+        plate_changer_empty,
+        {row.id: row.model for row in printer_rows},
+    )
 
 
 HISTORY_STATUSES = ("completed", "failed", "skipped", "cancelled")
@@ -1240,8 +1486,14 @@ def _variant_values(
                     existing = set(json.loads(required_types)) if required_types else set()
                     required_types = json.dumps(sorted(existing | set(override_types)))
 
+    # Whether this printer's slice clears its own plate (#3576): an explicit
+    # per-candidate value wins, else the candidate file's flag. A push-off that
+    # one model has and another lacks makes it differ between alternatives.
+    clears_plate = spec.clears_plate if spec.clears_plate is not None else bool(library_file.clears_plate)
+
     return {
         "position": position,
+        "clears_plate": clears_plate,
         "library_file_id": library_file.id,
         "target_model": model,
         "plate_id": spec.plate_id,
@@ -1411,6 +1663,22 @@ async def add_to_queue(
         )
     except PrintTraceError as e:
         raise HTTPException(e.status_code, e.detail) from e
+
+    # Switching plate clearing on takes printers:clear_plate (#3576). A value
+    # the job would inherit anyway (its file's, its archive's) does not: the
+    # print dialog sends each alternative's own flag back as it is.
+    if variant_specs:
+        switches_clears_plate_on = any(
+            (data.clears_plate if data.clears_plate is not None else spec.clears_plate)
+            and not variant_file.clears_plate
+            for spec, variant_file, _model in variant_specs
+        )
+    elif library_file:
+        switches_clears_plate_on = bool(data.clears_plate) and not library_file.clears_plate
+    else:
+        switches_clears_plate_on = bool(data.clears_plate) and not (archive is not None and archive.clears_plate)
+    if switches_clears_plate_on:
+        require_clear_plate_permission(actor)
 
     # Cross-model safety gate (#2578): a G-code 3MF sliced for one model must
     # not be queued for dispatch to an incompatible model. The UI can no longer
@@ -1624,6 +1892,25 @@ async def add_to_queue(
     if ams_mapping_json is None and not wants_live_color_match:
         ams_mapping_json = saved_slicer_ams_mapping(archive, data.printer_id)
 
+    # Whether the job clears its own plate (#3576): an explicit value wins, else
+    # the library file's flag, else (cross-model) all the alternatives', else
+    # the archive's — so a reprint inherits what the original print had.
+    clears_plate = data.clears_plate
+    if clears_plate is None:
+        if library_file:
+            clears_plate = bool(library_file.clears_plate)
+        elif variant_specs:
+            # Display only: each alternative carries its own value, and the one
+            # that wins the printer decides at dispatch (_resolve_variant).
+            clears_plate = all(
+                spec.clears_plate if spec.clears_plate is not None else bool(variant_file.clears_plate)
+                for spec, variant_file, _model in variant_specs
+            )
+        elif archive:
+            clears_plate = bool(archive.clears_plate)
+        else:
+            clears_plate = False
+
     # Security boundary: the browser's estimated_cost is only a display hint.
     # Budget enforcement and the persisted reservation value must be derived
     # from the server-owned archive/library metadata and spool assignments.
@@ -1699,6 +1986,7 @@ async def add_to_queue(
             use_ams=data.use_ams,
             nozzle_offset_cali=data.nozzle_offset_cali,
             confirm_outcome=data.confirm_outcome,
+            clears_plate=clears_plate,
             preheat_override=data.preheat_override,
             preheat_chamber_target_override=data.preheat_chamber_target_override,
             gcode_injection=data.gcode_injection,
@@ -1720,6 +2008,10 @@ async def add_to_queue(
             _variant_values(spec, library_file, model, position)
             for position, (spec, library_file, model) in enumerate(variant_specs)
         ]
+        if data.clears_plate is not None:
+            # An explicit job-level value applies to every alternative (#3576).
+            for values in variant_values:
+                values["clears_plate"] = data.clears_plate
         # SJF orders pending items before any printer is known, so the row carries
         # the shortest candidate's estimate. Resolution replaces it with the one
         # that actually runs.
@@ -1818,6 +2110,17 @@ async def bulk_update_queue_items(
     )
     items = [item for item in result.scalars().all() if printer_scope.allows(item.printer_id)]
 
+    # Switching plate clearing on takes printers:clear_plate (#3576). Checked
+    # for the whole request before any row changes, on the rows it may change.
+    if any(
+        item.status == "pending"
+        and item.dispatching_at is None
+        and (can_modify_all or (user is not None and item.created_by_id == user.id))
+        and _switches_clears_plate_on(item, update_data)
+        for item in items
+    ):
+        require_clear_plate_permission(actor)
+
     updated_count = 0
     skipped_count = 0
     validates_billing_fields = "cost_center_id" in update_data or "estimated_cost" in update_data
@@ -1900,6 +2203,7 @@ async def bulk_update_queue_items(
             item.target_model = None
             item.target_location = None
             drop_printer_resolved(item)
+        _apply_clears_plate_update(item, item_update_data)
         for field, value in item_update_data.items():
             setattr(item, field, value)
         updated_count += 1
@@ -2778,6 +3082,9 @@ async def update_queue_item(
         raise HTTPException(403, _AWAITING_REVIEW)
     if _releases_model_job(item, update_data):
         ensure_model_target_allowed(user, printer_scope)
+    # Switching plate clearing on takes printers:clear_plate (#3576)
+    if _switches_clears_plate_on(item, update_data):
+        require_clear_plate_permission(actor)
 
     # Normalize target_model if being updated (see add_to_queue for why the
     # code map has to run first).
@@ -2921,6 +3228,7 @@ async def update_queue_item(
     if claimed is not None:
         raise HTTPException(409, "Item is being dispatched — cancel it first to make changes")
 
+    _apply_clears_plate_update(item, update_data)
     for field, value in update_data.items():
         setattr(item, field, value)
 
