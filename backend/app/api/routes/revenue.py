@@ -144,7 +144,7 @@ async def get_revenue(
     user: User | None = RequirePermissionIfAuthEnabled(Permission.REVENUE_READ),
 ):
     if granularity not in REVENUE_GRANULARITIES:
-        raise _unprocessable("granularity must be day, week, month or year")
+        raise _unprocessable("granularity must be day, week, month, quarter or year")
     now = datetime.now(timezone.utc)
     today = org_today(now)
     if (from_ and not is_valid_day(from_)) or (to and not is_valid_day(to)):
@@ -378,7 +378,7 @@ async def get_customers(
     _ordered_range(from_, to)
     start, end = series.clamp_range(from_, to, REVENUE_HISTORY_START, org_today(now))
     if granularity not in REVENUE_GRANULARITIES:
-        raise _unprocessable("granularity must be day, week, month or year")
+        raise _unprocessable("granularity must be day, week, month, quarter or year")
     flags = memo.caller_flags(user)
     filters = _filters(flags, items, brand, kind, segment)
 
@@ -506,7 +506,7 @@ async def get_movers(
         ranges = {"current": {"from": days[0], "to": days[1]}, "previous": {"from": days[2], "to": days[3]}}
     else:
         if granularity not in REVENUE_GRANULARITIES:
-            raise _unprocessable("granularity must be day, week, month or year")
+            raise _unprocessable("granularity must be day, week, month, quarter or year")
         key = key or series.bucket_key_for(today, granularity)
         try:
             start, end = series.bucket_range(key, granularity) if series.is_bucket_key(key, granularity) else ("", "")
@@ -801,7 +801,8 @@ async def get_result(
                 production=costs,
             )
 
-        fixed = {m: (c.real, c.estimated) for m, c in (await production.read_fixed_charges(conn, today)).items()}
+        charges = await production.read_fixed_charges(conn, today)
+        fixed = {m: (c.real, c.estimated) for m, c in charges.items()}
         month_start = f"{today[:7]}-01"
         next_month = add_days(month_start, days_in_month(int(today[:4]), int(today[5:7])))
         # The whole month's labour, days still to come included.
@@ -816,6 +817,7 @@ async def get_result(
             costs.first_day,
             production.day_shares(now)[0],
             sum(production.depreciation_by_day(assets, next_month, month_start).values()),
+            charges[today[:7]].goods if today[:7] in charges else 0.0,
         )
 
     return await _respond(request, user, build, now=now, extra_stamp=stamp)

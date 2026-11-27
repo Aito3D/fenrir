@@ -1,5 +1,5 @@
 export type TaxMode = "ht" | "ttc";
-export type RevenueGranularity = "day" | "week" | "month" | "year";
+export type RevenueGranularity = "day" | "week" | "month" | "quarter" | "year";
 export type RangePresetId = "this-year" | "last-12-months" | "all";
 export type RevenueKind = "goods" | "services";
 export type CustomerSegment = "pro" | "particulier" | "passage" | "inconnu";
@@ -474,7 +474,8 @@ export interface ResultMonth {
 export interface ResultResponse {
   fixedMonthly: number;
   /** The three charges of the whole current month. */
-  charges: { labor: number; fixed: number; fixedEstimated: number; depreciation: number };
+  /** `fixedGoods` is the goods' part of the fixed costs, estimate included; every other charge is the services'. */
+  charges: { labor: number; fixed: number; fixedEstimated: number; fixedGoods: number; depreciation: number };
   months: ResultMonth[];
   /** First day print and labour costs exist; null when there are none yet. */
   costsSince: string | null;

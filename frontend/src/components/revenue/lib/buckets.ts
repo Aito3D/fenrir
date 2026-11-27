@@ -19,6 +19,8 @@ export function bucketKeyFor(day: string, g: RevenueGranularity): string {
     }
     case "month":
       return day.slice(0, 7);
+    case "quarter":
+      return `${day.slice(0, 4)}-Q${Math.ceil(Number(day.slice(5, 7)) / 3)}`;
     case "year":
       return day.slice(0, 4);
   }
@@ -47,6 +49,11 @@ export function bucketRange(key: string, g: RevenueGranularity): { start: string
       const [y, m] = key.split("-").map(Number);
       return { start: `${key}-01`, end: `${key}-${pad2(daysInMonth(y, m))}` };
     }
+    case "quarter": {
+      const y = Number(key.slice(0, 4));
+      const last = Number(key[6]) * 3;
+      return { start: `${y}-${pad2(last - 2)}-01`, end: `${y}-${pad2(last)}-${pad2(daysInMonth(y, last))}` };
+    }
     case "year":
       return { start: `${key}-01-01`, end: `${key}-12-31` };
   }
@@ -71,6 +78,8 @@ export function bucketLabel(key: string, g: RevenueGranularity): string {
     }
     case "month":
       return FR_MONTH.format(new Date(dayToUtc(start)));
+    case "quarter":
+      return `T${key[6]} ${key.slice(0, 4)}`;
     case "year":
       return key;
   }
@@ -93,6 +102,8 @@ export function shiftBucketYear(key: string, g: RevenueGranularity, delta: numbe
       const [y, m] = key.split("-");
       return `${Number(y) + delta}-${m}`;
     }
+    case "quarter":
+      return `${Number(key.slice(0, 4)) + delta}${key.slice(4)}`;
     case "year":
       return String(Number(key) + delta);
   }
@@ -107,6 +118,8 @@ export function isBucketKey(key: string, g: RevenueGranularity): boolean {
       return /^\d{4}-W\d{2}$/.test(key);
     case "month":
       return /^\d{4}-\d{2}$/.test(key);
+    case "quarter":
+      return /^\d{4}-Q[1-4]$/.test(key);
     case "year":
       return /^\d{4}$/.test(key);
   }

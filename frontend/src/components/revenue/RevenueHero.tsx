@@ -15,7 +15,7 @@ const AMBER = '#f59e0b';
 const SPARK_POINTS = 24;
 const RING_R = 50;
 // kpiTiles words its labels in French with this unit; tileLabel maps them back to keys.
-const FR_UNIT = { day: 'Jour', week: 'Semaine', month: 'Mois', year: 'Année' } as const;
+const FR_UNIT = { day: 'Jour', week: 'Semaine', month: 'Mois', quarter: 'Trimestre', year: 'Année' } as const;
 const MARGIN_LABEL = 'Marge brute HT';
 const PER_HOUR_LABEL = 'Services / h machine';
 

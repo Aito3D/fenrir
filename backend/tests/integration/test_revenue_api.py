@@ -179,7 +179,7 @@ async def test_customers_clamps_range_to_history(async_client, revenue_db):
 @pytest.mark.parametrize(
     ("params", "message"),
     [
-        ({"granularity": "hour"}, "granularity must be day, week, month or year"),
+        ({"granularity": "hour"}, "granularity must be day, week, month, quarter or year"),
         ({"from": "nope"}, "from/to must be yyyy-MM-dd"),
         ({"items": "a b"}, "items must be a comma-separated list of item ids"),
         (
@@ -307,7 +307,7 @@ async def test_customers_carries_retention_per_bucket_of_the_granularity(async_c
 
 @pytest.mark.asyncio
 async def test_customers_rejects_an_unknown_granularity(async_client, revenue_db, tokens):
-    params = {**RANGE, "granularity": "quarter"}
+    params = {**RANGE, "granularity": "hour"}
     r = await async_client.get(f"{URL}/customers", params=params, headers=tokens["read_customers"])
     assert r.status_code == 422
 
@@ -342,7 +342,7 @@ async def test_movers_refuses_a_key_outside_the_history(async_client, revenue_db
 @pytest.mark.asyncio
 async def test_movers_validates_granularity_and_compare_ranges(async_client, revenue_db, tokens):
     r = await async_client.get(f"{URL}/movers", params={"granularity": "hour"}, headers=tokens["read"])
-    assert r.json()["detail"] == "granularity must be day, week, month or year"
+    assert r.json()["detail"] == "granularity must be day, week, month, quarter or year"
     r = await async_client.get(f"{URL}/movers", params={"cfrom": "2025-02-01"}, headers=tokens["read"])
     assert r.status_code == 422
     assert r.json()["detail"] == "from/to/cfrom/cto must be yyyy-MM-dd with from ≤ to and cfrom ≤ cto"

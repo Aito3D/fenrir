@@ -58,7 +58,7 @@ describe('RevenueTable', () => {
   it('lists the periods newest first under named columns', () => {
     render(renderTable());
     expect(screen.getByRole('table', { name: 'Detail by period' })).toBeInTheDocument();
-    expect(screen.getAllByRole('columnheader').map((h) => h.textContent)).toEqual(['Period', 'Revenue HT', 'Revenue TTC', 'Change', 'Over a year', 'Margin', 'Services / machine h', 'Running total', 'Units']);
+    expect(screen.getAllByRole('columnheader').map((h) => h.textContent)).toEqual(['Period', 'Revenue HT', 'Revenue TTC', 'Change', 'Over a year', 'Costs', 'Margin', 'Services / machine h', 'Running total', 'Units']);
     const rows = bodyRows();
     expect(rows[0]).toHaveTextContent('oct. 2026');
     expect(rows[1]).toHaveTextContent('sept. 2026');
@@ -102,7 +102,7 @@ describe('RevenueTable', () => {
     expect(within(cells[4]).getByText('▲ 55%')).toBeInTheDocument();
     expect(within(cells[3]).getByText('to date')).toBeInTheDocument();
     expect(within(cells[4]).getByText('to date')).toBeInTheDocument();
-    expect(within(cells[7]).getByText('1.120.000')).toBeInTheDocument();
+    expect(within(cells[8]).getByText('1.120.000')).toBeInTheDocument();
     expect(within(septRow).getAllByRole('cell')[4]).toHaveTextContent('—');
     expect(within(septRow).queryByText('to date')).toBeNull();
   });
@@ -145,6 +145,8 @@ describe('RevenueTable', () => {
     stubItems([]);
     const parts = { ...sept, costParts: { items: 100_000, filament: 50_000, energy: 0, wear: 120_000, labor: 30_000 } };
     render(renderTable({ buckets: [parts] }));
+    // The charges column: labour, fixed costs and depreciation, not the variable costs.
+    expect(within(bodyRows()[0]).getAllByRole('cell')[5]).toHaveTextContent(/^30\.000$/);
     fireEvent.click(screen.getByRole('button', { name: 'sept. 2026' }));
     const breakdown = await screen.findByRole('group', { name: 'Gross margin breakdown' });
     expect(breakdown).toHaveTextContent('Costed revenue HT500.000');
@@ -166,7 +168,7 @@ describe('RevenueTable', () => {
   it('shows the margin amount with its rate and explains the column', () => {
     render(renderTable());
     const cells = within(bodyRows()[0]).getAllByRole('cell');
-    expect(cells[5]).toHaveTextContent('186.00030 %');
+    expect(cells[6]).toHaveTextContent('186.00030 %');
     expect(screen.getByRole('columnheader', { name: 'Margin' })).toHaveAccessibleDescription('Gross margin HT, at current cost (dealer price, else purchase price); services at their print costs (filament, energy, printer wear) and labour since July 2026');
   });
 
@@ -183,7 +185,7 @@ describe('RevenueTable', () => {
     expect(screen.queryByText('14.000')).toBeNull();
     unmount();
     const { unmount: u1 } = render(renderTable());
-    expect(within(bodyRows()[0]).getAllByRole('cell')).toHaveLength(9);
+    expect(within(bodyRows()[0]).getAllByRole('cell')).toHaveLength(10);
     u1();
     unmount();
     const strip = ({ cost: _c, costedHt: _h, ...b }: RevenueBucket) => b as RevenueBucket;

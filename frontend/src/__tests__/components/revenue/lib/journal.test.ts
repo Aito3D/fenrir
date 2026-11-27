@@ -103,3 +103,12 @@ describe("rateTone", () => {
     ]);
   });
 });
+
+describe('bucketCharges', () => {
+  it('sums labour, fixed costs (estimate included) and depreciation, never the variable costs', async () => {
+    const { bucketCharges } = await import('../../../../components/revenue/lib/journal');
+    expect(bucketCharges({ costParts: { items: 500, filament: 40, labor: 100, fixed: 60, fixedEstimated: 6, depreciation: 30 } })).toBe(196);
+    expect(bucketCharges({ costParts: { items: 500 } })).toBeNull();
+    expect(bucketCharges(undefined)).toBeNull();
+  });
+});

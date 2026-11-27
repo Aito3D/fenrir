@@ -55,6 +55,7 @@ def build_result(
     costs_since: str | None,
     day_share: float = 0.0,
     month_depreciation: float = 0.0,
+    month_fixed_goods: float = 0.0,
 ) -> dict:
     """`month_buckets`: oldest first, the last one is today's month; `day_buckets`: that month's days.
 
@@ -63,7 +64,8 @@ def build_result(
     gone would swing). `costs_since` is the first day print and labour costs exist: months before it are `partial`,
     their result would count services at full margin. `day_share` is the part of today already gone: fixed costs
     grow by the minute. `month_depreciation` is the whole current month's, for the break-even; a row's own comes
-    from its bucket. `coverage` is the share of the HT whose cost is known.
+    from its bucket. `month_fixed_goods` is the goods' part of the current month's fixed costs, estimate included: every
+    other charge is the services'. `coverage` is the share of the HT whose cost is known.
     """
     year, month = int(today[:4]), int(today[5:7])
     total = days_in_month(year, month)
@@ -99,6 +101,7 @@ def build_result(
             "labor": js_round(month_labor),
             "fixed": js_round(month_fixed),
             "fixedEstimated": js_round(month_estimated),
+            "fixedGoods": js_round(month_fixed_goods),
             "depreciation": js_round(month_depreciation),
         },
         "months": rows,

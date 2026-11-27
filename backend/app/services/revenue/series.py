@@ -29,7 +29,7 @@ from backend.app.services.revenue.scope import (
     matches_kind,
 )
 
-Granularity = Literal["day", "week", "month", "year"]
+Granularity = Literal["day", "week", "month", "quarter", "year"]
 RangePresetId = Literal["this-year", "last-12-months", "all"]
 RANGE_PRESETS: tuple[str, ...] = get_args(RangePresetId)
 
@@ -49,6 +49,8 @@ def bucket_key_for(day: str, g: Granularity) -> str:
     if g == "week":
         year, week = iso_week(day)
         return f"{year}-W{week:02d}"
+    if g == "quarter":
+        return f"{day[:4]}-Q{(int(day[5:7]) + 2) // 3}"
     return day[:7] if g == "month" else day[:4]
 
 
@@ -62,6 +64,9 @@ def bucket_range(key: str, g: Granularity) -> tuple[str, str]:
     if g == "month":
         y, m = (int(p) for p in key.split("-"))
         return f"{key}-01", f"{key}-{days_in_month(y, m):02d}"
+    if g == "quarter":
+        y, last = int(key[:4]), int(key[6]) * 3
+        return f"{y}-{last - 2:02d}-01", f"{y}-{last:02d}-{days_in_month(y, last):02d}"
     return f"{key}-01-01", f"{key}-12-31"
 
 
@@ -83,6 +88,8 @@ def bucket_label(key: str, g: Granularity) -> str:
         return f"S{week:02d} · {left}–{_fmt_day(end)}"
     if g == "month":
         return f"{_FR_MONTHS[int(start[5:7]) - 1]} {start[:4]}"
+    if g == "quarter":
+        return f"T{key[6]} {key[:4]}"
     return key
 
 
@@ -100,13 +107,15 @@ def shift_bucket_year(key: str, g: Granularity, delta: int) -> str | None:
     if g == "month":
         y, m = key.split("-")
         return f"{int(y) + delta}-{m}"
+    if g == "quarter":
+        return f"{int(key[:4]) + delta}{key[4:]}"
     return str(int(key) + delta)
 
 
 def is_bucket_key(key: str, g: Granularity) -> bool:
     if g == "day":
         return is_valid_day(key)
-    pattern = {"week": r"\d{4}-W\d{2}", "month": r"\d{4}-\d{2}", "year": r"\d{4}"}[g]
+    pattern = {"week": r"\d{4}-W\d{2}", "month": r"\d{4}-\d{2}", "quarter": r"\d{4}-Q[1-4]", "year": r"\d{4}"}[g]
     return re.fullmatch(pattern, key, re.ASCII) is not None
 
 

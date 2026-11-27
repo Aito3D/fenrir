@@ -69,10 +69,10 @@ export function RevenuePopover(p: {
   );
 }
 
-const GRANULARITIES: readonly RevenueGranularity[] = ['day', 'week', 'month', 'year'];
-/** The keyboard shortcuts the row binds: loki's French initials (Jour, Semaine, Mois, Année). */
-const SHORTCUT: Record<string, RevenueGranularity> = { j: 'day', s: 'week', m: 'month', a: 'year' };
-const SHORTCUT_LETTER: Record<RevenueGranularity, string> = { day: 'J', week: 'S', month: 'M', year: 'A' };
+const GRANULARITIES: readonly RevenueGranularity[] = ['day', 'week', 'month', 'quarter', 'year'];
+/** The keyboard shortcuts the row binds: loki's French initials (Jour, Semaine, Mois, Trimestre, Année). */
+const SHORTCUT: Record<string, RevenueGranularity> = { j: 'day', s: 'week', m: 'month', t: 'quarter', a: 'year' };
+const SHORTCUT_LETTER: Record<RevenueGranularity, string> = { day: 'J', week: 'S', month: 'M', quarter: 'T', year: 'A' };
 const PRESET_KEY: Record<RangePresetId, string> = { 'this-year': 'thisYear', 'last-12-months': 'last12Months', all: 'all' };
 const SEGMENTS: readonly (CustomerSegment | null)[] = [null, 'pro', 'particulier', 'passage'];
 
@@ -214,7 +214,7 @@ export function RevenueControls(p: {
                         onClick={() => {
                           p.onRange({ preset: 'custom', ...m });
                           // A month in month or year buckets is a single column: show its days.
-                          if (p.granularity === 'month' || p.granularity === 'year') p.onGranularity('day');
+                          if (p.granularity !== 'day' && p.granularity !== 'week') p.onGranularity('day');
                           setDraft(null);
                           close();
                         }}>

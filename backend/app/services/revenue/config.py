@@ -31,7 +31,7 @@ REVENUE_BRANDS = [
     "Rosa3D",
 ]
 
-REVENUE_GRANULARITIES = ("day", "week", "month", "year")
+REVENUE_GRANULARITIES = ("day", "week", "month", "quarter", "year")
 
 
 @dataclass(frozen=True)

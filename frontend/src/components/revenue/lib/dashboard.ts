@@ -3,7 +3,7 @@ import { RANGE_PRESETS } from "./buckets";
 import { STACK_DIMENSIONS, type StackDimension } from "./chart";
 import type { CustomerSegment, RangePresetId, RevenueGranularity, RevenueKind, RevenueResponse, RevenueSyncStatus, TaxMode } from "./types";
 
-const GRANULARITIES: readonly string[] = ["day", "week", "month", "year"];
+const GRANULARITIES: readonly string[] = ["day", "week", "month", "quarter", "year"];
 const SEGMENTS: readonly string[] = ["pro", "particulier", "passage", "inconnu"];
 export const isRevenueGranularity = (v: unknown): v is RevenueGranularity => typeof v === "string" && GRANULARITIES.includes(v);
 export const isRevenueKind = (v: unknown): v is RevenueKind => v === "goods" || v === "services";

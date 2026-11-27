@@ -20,6 +20,17 @@ export function withProductionCost(rows: readonly RevenueItemRow[], bucket: Pick
   return rows.map((r) => (r.kind === "service" && r.cost === null ? { ...r, cost: (production * r.ht) / poolHt, costedHt: r.ht, shared: true } : r));
 }
 
+const CHARGES = ["labor", "fixed", "fixedEstimated", "depreciation"] as const;
+
+/**
+ * The charges (labour, fixed costs, depreciation) a bucket carries; null when it carries none. The server already
+ * follows the goods / services filter: goods keep their part of the fixed costs, services everything else.
+ */
+export function bucketCharges(bucket: Pick<RevenueBucket, "costParts"> | null | undefined): number | null {
+  const parts = bucket?.costParts;
+  return (parts && CHARGES.reduce((s, p) => s + (parts[p] ?? 0), 0)) || null;
+}
+
 export interface JournalTotals {
   ht: number;
   ttc: number;

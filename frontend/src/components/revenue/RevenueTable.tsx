@@ -8,6 +8,7 @@ import { asDelta } from './lib/finding';
 import { evolutionFor, yearOverYear } from './lib/kpis';
 import { formatAmount, formatFcp } from './lib/format';
 import { toggleInSet } from './lib/dashboard';
+import { bucketCharges } from './lib/journal';
 import type { ItemsResponse, RevenueBucket, RevenueGranularity, RevenueMonthCheck, TaxMode } from './lib/types';
 import { useRevenueResource } from './useRevenueResource';
 import { MarginBreakdown } from './MarginBreakdown';
@@ -74,6 +75,7 @@ function ItemRows({ bucket, filterParams, version, cols, margin }: { bucket: Rev
           <span role="cell" className={CELL}>{formatAmount(r.ttc)}</span>
           <span role="cell" />
           <span role="cell" />
+          {margin && <span role="cell" />}
           {margin && <span role="cell" className={CELL}>{r.cost == null ? '—' : formatAmount(r.ht - r.cost)}</span>}
           {margin && <span role="cell" />}
           <span role="cell" />
@@ -103,7 +105,7 @@ export function RevenueTable({ buckets, granularity, taxMode, canMargin, filterP
   const margin = canMargin && buckets.some((b) => b.costedHt !== undefined);
   // The margin column carries a rate and a coverage line: wider, so neither wraps.
   const cols = margin
-    ? 'minmax(0,1.5fr) repeat(4,minmax(0,1fr)) minmax(0,1.4fr) repeat(3,minmax(0,1fr))'
+    ? 'minmax(0,1.5fr) repeat(4,minmax(0,1fr)) minmax(0,1.4fr) repeat(4,minmax(0,1fr))'
     : 'minmax(0,1.5fr) repeat(6,minmax(0,1fr))';
   const rows = [...buckets].reverse();
   const checkOf = new Map(granularity === 'month' ? (checks ?? []).map((c) => [c.month, c]) : []);
@@ -113,7 +115,7 @@ export function RevenueTable({ buckets, granularity, taxMode, canMargin, filterP
     { id: 'ttc', label: t('revenue.table.ttc') },
     { id: 'change', label: t('revenue.table.change') },
     { id: 'yoy', label: t('revenue.table.yoy') },
-    ...(margin ? [{ id: 'margin', label: t('revenue.table.margin') }, { id: 'perHour', label: t('revenue.table.perHour') }] : []),
+    ...(margin ? [{ id: 'charges', label: t('revenue.charges.title') }, { id: 'margin', label: t('revenue.table.margin') }, { id: 'perHour', label: t('revenue.table.perHour') }] : []),
     { id: 'cumulative', label: t('revenue.table.cumulative') },
     { id: 'units', label: t('revenue.table.units') },
   ];
@@ -124,7 +126,7 @@ export function RevenueTable({ buckets, granularity, taxMode, canMargin, filterP
       <span id={hintId} hidden>{t('revenue.table.marginHint')}</span>
       {/* Eight figures do not fit a phone or the narrow split column: the rows scroll sideways, never wrap. */}
       <div role="region" tabIndex={0} aria-label={t('revenue.table.title')} className={`overflow-x-auto rounded-lg ${focusRingCls}`}>
-      <div role="table" aria-label={t('revenue.table.title')} className="grid min-w-[56rem] gap-1.5 text-[13px]">
+      <div role="table" aria-label={t('revenue.table.title')} className="grid min-w-[62rem] gap-1.5 text-[13px]">
         <div role="row" className={`${ROW} text-[11px] text-bambu-gray`} style={{ gridTemplateColumns: cols }}>
           {heads.map((h, i) => (
             <span key={h.id} role="columnheader" className={i === 0 ? '' : 'text-right'}
@@ -135,6 +137,7 @@ export function RevenueTable({ buckets, granularity, taxMode, canMargin, filterP
           const expanded = open.has(b.key);
           // The margin is computed on the costed sales only; say how much of the HT that covers when it is not all of it.
           const coverage = b.costedHt != null && b.costedHt > 0 && b.ht > 0 ? Math.round((b.costedHt / b.ht) * 100) : null;
+          const charges = bucketCharges(b);
           const coveragePct = coverage != null && coverage < 100 ? `${coverage} %` : null;
           return (
             <Fragment key={b.key}>
@@ -159,6 +162,7 @@ export function RevenueTable({ buckets, granularity, taxMode, canMargin, filterP
                 <span role="cell" className={`${CELL} text-bambu-gray-light`}>{`${formatAmount(b.ttc)}${b.ttcApprox ? ' ≈' : ''}`}</span>
                 <Evo v={evolutionFor(b, taxMode)} elapsedDays={b.elapsedDays} />
                 <Evo v={yearOverYear(b, taxMode)} elapsedDays={b.elapsedDays} />
+                {margin && <span role="cell" className={`${CELL} text-bambu-gray-light`}>{charges == null ? '—' : formatAmount(charges)}</span>}
                 {margin && (
                   <span role="cell" className={`${CELL} text-bambu-gray-light`} title={coveragePct ? t('revenue.table.coverage', { pct: coveragePct }) : undefined}>
                     {b.costedHt != null && b.costedHt > 0 ? (

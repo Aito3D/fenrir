@@ -716,3 +716,19 @@ def test_fixed_costs_follow_the_goods_or_services_filter():
     ):
         sliced = parts(f)
         assert sliced["cost"] == 0 and sliced["costParts"] == {"items": 0}
+
+
+def test_quarter_buckets():
+    from backend.app.services.revenue import series as s
+
+    assert [s.bucket_key_for(d, "quarter") for d in ("2026-01-01", "2026-03-31", "2026-04-01", "2026-12-31")] == [
+        "2026-Q1",
+        "2026-Q1",
+        "2026-Q2",
+        "2026-Q4",
+    ]
+    assert s.bucket_range("2026-Q1", "quarter") == ("2026-01-01", "2026-03-31")
+    assert s.bucket_range("2026-Q4", "quarter") == ("2026-10-01", "2026-12-31")
+    assert s.bucket_label("2026-Q4", "quarter") == "T4 2026"
+    assert s.shift_bucket_year("2026-Q4", "quarter", -1) == "2025-Q4"
+    assert s.is_bucket_key("2026-Q4", "quarter") and not s.is_bucket_key("2026-Q5", "quarter")

@@ -66,26 +66,3 @@ export function isoWeek(day: string): { year: number; week: number } {
   const week = Math.floor((thursday - isoWeek1Monday(year)) / (7 * DAY_MS)) + 1;
   return { year, week };
 }
-
-export type JournalMode = 'day' | 'month';
-
-/** The window one period covers: the day itself, or its month cut at today. */
-export function journalWindow(mode: JournalMode, day: string, today: string): { from: string; to: string } {
-  if (mode === 'day') return { from: day, to: day };
-  const [y, m] = day.split('-').map(Number);
-  const last = `${day.slice(0, 7)}-${String(daysInMonth(y, m)).padStart(2, '0')}`;
-  return { from: `${day.slice(0, 7)}-01`, to: last > today ? today : last };
-}
-
-/** The day `delta` periods away, or null outside the history (its first day … today). */
-export function journalStep(mode: JournalMode, day: string, delta: number, today: string): string | null {
-  if (mode === 'day') {
-    const next = addDays(day, delta);
-    return next < REVENUE_HISTORY_START || next > today ? null : next;
-  }
-  const [y, m] = day.split('-').map(Number);
-  const first = utcToDay(Date.UTC(y, m - 1 + delta, 1));
-  if (first > today || first.slice(0, 7) < REVENUE_HISTORY_START.slice(0, 7)) return null;
-  // Landing on the current month keeps today, so switching to « Jour » opens on today.
-  return first.slice(0, 7) === today.slice(0, 7) ? today : first;
-}

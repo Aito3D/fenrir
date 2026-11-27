@@ -6,7 +6,7 @@ revenue dashboard (`../loki` at `f150c2e2`); the design is in
 
 ## What the page shows
 
-Turnover by day, ISO week, month or year, HT or TTC, from 1 January 2024 (`REVENUE_HISTORY_START`), for the items in
+Turnover by day, ISO week, month, quarter or year, HT or TTC, from 1 January 2024 (`REVENUE_HISTORY_START`), for the items in
 scope: an item counts when its Zoho nature or brand is one of the 3D natures or brands in
 `backend/app/services/revenue/config.py`, or when someone included it by hand. Items that match neither are listed
 under **À classer** until someone decides.

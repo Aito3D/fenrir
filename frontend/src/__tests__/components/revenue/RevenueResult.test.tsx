@@ -6,7 +6,7 @@ import type { ResultResponse } from '../../../components/revenue/lib/types';
 const json = (body: unknown) => new Response(JSON.stringify(body), { status: 200, headers: { 'Content-Type': 'application/json' } });
 const payload = (o: Partial<ResultResponse> = {}): ResultResponse => ({
   fixedMonthly: 120_000,
-  charges: { labor: 0, fixed: 120_000, fixedEstimated: 0, depreciation: 45_000 },
+  charges: { labor: 0, fixed: 120_000, fixedEstimated: 0, fixedGoods: 0, depreciation: 45_000 },
   months: [
     { month: '2026-10', ht: 1_000_000, variable: 400_000, labor: 200_000, fixed: 120_000, fixedEstimated: 0, depreciation: 0, result: 280_000, resultReal: 280_000, coverage: 0.82, partial: false },
     { month: '2026-11', ht: 300_000, variable: 120_000, labor: 60_000, fixed: 150_000, fixedEstimated: 0, depreciation: 45_000, result: -30_000, resultReal: -30_000, coverage: 1, partial: false },

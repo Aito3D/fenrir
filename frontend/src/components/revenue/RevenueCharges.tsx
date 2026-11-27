@@ -57,6 +57,8 @@ export function RevenueCharges({ canManage, version, onChanged, onClose, returnF
   const estimated = c?.fixedEstimated ?? 0;
   const amount = c ? { labor: c.labor, fixed: c.fixed + estimated, depreciation: c.depreciation } : null;
   const total = amount ? amount.labor + amount.fixed + amount.depreciation : 0;
+  // Only the fixed costs are split; labour and depreciation are the services'.
+  const goods = c?.fixedGoods ?? 0;
   const share = (v: number) => (total > 0 ? `${Math.round((100 * v) / total)} %` : '');
   // Every tab stays mounted, only hidden: switching must not drop unsaved rows.
   const pane = (id: Tab) => ({ role: 'tabpanel', id: segmentPanelId(PREFIX, id), 'aria-labelledby': segmentTabId(PREFIX, id), hidden: tab !== id });
@@ -119,6 +121,11 @@ export function RevenueCharges({ canManage, version, onChanged, onClose, returnF
                           </li>
                         ))}
                       </ul>
+                      <p className="mt-3 flex flex-wrap gap-x-5 gap-y-1 border-t border-bambu-dark-tertiary pt-3 text-sm tabular-nums text-bambu-gray-light">
+                        {([['goods', goods], ['services', total - goods]] as const).map(([k, v]) => (
+                          <span key={k}>{t(`revenue.filters.${k}`)} <span className="font-semibold text-white">{formatFcp(v)}</span> {share(v)}</span>
+                        ))}
+                      </p>
                     </>
                   )}
                 </Panel>

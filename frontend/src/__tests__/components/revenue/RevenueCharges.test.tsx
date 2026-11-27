@@ -15,7 +15,7 @@ describe('RevenueCharges', () => {
     vi.useFakeTimers({ toFake: ['Date'] });
     vi.setSystemTime(new Date(2026, 10, 15)); // November: 30 days, 43 200 minutes
     vi.stubGlobal('fetch', vi.fn(async (url: string) => {
-      if (url.endsWith('/result')) return json({ fixedMonthly: 86_400, charges: { labor: 43_200, fixed: 86_400, depreciation: 129_600 }, months: [], costsSince: null, breakEven: null });
+      if (url.endsWith('/result')) return json({ fixedMonthly: 86_400, charges: { labor: 43_200, fixed: 86_400, fixedEstimated: 0, fixedGoods: 21_600, depreciation: 129_600 }, months: [], costsSince: null, breakEven: null });
       if (url.endsWith('/labor')) return json({ providers: [] });
       if (url.endsWith('/fixed-accounts')) return json({ month: '2026-11', readAt: null, accounts: [] });
       return json({ assets: [], selected: [], readAt: '2026-11-25T10:00:00+00:00' });
@@ -61,7 +61,7 @@ describe('RevenueCharges', () => {
     vi.useFakeTimers({ toFake: ['Date'] });
     vi.setSystemTime(new Date(2026, 10, 15));
     vi.stubGlobal('fetch', vi.fn(async (url: string) => {
-      if (url.endsWith('/result')) return json({ fixedMonthly: 86_400, charges: { labor: 0, fixed: 43_200, fixedEstimated: 43_200, depreciation: 0 }, months: [], costsSince: null, breakEven: null });
+      if (url.endsWith('/result')) return json({ fixedMonthly: 86_400, charges: { labor: 0, fixed: 43_200, fixedEstimated: 43_200, fixedGoods: 21_600, depreciation: 0 }, months: [], costsSince: null, breakEven: null });
       if (url.endsWith('/labor')) return json({ providers: [] });
       if (url.endsWith('/fixed-accounts')) return json({ month: '2026-11', readAt: null, accounts: [] });
       return json({ assets: [], selected: [], readAt: null });
@@ -77,6 +77,9 @@ describe('RevenueCharges', () => {
     expect(card('Fixed costs').getByText('2,0 FCP/min')).toBeInTheDocument();
     expect(card('Fixed costs').getByText('of which 43.200 FCP estimated')).toBeInTheDocument();
     expect(within(screen.getByRole('tabpanel', { name: 'Overview' })).getAllByText('86.400 FCP')).toHaveLength(2);
+    // The goods' part of the fixed costs; everything else is the services'.
+    expect(screen.getByText('21.600 FCP')).toBeInTheDocument();
+    expect(screen.getByText('64.800 FCP')).toBeInTheDocument();
     expect(card('Labour').queryByText(/estimated/)).toBeNull();
   });
 });

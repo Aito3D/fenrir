@@ -20,7 +20,17 @@ export function shiftWindow(from: string, to: string, g: RevenueGranularity, del
   return { from: first < historyStart ? historyStart : first, to: last.end > today ? today : last.end };
 }
 
-const FINER: Partial<Record<RevenueGranularity, RevenueGranularity>> = { year: "month", month: "day", week: "day" };
+/**
+ * The size ‹ › step by: a window that is exactly one calendar month (cut at today for the running one) shown in days
+ * or weeks steps a whole month, so a picked month stays a month; any other window slides by one bucket.
+ */
+export function stepGranularity(from: string, to: string, g: RevenueGranularity, today: string): RevenueGranularity {
+  if (g !== "day" && g !== "week") return g;
+  const month = bucketRange(from.slice(0, 7), "month");
+  return from === month.start && to === (month.end > today ? today : month.end) ? "month" : g;
+}
+
+const FINER: Partial<Record<RevenueGranularity, RevenueGranularity>> = { year: "month", quarter: "month", month: "day", week: "day" };
 
 /** A column's own range one level finer (year → months, month / week → days); null on a day. */
 export function drillDown(bucket: Pick<RevenueBucket, "start" | "end">, g: RevenueGranularity): { granularity: RevenueGranularity; from: string; to: string } | null {

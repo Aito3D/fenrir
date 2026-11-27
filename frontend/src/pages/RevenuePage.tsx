@@ -28,7 +28,7 @@ import { RevenueTargets } from '../components/revenue/RevenueTargets';
 import { RevenueControls as ControlsRow } from '../components/revenue/RevenueControls';
 import { RevenueChip, RevenueProductSearch } from '../components/revenue/RevenueProductSearch';
 import { useRevenueResource } from '../components/revenue/useRevenueResource';
-import { drillDown, shiftWindow, summaryText } from '../components/revenue/lib/analysis';
+import { drillDown, shiftWindow, stepGranularity, summaryText } from '../components/revenue/lib/analysis';
 import { addToBasket } from '../components/revenue/lib/basket';
 import { orgToday, REVENUE_HISTORY_START } from '../components/revenue/lib/dates';
 import { filterByKind } from '../components/revenue/lib/products';
@@ -279,7 +279,9 @@ export function RevenuePage() {
   };
 
   const today = orgToday();
-  const windowAt = (delta: number) => (data ? shiftWindow(data.from, data.to, data.granularity, delta, REVENUE_HISTORY_START, today) : null);
+  // The journal shows one period, so it always steps one; elsewhere a picked month steps a whole month.
+  const stepBy = data ? (view === 'journal' ? data.granularity : stepGranularity(data.from, data.to, data.granularity, today)) : null;
+  const windowAt = (delta: number) => (data && stepBy ? shiftWindow(data.from, data.to, stepBy, delta, REVENUE_HISTORY_START, today) : null);
   const shift = (delta: number) => {
     const w = windowAt(delta);
     // Stepping out of a drill-down keeps its granularity: the window shown is the one stepped.
@@ -584,7 +586,7 @@ export function RevenuePage() {
               <RevenueAnalysis from={data.from} to={data.to} filterParams={filterParams} version={data} />
             </>
           )}
-          {view === 'journal' && <RevenueJournal today={today} filterParams={filterParams} version={data} taxMode={active.taxMode} canMargin={can.margin} />}
+          {view === 'journal' && data && lastBucket && <RevenueJournal bucket={lastBucket} buckets={data.buckets} granularity={data.granularity} today={today} filterParams={filterParams} version={data} taxMode={active.taxMode} canMargin={can.margin} />}
           {view === 'saison' && data && (
             <>
               <RevenueYoy filterParams={filterParams} taxMode={active.taxMode} version={data} />

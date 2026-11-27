@@ -137,7 +137,13 @@ def test_break_even_counts_the_months_depreciation():
     without = result.build_result(*args)
     with_dep = result.build_result(*args, month_depreciation=30_000)
     assert with_dep["breakEven"]["amount"] == 2 * without["breakEven"]["amount"]
-    assert with_dep["charges"] == {"labor": 0, "fixed": 30_000, "fixedEstimated": 0, "depreciation": 30_000}
+    assert with_dep["charges"] == {
+        "labor": 0,
+        "fixed": 30_000,
+        "fixedEstimated": 0,
+        "fixedGoods": 0,
+        "depreciation": 30_000,
+    }
 
 
 def test_rows_carry_their_own_month():
@@ -148,13 +154,21 @@ def test_rows_carry_their_own_month():
 
 
 def test_current_month_is_prorated_real_and_estimate():
-    r = result.build_result([mb("2026-11", 0)], [], {"2026-11": (90_000, 9_000)}, "2026-11-16", 0, "2024-01-01")
+    r = result.build_result(
+        [mb("2026-11", 0)], [], {"2026-11": (90_000, 9_000)}, "2026-11-16", 0, "2024-01-01", month_fixed_goods=33_000
+    )
     row = r["months"][0]
     assert (row["fixed"], row["fixedEstimated"]) == (45_000, 4_500)
     assert (row["result"], row["resultReal"]) == (-49_500, -45_000)
     # The whole month's figures, the estimate apart.
     assert r["fixedMonthly"] == 99_000
-    assert r["charges"] == {"labor": 0, "fixed": 90_000, "fixedEstimated": 9_000, "depreciation": 0}
+    assert r["charges"] == {
+        "labor": 0,
+        "fixed": 90_000,
+        "fixedEstimated": 9_000,
+        "fixedGoods": 33_000,
+        "depreciation": 0,
+    }
 
 
 def test_a_closed_month_is_never_projected():

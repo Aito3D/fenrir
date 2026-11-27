@@ -1,16 +1,15 @@
 import { Fragment, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { ChevronLeft, ChevronRight } from 'lucide-react';
+import { ChevronRight } from 'lucide-react';
 import { Panel, Tile } from '../aito/stats/primitives';
 import { useMediaQuery } from '../../hooks/useMediaQuery';
 import { focusRingCls } from '../formStyles';
-import { PICK_CLS } from './RevenueControls';
 import { RevenueSegmented } from './RevenueSegmented';
 import { REVENUE_STORAGE_KEYS } from './lib/dashboard';
-import { addDays, dayToUtc, journalStep, journalWindow, type JournalMode } from './lib/dates';
+import { addDays, dayToUtc } from './lib/dates';
 import { formatAmount } from './lib/format';
-import { journalTotals, periodRank, rateTone, withProductionCost, type JournalRow, type JournalTotals } from './lib/journal';
-import type { ItemsResponse, RevenueResponse, TaxMode } from './lib/types';
+import { bucketCharges, journalTotals, periodRank, rateTone, withProductionCost, type JournalRow, type JournalTotals } from './lib/journal';
+import type { ItemsResponse, RevenueBucket, RevenueGranularity, RevenueResponse, TaxMode } from './lib/types';
 import { useRevenueResource } from './useRevenueResource';
 
 const PAD = 'px-2 py-1.5 sm:px-3';
@@ -81,41 +80,43 @@ function Detail({ row, tot, taxMode, margin, to, filterParams, version, cols }: 
 }
 
 /**
- * « Journal »: everything invoiced in one day or one month, item by item, with ‹ › to step through the periods.
+ * « Journal »: everything invoiced in one period, item by item. The period is the last one of the page's window, at the
+ * page's granularity: the controls at the top of the page (and ← →) step through it.
  * With the margin permission it is a margin ledger: cost, margin (always HT), rate and share per item, group and period.
  */
-export function RevenueJournal({ today, filterParams, version, taxMode, canMargin }: { today: string; filterParams: string; version: unknown; taxMode: TaxMode; canMargin: boolean }) {
+export function RevenueJournal({ bucket, buckets: periods, granularity, today, filterParams, version, taxMode, canMargin }: {
+  /** The period shown; it carries the production cost the services share. */
+  bucket: RevenueBucket;
+  /** The page's window, which ranks the period (record badge). */
+  buckets: readonly RevenueBucket[];
+  granularity: RevenueGranularity;
+  today: string;
+  filterParams: string;
+  version: unknown;
+  taxMode: TaxMode;
+  canMargin: boolean;
+}) {
   const { t, i18n } = useTranslation();
-  const [mode, setMode] = useState<JournalMode>('day');
-  const [day, setDay] = useState(today);
   const [by, setBy] = useState(storedGroup);
   const [sort, setSort] = useState<{ key: SortKey; asc: boolean } | null>(null);
   const [open, setOpen] = useState<ReadonlySet<string>>(new Set());
-  const { from, to } = journalWindow(mode, day, today);
+  const from = bucket.start;
+  const to = bucket.end > today ? today : bucket.end;
   const url = `/api/v1/revenue/items?from=${from}&to=${to}${filterParams}`;
   const { data, dataUrl, error } = useRevenueResource<ItemsResponse>(url, version);
   const items = dataUrl === url && data ? data.items : null;
+  const rows = items && withProductionCost(items, bucket);
+  const charges = bucketCharges(bucket);
+  const mode = granularity === 'day' || granularity === 'month' ? granularity : null;
+  const rank = rows && rows.length > 0 && mode ? periodRank(periods, from, mode === 'day' ? 5 : 3) : null;
 
-  // The series around the period: the day among the days of its month, the month among the months of its year.
-  // It ranks the period (record badge) and its bucket carries the production cost the services share.
-  const yearEnd = `${day.slice(0, 4)}-12-31`;
-  const span = mode === 'day' ? journalWindow('month', day, today) : { from: `${day.slice(0, 4)}-01-01`, to: yearEnd > today ? today : yearEnd };
-  const rankUrl = `/api/v1/revenue?granularity=${mode}&from=${span.from}&to=${span.to}${filterParams}`;
-  const series = useRevenueResource<RevenueResponse>(rankUrl, version);
-  const periods = series.dataUrl === rankUrl && series.data ? series.data.buckets : null;
-  // Until the series lands (or fails), a service without a cost is not yet known to be uncosted.
-  const costPending = !periods && !series.error;
-  const rows = items && withProductionCost(items, periods?.find((b) => b.start <= day && day <= b.end));
-  const rank = rows && rows.length > 0 && periods ? periodRank(periods, day, mode === 'day' ? 5 : 3) : null;
-
-  const label = new Intl.DateTimeFormat(
-    i18n.language,
-    mode === 'day' ? { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC' } : { month: 'long', year: 'numeric', timeZone: 'UTC' },
-  ).format(dayToUtc(day));
-  const prev = journalStep(mode, day, -1, today);
-  const next = journalStep(mode, day, 1, today);
-  const current = mode === 'day' ? day === today : day.slice(0, 7) === today.slice(0, 7);
-  const nav = `${PICK_CLS} px-2`;
+  // A day and a month are spelled out in the reader's language; the other periods keep the series' own label.
+  const label = mode
+    ? new Intl.DateTimeFormat(
+        i18n.language,
+        mode === 'day' ? { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC' } : { month: 'long', year: 'numeric', timeZone: 'UTC' },
+      ).format(dayToUtc(from))
+    : bucket.label;
 
   // The server strips `cost` without the margin permission.
   const margin = canMargin && !!rows && !rows.some((r) => r.cost === undefined);
@@ -192,33 +193,15 @@ export function RevenueJournal({ today, filterParams, version, taxMode, canMargi
 
   return (
     <Panel
-      title={<RevenueSegmented inPanel label={t('revenue.controls.granularity')} value={mode} onChange={setMode}
-        options={[{ id: 'day', label: t('revenue.controls.day') }, { id: 'month', label: t('revenue.controls.month') }]} />}
-      action={
-        <div className="flex flex-wrap items-center justify-end gap-1.5">
-          {/* Badge and shortcut sit before the arrows, and the label has a fixed width: the arrows never move under the pointer. */}
-          {rank !== null && (
-            <span data-slot="revenue-journal-record" className="rounded-full bg-status-warning/15 px-2 py-0.5 text-[11px] font-semibold text-status-warning">
-              {'★ '}
-              {mode === 'day'
-                ? rank === 1 ? t('revenue.journal.bestDay') : t('revenue.journal.rankDay', { n: rank })
-                : rank === 1 ? t('revenue.journal.bestMonth') : t('revenue.journal.rankMonth', { n: rank })}
-            </span>
-          )}
-          {!current && (
-            <button type="button" className={PICK_CLS} onClick={() => setDay(today)}>
-              {mode === 'day' ? t('settings.today') : t('revenue.pace.thisMonth')}
-            </button>
-          )}
-          <button type="button" className={nav} aria-label={t('revenue.controls.prev')} title={t('revenue.controls.prev')} disabled={!prev} onClick={() => prev && setDay(prev)}>
-            <ChevronLeft aria-hidden className="h-4 w-4" />
-          </button>
-          <span aria-live="polite" data-slot="revenue-journal-period" className={`${mode === 'day' ? 'w-60' : 'w-40'} text-center text-sm font-semibold text-white first-letter:uppercase`}>{label}</span>
-          <button type="button" className={nav} aria-label={t('revenue.controls.next')} title={t('revenue.controls.next')} disabled={!next} onClick={() => next && setDay(next)}>
-            <ChevronRight aria-hidden className="h-4 w-4" />
-          </button>
-        </div>
-      }
+      title={<span aria-live="polite" data-slot="revenue-journal-period" className="text-sm font-semibold text-white first-letter:uppercase">{label}</span>}
+      action={rank !== null && (
+        <span data-slot="revenue-journal-record" className="rounded-full bg-status-warning/15 px-2 py-0.5 text-[11px] font-semibold text-status-warning">
+          {'★ '}
+          {mode === 'day'
+            ? rank === 1 ? t('revenue.journal.bestDay') : t('revenue.journal.rankDay', { n: rank })
+            : rank === 1 ? t('revenue.journal.bestMonth') : t('revenue.journal.rankMonth', { n: rank })}
+        </span>
+      )}
     >
       {error && !rows ? (
         <p role="alert" className="py-6 text-center text-sm text-status-error">{error}</p>
@@ -228,10 +211,11 @@ export function RevenueJournal({ today, filterParams, version, taxMode, canMargi
         <p className="py-6 text-center text-sm text-bambu-gray">{t('revenue.table.empty')}</p>
       ) : (
         <>
-          <div data-slot="revenue-journal-kpis" className="mb-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
+          <div data-slot="revenue-journal-kpis" className={`mb-3 grid grid-cols-2 gap-2 ${margin ? 'sm:grid-cols-5' : 'sm:grid-cols-4'}`}>
             <Tile label={t(`revenue.table.${taxMode}`)} value={formatAmount(amt(total))} />
             {margin && <Tile label={t('revenue.analysis.marginTitle')} value={money(total.margin)} tone={total.margin !== null && total.margin < 0 ? 'alert' : undefined} />}
             {margin && <Tile label={t('revenue.journal.marginRate')} value={pct(total.rate)} hint={t('revenue.table.coverage', { pct: `${Math.round(total.coverage * 100)} %` })} hintWrap />}
+            {margin && <Tile label={t('revenue.charges.title')} value={money(charges)} />}
             <Tile label={t('revenue.table.units')} value={String(total.quantity)} hint={`${t('revenue.views.journalReferences')} · ${rows.length}`} />
           </div>
           <div className="mb-2 flex flex-wrap items-center gap-2">
@@ -278,7 +262,7 @@ export function RevenueJournal({ today, filterParams, version, taxMode, canMargi
                               {/* Below sm the name keeps the whole line and the chips wrap under it. */}
                               <span className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5 sm:flex-nowrap">
                                 <span className="w-full truncate text-white sm:w-auto" title={r.name}>{r.name}</span>
-                                {margin && r.cost == null && !(costPending && r.kind === 'service') && <span className={`${CHIP} text-bambu-gray`}>{t('revenue.journal.unknownCost')}</span>}
+                                {margin && r.cost == null && <span className={`${CHIP} text-bambu-gray`}>{t('revenue.journal.unknownCost')}</span>}
                                 {margin && r.shared && <span className={`${CHIP} text-bambu-gray`} title={t('revenue.journal.sharedCostHint')}>{t('revenue.journal.sharedCost')}</span>}
                                 {x.margin !== null && x.margin < 0 && margin && <span className={`${CHIP} text-status-error`}>{t('revenue.journal.atLoss')}</span>}
                               </span>
