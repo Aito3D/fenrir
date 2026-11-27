@@ -29,6 +29,8 @@ const INITIAL: CounterPayState = {
   step: 'order', busy: false, wait: null, error: null, row: null, paid: 0, later: false, invoice: null, question: null, handedLate: [], forced: [], active: false,
 };
 
+const REPOST_REFUSALS = ['too_many', 'nothing_to_pack'];
+
 /** What a retry resumes at: each stage's write is skipped once it succeeded. */
 type Stage = 'invoice' | 'parcel' | 'handover';
 
@@ -128,10 +130,24 @@ export function useCounterPay(opts?: { onCreateError?: (e: unknown) => void }) {
         if (waiting.length === 1) c.packageNumber = waiting[0].number;
       }
       if (!c.packageNumber) {
+        const rePost = c.parcelPosted;
         c.parcelPosted = true;
-        const parcel = await api.createOrderParcel(c.orderId, c.picklistId, c.lines);
-        c.packageNumber = parcel.package_number;
-        await take(parcel.board);
+        try {
+          const parcel = await api.createOrderParcel(c.orderId, c.picklistId, c.lines);
+          c.packageNumber = parcel.package_number;
+          await take(parcel.board);
+        } catch (e) {
+          // A re-post refused after the server refreshed its copy: the parcel is probably already there. One re-read, else the refusal stands.
+          if (!rePost || !(e instanceof ApiError && e.status === 400 && REPOST_REFUSALS.includes(e.code ?? e.message))) throw e;
+          let waiting;
+          try {
+            waiting = waitingPackages((await take(await api.getOrderBoard())) ?? { packages: [] });
+          } catch {
+            throw e;
+          }
+          if (waiting.length !== 1) throw e;
+          c.packageNumber = waiting[0].number;
+        }
       }
     }
     let pkg = c.row?.packages.find((p) => p.number === c.packageNumber);

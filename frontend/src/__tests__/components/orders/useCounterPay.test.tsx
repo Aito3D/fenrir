@@ -615,6 +615,110 @@ describe('useCounterPay', () => {
       expect(m.getOrderBoard).not.toHaveBeenCalled();
     });
 
+    describe('a re-post refused after the server refreshed its copy', () => {
+      const refused = (code = 'too_many') => new ApiError(code, 400);
+      const text = (code: string) => `orders.err.${code}`;
+      it.each(['too_many', 'nothing_to_pack'])('%s: one re-read adopts the one waiting parcel and hands over', async (code) => {
+        arrange(mkRow());
+        m.createOrderParcel.mockRejectedValueOnce(new Error('timeout'));
+        const r = setup();
+        await lost(r);
+        m.createOrderParcel.mockRejectedValueOnce(refused(code));
+        m.getOrderBoard.mockResolvedValueOnce(boardOf(mkRow({ packages: [] }, 0)));
+        m.getOrderBoard.mockResolvedValueOnce(boardOf(mkRow({ packages: [pk('pkX', 'PKG-9')] }, 0)));
+        await act(async () => r.result.current.retry());
+        await waitFor(() => expect(r.result.current.step).toBe('handover'));
+        expect(r.result.current.error).toBeNull();
+        expect(m.createOrderParcel).toHaveBeenCalledTimes(2);
+        expect(m.getOrderBoard).toHaveBeenCalledTimes(2);
+        await act(async () => r.result.current.handOver());
+        await waitFor(() => expect(r.result.current.step).toBe('done'));
+        expect(m.handOverOrderParcel).toHaveBeenCalledWith('so1', 'pkX', { mode: 'pickup', apply_credit: false });
+      });
+
+      it.each([
+        ['none', [] as ReturnType<typeof pk>[]],
+        ['two', [pk('pkA', 'PKG-8'), pk('pkB', 'PKG-9')]],
+      ])('the re-read shows %s waiting: the refusal is shown and retry stays available', async (_n, packages) => {
+        arrange(mkRow());
+        m.createOrderParcel.mockRejectedValueOnce(new Error('timeout'));
+        const r = setup();
+        await lost(r);
+        m.createOrderParcel.mockRejectedValueOnce(refused());
+        m.getOrderBoard.mockResolvedValueOnce(boardOf(mkRow({ packages: [] }, 0)));
+        m.getOrderBoard.mockResolvedValueOnce(boardOf(mkRow({ packages }, 0)));
+        await act(async () => r.result.current.retry());
+        await waitFor(() => expect(r.result.current.error).toBe(text('too_many')));
+        expect(r.result.current.step).toBe('parcel');
+        expect(m.getOrderBoard).toHaveBeenCalledTimes(2);
+        expect(m.createOrderParcel).toHaveBeenCalledTimes(2);
+      });
+
+      it('a first attempt refused too_many shows the refusal without any adoption re-read', async () => {
+        arrange(mkRow());
+        m.createOrderParcel.mockRejectedValueOnce(refused());
+        m.getOrderBoard.mockResolvedValue(boardOf(mkRow({ packages: [pk('pkX', 'PKG-9')] }, 0)));
+        const r = setup();
+        await toPayment(r);
+        await act(async () => r.result.current.settle(12400));
+        await waitFor(() => expect(r.result.current.error).toBe(text('too_many')));
+        expect(m.getOrderBoard).not.toHaveBeenCalled();
+        expect(r.result.current.step).toBe('parcel');
+      });
+
+      it('another 400 code keeps today text and does not adopt', async () => {
+        arrange(mkRow());
+        m.createOrderParcel.mockRejectedValueOnce(new Error('timeout'));
+        const r = setup();
+        await lost(r);
+        m.getOrderBoard.mockResolvedValue(boardOf(mkRow({ packages: [pk('pkX', 'PKG-9')] }, 0)));
+        m.getOrderBoard.mockResolvedValueOnce(boardOf(mkRow({ packages: [] }, 0)));
+        m.createOrderParcel.mockRejectedValueOnce(refused('picklist_open'));
+        await act(async () => r.result.current.retry());
+        await waitFor(() => expect(r.result.current.error).toBe(text('picklist_open')));
+        expect(m.getOrderBoard).toHaveBeenCalledTimes(1);
+      });
+
+      it('a 409 keeps today text and does not adopt', async () => {
+        arrange(mkRow());
+        m.createOrderParcel.mockRejectedValueOnce(new Error('timeout'));
+        const r = setup();
+        await lost(r);
+        m.getOrderBoard.mockResolvedValueOnce(boardOf(mkRow({ packages: [] }, 0)));
+        m.createOrderParcel.mockRejectedValueOnce(new ApiError('too_many', 409));
+        await act(async () => r.result.current.retry());
+        await waitFor(() => expect(r.result.current.error).toBe('orders.parcel.stale'));
+        expect(m.getOrderBoard).toHaveBeenCalledTimes(1);
+      });
+
+      it('a failed re-read surfaces the original refusal, not the re-read error', async () => {
+        arrange(mkRow());
+        m.createOrderParcel.mockRejectedValueOnce(new Error('timeout'));
+        const r = setup();
+        await lost(r);
+        m.createOrderParcel.mockRejectedValueOnce(refused());
+        m.getOrderBoard.mockResolvedValueOnce(boardOf(mkRow({ packages: [] }, 0)));
+        m.getOrderBoard.mockRejectedValueOnce(new Error('offline'));
+        await act(async () => r.result.current.retry());
+        await waitFor(() => expect(r.result.current.error).toBe(text('too_many')));
+        expect(r.result.current.step).toBe('parcel');
+      });
+
+      it('reset clears the flag: a first-attempt refusal in the next sale is not adopted', async () => {
+        arrange(mkRow());
+        m.createOrderParcel.mockRejectedValueOnce(new Error('timeout'));
+        const r = setup();
+        await lost(r);
+        act(() => r.result.current.reset());
+        m.createOrderParcel.mockRejectedValueOnce(refused());
+        m.getOrderBoard.mockResolvedValue(boardOf(mkRow({ packages: [pk('pkX', 'PKG-9')] }, 0)));
+        await toPayment(r);
+        await act(async () => r.result.current.settle(12400));
+        await waitFor(() => expect(r.result.current.error).toBe(text('too_many')));
+        expect(m.getOrderBoard).not.toHaveBeenCalled();
+      });
+    });
+
     it('a failed re-read shows the error and keeps the retry available', async () => {
       arrange(mkRow());
       m.createOrderParcel.mockRejectedValueOnce(new Error('timeout'));
