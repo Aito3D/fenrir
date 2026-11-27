@@ -36,6 +36,10 @@ class DocumentEmailBody(BaseModel):
     to: str = Field(min_length=3, max_length=254)
 
 
+class ApplyCreditBody(BaseModel):
+    cap: float | None = Field(default=None, ge=0, allow_inf_nan=False)
+
+
 class ContactBody(BaseModel):
     email: str = Field(default="", max_length=200)
     phone: str = Field(default="", max_length=50)
@@ -203,10 +207,12 @@ async def edit_order_contact(
 async def apply_order_credit(
     salesorder_id: str,
     invoice_id: str,
+    body: ApplyCreditBody | None = None,
     db: AsyncSession = Depends(get_db, scope="function"),
     user: User | None = RequirePermissionIfAuthEnabled(Permission.ORDERS_UPDATE),
 ) -> dict:
     """Spend the order's deposits and advance on one of its open invoices in Books."""
-    applied = await _run(order_board_actions.apply_credit(db, salesorder_id, invoice_id, by=_by(user)))
+    cap = body.cap if body else None
+    applied = await _run(order_board_actions.apply_credit(db, salesorder_id, invoice_id, cap=cap, by=_by(user)))
     _logged(user, salesorder_id, "apply_credit")
     return {"applied": applied, "board": await order_board_sync.read_board(db)}

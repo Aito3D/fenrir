@@ -164,6 +164,7 @@ class PrepSheetBatchBody(BaseModel):
 async def print_prep_sheet_batch(
 # backend/app/api/routes/order_board/documents.py
 class DocumentEmailBody(BaseModel):
+class ApplyCreditBody(BaseModel):
 class ContactBody(BaseModel):
 async def get_document_pdf(
 async def get_document_email(
@@ -176,6 +177,7 @@ async def apply_order_credit(
 # backend/app/api/routes/order_board/fulfilment.py
 class ParcelLine(BaseModel):
 class ParcelBody(BaseModel):
+class PicklistBody(ParcelBody):
 class PackBody(ParcelBody):
 class EditLine(BaseModel):
 class LinesBody(BaseModel):
@@ -311,7 +313,7 @@ fulfilment.CounterLine: item_id: <class 'str'>, quantity: <class 'float'>, disco
 fulfilment.CounterOrderBody: customer_id: <class 'str'>, client_ref: <class 'uuid.UUID'>, lines: list[backend.app.api.routes.order_board.fulfilment.CounterLine]
 fulfilment.EditLine: line_id: str | None, item_id: str | None, quantity: <class 'float'>
 fulfilment.HandoverBody: mode: Literal['pickup', 'delivery'], apply_credit: <class 'bool'>
-fulfilment.InvoiceBody: apply_credit: <class 'bool'>, scope: Literal['shipped', 'packed', 'whole']
+fulfilment.InvoiceBody: apply_credit: <class 'bool'>, scope: Literal['shipped', 'packed', 'whole'], credit_cap: float | None
 fulfilment.InvoiceEmailBody: to: <class 'str'>
 fulfilment.LinesBody: version: <class 'str'>, lines: list[backend.app.api.routes.order_board.fulfilment.EditLine]
 fulfilment.PackBody: lines: list[backend.app.api.routes.order_board.fulfilment.ParcelLine], picklist_id: <class 'str'>
@@ -319,6 +321,7 @@ fulfilment.ParcelBody: lines: list[backend.app.api.routes.order_board.fulfilment
 fulfilment.ParcelEditBody: version: <class 'str'>, was: list[backend.app.api.routes.order_board.fulfilment.ParcelLine], lines: list[backend.app.api.routes.order_board.fulfilment.ParcelQty]
 fulfilment.ParcelLine: line_id: <class 'str'>, quantity: <class 'float'>
 fulfilment.ParcelQty: line_id: <class 'str'>, quantity: <class 'float'>
+fulfilment.PicklistBody: lines: list[backend.app.api.routes.order_board.fulfilment.ParcelLine], force: list[str]
 payment.OrderManualPaymentBody: amount: <class 'int'>, mode: Literal['card', 'cheque', 'cash'], reference: str | None
 payment.OrderPaymentBody: amount: <class 'int'>
 payment.OrderPaymentLinkView: id: <class 'int'>, state: Literal['pending', 'paid', 'failed', 'cancelled', 'expired'], amount: <class 'int'>, currency: <class 'str'>, url: str | None, expires_on: <class 'str'>, paid_at: datetime.datetime | None, sync_error: str | None, minted: <class 'bool'>, document_number: str | None
@@ -404,6 +407,7 @@ app.include_router(order_board.router, prefix=app_settings.api_prefix)
 ## Frontend exports — components/orders, OrderBoardPage, OrderTrackPage, utils/orderTracking
 ```regen: for f in $(find frontend/src/components/orders -type f | sort) frontend/src/pages/OrderBoardPage.tsx frontend/src/pages/OrderTrackPage.tsx frontend/src/utils/orderTracking.ts; do grep -HoE "^export (default )?(async )?(function|const|type|interface|class|enum) [A-Za-z0-9_]+" "$f"; done```
 ```
+frontend/src/components/orders/CounterPayFlow.tsx:export function CounterPayFlow
 frontend/src/components/orders/FinishedOrderCard.tsx:export function FinishedOrderCard
 frontend/src/components/orders/ItemSwatch.tsx:export function ItemSwatch
 frontend/src/components/orders/NewOrderDraftRow.tsx:export type QuoteSaved
@@ -411,7 +415,10 @@ frontend/src/components/orders/NewOrderDraftRow.tsx:export function NewOrderDraf
 frontend/src/components/orders/NewOrderLines.tsx:export function NewOrderLines
 frontend/src/components/orders/OrderActivity.tsx:export function OrderActivity
 frontend/src/components/orders/OrderCard.tsx:export function OrderCard
+frontend/src/components/orders/OrderClientHistory.tsx:export const Lines
+frontend/src/components/orders/OrderClientHistory.tsx:export function FinishedLines
 frontend/src/components/orders/OrderClientHistory.tsx:export function OrderClientHistory
+frontend/src/components/orders/OrderClientHistoryModal.tsx:export function OrderClientHistoryButton
 frontend/src/components/orders/OrderContactBlock.tsx:export function OrderContactBlock
 frontend/src/components/orders/OrderDepositAvailable.tsx:export function OrderDepositAvailable
 frontend/src/components/orders/OrderDocumentEmailModal.tsx:export function OrderDocumentEmailModal
@@ -452,6 +459,15 @@ frontend/src/components/orders/QuoteAcceptedNotice.tsx:export function QuoteAcce
 frontend/src/components/orders/QuoteCard.tsx:export function QuoteCard
 frontend/src/components/orders/QuoteStatePill.tsx:export function QuoteStatePill
 frontend/src/components/orders/QuotesView.tsx:export function QuotesView
+frontend/src/components/orders/SplitButton.tsx:export interface SplitItem
+frontend/src/components/orders/SplitButton.tsx:export function SplitButton
+frontend/src/components/orders/counterPay.ts:export type PayStep
+frontend/src/components/orders/counterPay.ts:export const PAY_STEPS
+frontend/src/components/orders/counterPay.ts:export const shortLines
+frontend/src/components/orders/counterPay.ts:export function pickLines
+frontend/src/components/orders/counterPay.ts:export const invoiceOf
+frontend/src/components/orders/counterPay.ts:export const attributed
+frontend/src/components/orders/counterPay.ts:export const rowOf
 frontend/src/components/orders/itemSearchText.ts:export const fold
 frontend/src/components/orders/itemSearchText.ts:export function nameColour
 frontend/src/components/orders/itemSearchText.ts:export function markWords
@@ -516,8 +532,11 @@ frontend/src/components/orders/orderBoard.ts:export const normDiscount
 frontend/src/components/orders/orderBoard.ts:export function lineTotal
 frontend/src/components/orders/orderBoard.ts:export const PAY_CHIPS
 frontend/src/components/orders/orderBoard.ts:export const chipCls
+frontend/src/components/orders/orderBoard.ts:export interface ClientOrder
+frontend/src/components/orders/orderBoard.ts:export const clientOrders
 frontend/src/components/orders/orderErrors.ts:export const isRefused
 frontend/src/components/orders/orderErrors.ts:export const errorReason
+frontend/src/components/orders/orderErrors.ts:export const failedStepText
 frontend/src/components/orders/orderEventKinds.ts:export const SHORT_LABEL_KEY
 frontend/src/components/orders/orderEventKinds.ts:export function orderEventLabel
 frontend/src/components/orders/orderEventKinds.ts:export function orderEventDetail
@@ -540,6 +559,10 @@ frontend/src/components/orders/quotes.ts:export type QuoteChip
 frontend/src/components/orders/quotes.ts:export const chipOf
 frontend/src/components/orders/quotes.ts:export function quoteCounts
 frontend/src/components/orders/quotes.ts:export function filterQuotes
+frontend/src/components/orders/useCounterPay.ts:export type PayWait
+frontend/src/components/orders/useCounterPay.ts:export interface CounterPayState
+frontend/src/components/orders/useCounterPay.ts:export function useCounterPay
+frontend/src/components/orders/useOrderActions.ts:export async function takeBoard
 frontend/src/components/orders/useOrderActions.ts:export function useHandOverPending
 frontend/src/components/orders/useOrderActions.ts:export function useOrderActions
 frontend/src/components/orders/useOrderFilters.ts:export const SORTS
@@ -686,6 +709,8 @@ aito.billingLabel
 aito.clientEdit
 aito.clientEditFailed
 aito.clientEmail
+aito.clientHistory
+aito.clientHistorySince
 aito.clientPhone
 aito.contacted
 aito.depositAvailable
@@ -715,6 +740,7 @@ aito.payment.cellManualTitle
 aito.payment.cellTerminal
 aito.payment.cellTerminalTitle
 aito.payment.dueInvoice
+aito.payment.err.terminal_in_progress
 aito.printFailed
 aito.printInvoice
 aito.printQuote
@@ -756,6 +782,8 @@ aito.smsSent
 aito.smsTitle
 aito.sync
 aito.syncUpToDate
+aito.tax.beforeTax
+aito.tax.label
 aito.track.codeTooMany
 aito.track.error
 aito.track.eta
@@ -790,6 +818,7 @@ common.cancel
 common.close
 common.error
 common.errorLoading
+common.history
 common.loading
 common.save
 common.saving
@@ -812,8 +841,37 @@ orders.contact.mailSubject
 orders.contact.noEmail
 orders.contact.noPhone
 orders.contact.none
+orders.contact.openOrder
+orders.contact.thisOrder
 orders.contact.title
 orders.coreOnly
+orders.counterPay.cancelPay
+orders.counterPay.card
+orders.counterPay.cash
+orders.counterPay.createHint
+orders.counterPay.due
+orders.counterPay.emailInvoice
+orders.counterPay.fixStock
+orders.counterPay.give
+orders.counterPay.handed
+orders.counterPay.howPay
+orders.counterPay.kept
+orders.counterPay.late
+orders.counterPay.later
+orders.counterPay.laterNeedsClient
+orders.counterPay.more
+orders.counterPay.newSale
+orders.counterPay.noEmail
+orders.counterPay.noInvoice
+orders.counterPay.notAttributed
+orders.counterPay.openOrder
+orders.counterPay.pay
+orders.counterPay.printInvoice
+orders.counterPay.retry
+orders.counterPay.settled
+orders.counterPay.stockAsk
+orders.counterPay.stockNo
+orders.counterPay.stockYes
 orders.edit.adds
 orders.edit.availableN
 orders.edit.booksTotal
@@ -1108,7 +1166,6 @@ orders.quotes.col.qty
 orders.quotes.col.stock
 orders.quotes.col.total
 orders.quotes.createOrder
-orders.quotes.document
 orders.quotes.edit
 orders.quotes.editInZoho
 orders.quotes.emailFailed
@@ -1213,6 +1270,7 @@ orders.watch.on
 ```regen: grep -rhoE "data-testid=\"[^\"]+\"|testId=\"[^\"]+\"|data-testid=\{[^}]+\}" $(find frontend/src/components/orders -type f | sort) frontend/src/pages/OrderBoardPage.tsx frontend/src/pages/OrderTrackPage.tsx frontend/src/utils/orderTracking.ts | sort | uniq -c | sed "s/^ *//"```
 ```
 1 data-testid="apply-deposit"
+1 data-testid="counter-pay"
 1 data-testid="customer-credit"
 1 data-testid="draft-line-total"
 1 data-testid="draft-total"
@@ -1221,6 +1279,8 @@ orders.watch.on
 1 data-testid="item-search-waiting"
 1 data-testid="matched-code"
 1 data-testid="order-client-history"
+1 data-testid="order-client-history-row"
+1 data-testid="order-client-history-summary"
 1 data-testid="order-last-activity"
 1 data-testid="order-mobile"
 1 data-testid="order-mobile-bar"
@@ -1240,6 +1300,7 @@ orders.watch.on
 1 data-testid="quote-actions"
 1 data-testid="quote-email-accent"
 1 data-testid="quote-lines-loading"
+1 data-testid="quote-totals"
 1 data-testid="quotes-list"
 1 data-testid="row-printed"
 1 data-testid="track-content"
@@ -1256,10 +1317,12 @@ orders.watch.on
 1 data-testid="track-state"
 1 data-testid="track-tally"
 1 data-testid={`pack-qty-${id}
+1 data-testid={expiring ? 'quote-expiring' : undefined}
 1 data-testid={item.filament ? 'swatch-filament' : 'swatch-dot'}
 1 testId="doc-invoice"
 1 testId="doc-quote"
 1 testId="doc-retainer"
+1 testId="order-client-history-modal"
 1 testId="order-shipping-label"
 1 testId="track-panel-pay"
 ```

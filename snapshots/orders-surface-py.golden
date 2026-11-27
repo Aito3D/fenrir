@@ -99,10 +99,11 @@ class ParcelBody(BaseModel)
 class ParcelEditBody(BaseModel)
 class ParcelLine(BaseModel)
 class ParcelQty(BaseModel)
+class PicklistBody(ParcelBody)
 async def cancel_order(salesorder_id: str, db: sqlalchemy.ext.asyncio.session.AsyncSession = Depends(dependency=<function get_db>, use_cache=True, scope='function'), user: backend.app.models.user.User | None = Depends(dependency=<function require_permission_if_auth_enabled.<locals>.permission_checker>, use_cache=True, scope=None)) -> dict
 async def create_counter_order(body: backend.app.api.routes.order_board.fulfilment.CounterOrderBody, db: sqlalchemy.ext.asyncio.session.AsyncSession = Depends(dependency=<function get_db>, use_cache=True, scope='function'), user: backend.app.models.user.User | None = Depends(dependency=<function require_permission_if_auth_enabled.<locals>.permission_checker>, use_cache=True, scope=None)) -> dict
 async def create_parcel(salesorder_id: str, body: backend.app.api.routes.order_board.fulfilment.PackBody, db: sqlalchemy.ext.asyncio.session.AsyncSession = Depends(dependency=<function get_db>, use_cache=True, scope='function'), user: backend.app.models.user.User | None = Depends(dependency=<function require_permission_if_auth_enabled.<locals>.permission_checker>, use_cache=True, scope=None)) -> dict
-async def create_picklist(salesorder_id: str, body: backend.app.api.routes.order_board.fulfilment.ParcelBody, db: sqlalchemy.ext.asyncio.session.AsyncSession = Depends(dependency=<function get_db>, use_cache=True, scope='function'), user: backend.app.models.user.User | None = Depends(dependency=<function require_permission_if_auth_enabled.<locals>.permission_checker>, use_cache=True, scope=None)) -> dict
+async def create_picklist(salesorder_id: str, body: backend.app.api.routes.order_board.fulfilment.PicklistBody, db: sqlalchemy.ext.asyncio.session.AsyncSession = Depends(dependency=<function get_db>, use_cache=True, scope='function'), user: backend.app.models.user.User | None = Depends(dependency=<function require_permission_if_auth_enabled.<locals>.permission_checker>, use_cache=True, scope=None)) -> dict
 async def edit_order_lines(salesorder_id: str, body: backend.app.api.routes.order_board.fulfilment.LinesBody, db: sqlalchemy.ext.asyncio.session.AsyncSession = Depends(dependency=<function get_db>, use_cache=True, scope='function'), user: backend.app.models.user.User | None = Depends(dependency=<function require_permission_if_auth_enabled.<locals>.permission_checker>, use_cache=True, scope=None)) -> dict
 async def edit_parcel(salesorder_id: str, package_id: str, body: backend.app.api.routes.order_board.fulfilment.ParcelEditBody, db: sqlalchemy.ext.asyncio.session.AsyncSession = Depends(dependency=<function get_db>, use_cache=True, scope='function'), user: backend.app.models.user.User | None = Depends(dependency=<function require_permission_if_auth_enabled.<locals>.permission_checker>, use_cache=True, scope=None)) -> dict
 async def get_handover_preview(salesorder_id: str, package_id: str, db: sqlalchemy.ext.asyncio.session.AsyncSession = Depends(dependency=<function get_db>, use_cache=True, scope='function'), _: backend.app.models.user.User | None = Depends(dependency=<function require_permission_if_auth_enabled.<locals>.permission_checker>, use_cache=True, scope=None)) -> dict
@@ -204,13 +205,13 @@ class OrderNotOnBoard(Exception)
 class QuoteNotStored(Exception)
 async def _row(db: sqlalchemy.ext.asyncio.session.AsyncSession, salesorder_id: str) -> dict
 async def accept_quote(db: sqlalchemy.ext.asyncio.session.AsyncSession, estimate_id: str, *, by: str | None) -> str
-async def apply_credit(db: sqlalchemy.ext.asyncio.session.AsyncSession, salesorder_id: str, invoice_id: str, *, by: str | None = None) -> float
+async def apply_credit(db: sqlalchemy.ext.asyncio.session.AsyncSession, salesorder_id: str, invoice_id: str, *, cap: float | None = None, by: str | None = None) -> float
 async def cancel_order(db: sqlalchemy.ext.asyncio.session.AsyncSession, salesorder_id: str, *, by: str | None = None) -> None
 async def confirm_stored_copy(db: sqlalchemy.ext.asyncio.session.AsyncSession, salesorder_id: str) -> backend.app.models.order_board_doc.OrderBoardDoc
 async def create_counter_order(db: sqlalchemy.ext.asyncio.session.AsyncSession, customer_id: str, lines: list[dict], client_ref: str, *, by: str | None) -> str
 async def create_order_from_quote(db: sqlalchemy.ext.asyncio.session.AsyncSession, estimate_id: str, *, by: str | None) -> str
 async def create_parcel(db: sqlalchemy.ext.asyncio.session.AsyncSession, salesorder_id: str, picklist_id: str, quantities: dict[str, float], *, by: str | None = None) -> str
-async def create_picklist(db: sqlalchemy.ext.asyncio.session.AsyncSession, salesorder_id: str, quantities: dict[str, float], *, by: str | None = None) -> dict
+async def create_picklist(db: sqlalchemy.ext.asyncio.session.AsyncSession, salesorder_id: str, quantities: dict[str, float], *, force: frozenset[str] = frozenset(), by: str | None = None) -> dict
 async def create_quote(db: sqlalchemy.ext.asyncio.session.AsyncSession, customer_id: str, lines: list[dict], client_ref: str, *, by: str | None) -> str
 async def decline_quote(db: sqlalchemy.ext.asyncio.session.AsyncSession, estimate_id: str, *, by: str | None) -> None
 async def document_email_content(db: sqlalchemy.ext.asyncio.session.AsyncSession, kind: Literal['quote', 'retainer'], document_id: str) -> dict
@@ -226,7 +227,7 @@ async def hand_over(db: sqlalchemy.ext.asyncio.session.AsyncSession, salesorder_
 async def handover_preview(db: sqlalchemy.ext.asyncio.session.AsyncSession, salesorder_id: str, package_id: str) -> dict
 def invoice_payload(prefill: dict, keep: collections.abc.Mapping[str, float], today: str) -> tuple[dict | None, str | None]
 async def invoice_preview(db: sqlalchemy.ext.asyncio.session.AsyncSession, salesorder_id: str) -> dict
-async def invoice_shipped(db: sqlalchemy.ext.asyncio.session.AsyncSession, salesorder_id: str, *, apply_credit: bool, scope: Literal['shipped', 'packed', 'whole'] = 'shipped', by: str | None = None) -> dict
+async def invoice_shipped(db: sqlalchemy.ext.asyncio.session.AsyncSession, salesorder_id: str, *, apply_credit: bool, scope: Literal['shipped', 'packed', 'whole'] = 'shipped', credit_cap: float | None = None, by: str | None = None) -> dict
 async def listed_document(db: sqlalchemy.ext.asyncio.session.AsyncSession, salesorder_id: str, kind: Literal['quote', 'retainer'], document_id: str) -> dict
 async def once_per_ref(client_ref: str, fingerprint: str, make: collections.abc.Callable[[], collections.abc.Awaitable[str]]) -> str
 async def order_row_any(db: sqlalchemy.ext.asyncio.session.AsyncSession, salesorder_id: str) -> dict
@@ -332,6 +333,7 @@ class HandoverBody(BaseModel)
 class InvoiceBody(BaseModel)
     apply_credit: <class 'bool'>  required
     scope: typing.Literal['shipped', 'packed', 'whole']  default='shipped'
+    credit_cap: float | None  default=None
 class InvoiceEmailBody(BaseModel)
     to: <class 'str'>  required
 class LinesBody(BaseModel)
@@ -352,6 +354,9 @@ class ParcelLine(BaseModel)
 class ParcelQty(BaseModel)
     line_id: <class 'str'>  required
     quantity: <class 'float'>  required
+class PicklistBody(ParcelBody)
+    lines: list[backend.app.api.routes.order_board.fulfilment.ParcelLine]  required
+    force: list[str]  default_factory=list
 
 ## backend.app.api.routes.order_board.payment
 class OrderManualPaymentBody(OrderPaymentBody)

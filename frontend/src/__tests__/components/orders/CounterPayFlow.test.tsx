@@ -1,23 +1,36 @@
 import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
-import { screen } from '@testing-library/react';
+import { act, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { http, HttpResponse } from 'msw';
 import { server } from '../../mocks/server';
 import { render } from '../../utils';
 
 const print = vi.fn();
+// The props the flow hands the card dialog, captured so a test can drive them like the real dialog would.
+const dialogProps = vi.hoisted(() => ({ current: null as null | {
+  document: { id: string; due: number | null };
+  onStart: (amount: number) => Promise<unknown>;
+  onSeen: (p: unknown) => void;
+  recover: (e: unknown) => null | { message: string; label: string; start: (amount: number) => Promise<unknown> };
+  fetchPayment: () => Promise<unknown>;
+} }));
 vi.mock('../../../components/aito/usePrintBlob', () => ({ usePrintBlob: () => ({ print, busy: false }) }));
 
 // The real dialog polls every 3 s: a stand-in that reports what the test tells it to.
 vi.mock('../../../components/aito/payment/TerminalPaymentModal', () => ({
-  TerminalPaymentDialog: ({ onSeen, onClose }: { onSeen: (p: unknown) => void; onClose: () => void }) => (
+  TerminalPaymentDialog: (props: { onSeen: (p: unknown) => void; onClose: () => void } & NonNullable<typeof dialogProps.current>) => {
+    dialogProps.current = props;
+    const { onSeen, onClose } = props;
+    return (
     <div data-testid="terminal-dialog">
       <button type="button" onClick={() => onSeen({ id: 1, status: 'paid', booking_status: 'booked', amount: 12400, amount_confirmed: 12400 })}>seen-paid</button>
       <button type="button" onClick={onClose}>close-dialog</button>
     </div>
-  ),
+    );
+  },
 }));
 
+import { ApiError, api } from '../../../api/client';
 import { CounterPayFlow } from '../../../components/orders/CounterPayFlow';
 import type { useCounterPay } from '../../../components/orders/useCounterPay';
 
@@ -215,10 +228,15 @@ describe('CounterPayFlow', () => {
       const pay = mkPay();
       flow(pay);
       await user.click(screen.getByRole('button', { name: 'Card (terminal)' }));
-      const seen = await screen.findByRole('button', { name: 'seen-paid' });
-      await user.click(seen);
-      await user.click(seen);
-      await user.click(seen);
+      await screen.findByRole('button', { name: 'seen-paid' });
+      // The captured prop outlives the unmounted dialog: calling it again is what a late poll does.
+      const onSeen = dialogProps.current!.onSeen;
+      const paid = { id: 1, status: 'paid', booking_status: 'booked', amount: 12400, amount_confirmed: 12400 };
+      act(() => {
+        onSeen(paid);
+        onSeen(paid);
+        onSeen(paid);
+      });
       expect(pay.settle).toHaveBeenCalledTimes(1);
       expect(pay.settle).toHaveBeenCalledWith(12400);
     });
@@ -284,5 +302,94 @@ describe('CounterPayFlow', () => {
     expect(onDialog).toHaveBeenLastCalledWith(true);
     await user.click(screen.getByRole('button', { name: 'close-dialog' }));
     expect(onDialog).toHaveBeenLastCalledWith(false);
+  });
+
+  describe('the payment target', () => {
+    const targetOf = (o: Record<string, unknown>) => server.use(http.get('/api/v1/order-board/orders/so1/payment-target', () =>
+      HttpResponse.json({ kind: 'salesorder', document_id: 'so1', number: 'SO-9', max_amount: 12400, left: 12400, link: null, ...o })));
+
+    it.each([
+      ['kind', { kind: null }],
+      ['document_id', { document_id: null }],
+      ['max_amount', { max_amount: null }],
+    ])('a target without %s shows the error toast and opens no dialog', async (_name, o) => {
+      const user = userEvent.setup();
+      targetOf(o);
+      flow(mkPay());
+      await user.click(screen.getByRole('button', { name: 'Card (terminal)' }));
+      expect(await screen.findByText('Error loading data')).toBeInTheDocument();
+      expect(screen.queryByTestId('terminal-dialog')).not.toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Card (terminal)' })).toBeEnabled();
+    });
+
+    it('a rejected target read shows the error toast and re-enables both buttons', async () => {
+      const user = userEvent.setup();
+      server.use(http.get('/api/v1/order-board/orders/so1/payment-target', () => HttpResponse.json({ detail: 'boom' }, { status: 500 })));
+      flow(mkPay());
+      await user.click(screen.getByRole('button', { name: 'Cash or cheque' }));
+      expect(await screen.findByText('Error loading data')).toBeInTheDocument();
+      expect(screen.queryByRole('radio', { name: 'Cash' })).not.toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Card (terminal)' })).toBeEnabled();
+      expect(screen.getByRole('button', { name: 'Cash or cheque' })).toBeEnabled();
+    });
+
+    it.each([
+      ['more left than max_amount is clamped to max_amount', { left: 12.6, max_amount: 10 }, 10],
+      ['a fractional left is rounded', { left: 12.6, max_amount: 100 }, 13],
+      ['nothing left leaves no due', { left: 0 }, null],
+      ['a negative left leaves no due', { left: -5 }, null],
+    ])('%s', async (_name, o, due) => {
+      const user = userEvent.setup();
+      targetOf(o);
+      flow(mkPay());
+      await user.click(screen.getByRole('button', { name: 'Card (terminal)' }));
+      await screen.findByTestId('terminal-dialog');
+      expect(dialogProps.current!.document.due).toBe(due);
+    });
+  });
+
+  describe('the card dialog wiring', () => {
+    const openDialog = async () => {
+      const user = userEvent.setup();
+      target();
+      flow(mkPay());
+      await user.click(screen.getByRole('button', { name: 'Card (terminal)' }));
+      await screen.findByTestId('terminal-dialog');
+      return dialogProps.current!;
+    };
+    afterEach(() => vi.restoreAllMocks());
+
+    it('onStart charges the amount without the force flag', async () => {
+      const start = vi.spyOn(api, 'startOrderTerminalPayment').mockResolvedValue({ id: 1 } as never);
+      const props = await openDialog();
+      await props.onStart(5000);
+      expect(start).toHaveBeenCalledOnce();
+      expect(start).toHaveBeenCalledWith('so1', 5000);
+    });
+
+    it('a link_open refusal offers to cancel the pay link and charge, forcing exactly once', async () => {
+      const start = vi.spyOn(api, 'startOrderTerminalPayment').mockResolvedValue({ id: 1 } as never);
+      const props = await openDialog();
+      const offer = props.recover(new ApiError('open', 409, 'link_open'));
+      expect(offer).toMatchObject({ message: expect.any(String), label: expect.any(String) });
+      expect(start).not.toHaveBeenCalled();
+      await offer!.start(7000);
+      expect(start).toHaveBeenCalledOnce();
+      expect(start).toHaveBeenCalledWith('so1', 7000, true);
+    });
+
+    it('any other error offers no recovery', async () => {
+      const props = await openDialog();
+      expect(props.recover(new ApiError('nope', 409, 'other'))).toBeNull();
+      expect(props.recover(new Error('link_open'))).toBeNull();
+    });
+
+    it('fetchPayment returns the current charge, and throws when there is none', async () => {
+      const props = await openDialog();
+      currentCharge(charge('pending', null));
+      await expect(props.fetchPayment()).resolves.toMatchObject({ id: 1 });
+      currentCharge(null);
+      await expect(props.fetchPayment()).rejects.toThrow();
+    });
   });
 });

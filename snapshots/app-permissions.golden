@@ -131,6 +131,7 @@
   "stats:filter_by_user",
   "stats:read",
   "system:read",
+  "threedfp:auth",
   "users:create",
   "users:delete",
   "users:read",
@@ -177,7 +178,8 @@
   ],
   "Cloud": [
    "cloud:auth",
-   "orca_cloud:auth"
+   "orca_cloud:auth",
+   "threedfp:auth"
   ],
   "Discovery": [
    "discovery:scan"
@@ -440,6 +442,7 @@
     "github:restore",
     "cloud:auth",
     "orca_cloud:auth",
+    "threedfp:auth",
     "makerworld:view",
     "makerworld:import",
     "manyfold:view",
@@ -511,6 +514,7 @@
     "manyfold:view",
     "manyfold:import",
     "orca_cloud:auth",
+    "threedfp:auth",
     "projects:read",
     "projects:create",
     "projects:update",
