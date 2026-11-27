@@ -114,11 +114,11 @@ OUT["project_bucket"] = [
 
 # --- scope / customers / products ---------------------------------------------------
 ITEMS = {
-    "pla": ScopeItem("pla", "SUNLU PLA", sku="PLA-1", brand="SUNLU", nature="Filaments", item_type="inventory", tax_percentage=16, unit_cost=1200),
-    "x1": ScopeItem("x1", "Bambu X1C", sku="X1C", brand="Bambu Lab", nature=None, item_type="inventory", tax_percentage=16, unit_cost=150000),
-    "print": ScopeItem("print", "Impression 3D", sku="SRV", brand="Aito3D", nature=None, item_type="service", tax_percentage=13),
-    "kayak": ScopeItem("kayak", "Kayak", sku="K", brand="Ocean", nature="Boats", item_type="inventory", tax_percentage=16, unit_cost=50000),
-    "glue": ScopeItem("glue", "Magigoo stick", sku="MG", brand="magigoo ", nature="3D Printer Adhesives", item_type="inventory", tax_percentage=None, unit_cost=None),
+    "pla": ScopeItem("pla", "SUNLU PLA", sku="PLA-1", brand="SUNLU", nature="Filaments", tax_percentage=16, unit_cost=1200),
+    "x1": ScopeItem("x1", "Bambu X1C", sku="X1C", brand="Bambu Lab", nature=None, tax_percentage=16, unit_cost=150000),
+    "print": ScopeItem("print", "Impression 3D", sku="SRV", brand="Aito3D", nature=None, tax_percentage=13),
+    "kayak": ScopeItem("kayak", "Kayak", sku="K", brand="Ocean", nature="Boats", tax_percentage=16, unit_cost=50000),
+    "glue": ScopeItem("glue", "Magigoo stick", sku="MG", brand="magigoo ", nature="3D Printer Adhesives", tax_percentage=None, unit_cost=None),
     "odd": ScopeItem("odd", "", sku="", brand=None, nature=None),
 }
 DECISIONS = [RevenueDecision("kayak", True, "2026-01-01T00:00:00"), RevenueDecision("glue", False, "2026-01-02T00:00:00")]
