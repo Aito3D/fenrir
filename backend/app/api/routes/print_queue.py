@@ -2932,11 +2932,15 @@ async def update_queue_item(
     # validations ran since the guard above, and a scheduler worker may have
     # claimed the row in that gap. A fresh read (item isn't dirty yet, so no
     # autoflush races the check) narrows the window to effectively nothing.
-    claimed = (
-        await db.execute(select(PrintQueueItem.dispatching_at).where(PrintQueueItem.id == item_id))
-    ).scalar_one_or_none()
-    if claimed is not None:
+    current = (
+        await db.execute(
+            select(PrintQueueItem.status, PrintQueueItem.dispatching_at).where(PrintQueueItem.id == item_id)
+        )
+    ).one_or_none()
+    if current is not None and current.dispatching_at is not None:
         raise HTTPException(409, "Item is being dispatched — cancel it first to make changes")
+    if current is not None and current.status != "pending":
+        raise HTTPException(409, "Item is no longer pending — it has already started printing")
 
     for field, value in update_data.items():
         setattr(item, field, value)

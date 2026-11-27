@@ -8,19 +8,36 @@ are unaffected, and so is auth-off.
 from __future__ import annotations
 
 import pytest
+from sqlalchemy import select
 
 from backend.app.core import database as _database_module
+from backend.app.models.print_batch import PrintBatchPlate
 from backend.app.models.print_queue import PrintBatch, PrintQueueItem
 from backend.tests.integration.test_queue_review_1620 import STAFF, STUDENT, _admin_token, _auth, _user
 
 pytestmark = [pytest.mark.asyncio, pytest.mark.integration]
 
 
-async def _batch(owner_id: int | None) -> int:
+async def _batch(owner_id: int | None, users=None) -> int:
+    """With *users*, seed it as an order that still owes a run: a target of 2 runs and one pending member."""
     async with _database_module.async_session() as session:
         batch = PrintBatch(name="Legacy", status="active", created_by_id=owner_id)
+        if users:
+            batch.archive_id, batch.quantity = users["archive"].id, 2
         session.add(batch)
         await session.commit()
+        if users:
+            session.add(PrintBatchPlate(batch_id=batch.id, plate_id=None, quantity_target=2))
+            session.add(
+                PrintQueueItem(
+                    printer_id=users["printer"].id,
+                    archive_id=users["archive"].id,
+                    batch_id=batch.id,
+                    status="pending",
+                    created_by_id=owner_id,
+                )
+            )
+            await session.commit()
         return batch.id
 
 
@@ -37,16 +54,29 @@ async def users(async_client, printer_factory, archive_factory):
 async def _calls(async_client, headers, batch_id, users):
     return {
         "patch": await async_client.patch(f"/api/v1/queue/batches/{batch_id}", headers=headers, json={"name": "x"}),
-        "cancel": await async_client.patch(
-            f"/api/v1/queue/batches/{batch_id}", headers=headers, json={"status": "cancelled"}
-        ),
         "dispatch": await async_client.post(f"/api/v1/queue/batches/{batch_id}/dispatch", headers=headers, json={}),
         "add": await async_client.post(
             "/api/v1/queue/",
             headers=headers,
             json={"printer_id": users["printer"].id, "archive_id": users["archive"].id, "batch_id": batch_id},
         ),
+        "cancel": await async_client.patch(
+            f"/api/v1/queue/batches/{batch_id}", headers=headers, json={"status": "cancelled"}
+        ),
     }
+
+
+async def _assert_reached(responses, batch_id: int) -> None:
+    """Every call succeeded; dispatch queued the owed run and the added item landed in the batch."""
+    assert {k: r.status_code for k, r in responses.items()} == dict.fromkeys(responses, 200), {
+        k: r.text for k, r in responses.items()
+    }
+    assert responses["patch"].json()["name"] == "x"
+    assert responses["add"].json()["batch_id"] == batch_id
+    assert responses["cancel"].json()["status"] == "cancelled"
+    async with _database_module.async_session() as session:
+        members = (await session.execute(select(PrintQueueItem.id).where(PrintQueueItem.batch_id == batch_id))).all()
+    assert len(members) == 3  # the seeded run, the one dispatch cloned, the one added
 
 
 async def test_update_own_only_cannot_touch_an_ownerless_batch(async_client, users):
@@ -58,29 +88,30 @@ async def test_update_own_only_cannot_touch_an_ownerless_batch(async_client, use
 
 
 async def test_update_all_holder_still_reaches_an_ownerless_batch(async_client, users):
-    batch_id = await _batch(None)
+    batch_id = await _batch(None, users)
 
     responses = await _calls(async_client, _auth(users["staff"]), batch_id, users)
 
-    assert all(r.status_code != 404 for r in responses.values()), {k: r.text for k, r in responses.items()}
+    await _assert_reached(responses, batch_id)
 
 
 async def test_owner_still_reaches_their_own_batch(async_client, users):
-    batch_id = await _batch(users["student_id"])
+    batch_id = await _batch(users["student_id"], users)
 
     responses = await _calls(async_client, _auth(users["student"]), batch_id, users)
 
-    assert all(r.status_code != 404 for r in responses.values()), {k: r.text for k, r in responses.items()}
+    await _assert_reached(responses, batch_id)
 
 
 async def test_auth_off_still_reaches_an_ownerless_batch(async_client, printer_factory, archive_factory):
     printer = await printer_factory()
     archive = await archive_factory(printer.id)
-    batch_id = await _batch(None)
+    users = {"printer": printer, "archive": archive}
+    batch_id = await _batch(None, users)
 
-    responses = await _calls(async_client, {}, batch_id, {"printer": printer, "archive": archive})
+    responses = await _calls(async_client, {}, batch_id, users)
 
-    assert all(r.status_code != 404 for r in responses.values()), {k: r.text for k, r in responses.items()}
+    await _assert_reached(responses, batch_id)
 
 
 async def _member_row(batch_id: int | None, owner_id: int | None, users) -> int:
