@@ -13480,6 +13480,7 @@ export default {
       wear: '打印机损耗',
       labor: '人工',
       fixed: '固定成本',
+      fixedEstimated: '固定费用(估算)',
       depreciation: '折旧',
       margin: '毛利 HT',
     },
@@ -13534,6 +13535,9 @@ export default {
     result: {
       title: '经营结果',
       month: '本月结果',
+      realResult: '实际结果(Zoho)',
+      projectedResult: '含估算的结果',
+      estimatedNote: '其中 {{amount}} 为尚未入账的估算费用',
       breakEven: '盈亏平衡点',
       reached: '已达到',
       reachedOn: '已于 {{day}} 突破',

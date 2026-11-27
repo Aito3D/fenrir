@@ -948,7 +948,7 @@ async def refresh_fixed_accounts(
         last = cache["currentReadAt"]
         partial = scope == "current" and bool(cache["readAt"] and last)
         if partial and (now - datetime.fromisoformat(last)).total_seconds() < _FIXED_CURRENT_MAX_AGE_S:
-            return fixed_accounts.view(config, cache, months[-1])
+            return {**fixed_accounts.view(config, cache, months[-1]), "changed": False}
         # A month that closed since the last read may have gained entries after it.
         wanted = [m for m in months if m >= org_today(datetime.fromisoformat(last))[:7]] if partial else months
         try:
@@ -972,7 +972,7 @@ async def refresh_fixed_accounts(
             logger.warning("Fixed-account refresh failed: %s", type(e).__name__)
             raise HTTPException(status_code=502, detail="Zoho could not be read") from None
         kept = cache["months"] if partial else {}
-        cache = await production.save_fixed_cache(
+        fresh = await production.save_fixed_cache(
             db,
             {
                 "accounts": accounts,
@@ -981,7 +981,9 @@ async def refresh_fixed_accounts(
                 "currentReadAt": now.isoformat(),
             },
         )
-        return fixed_accounts.view(config, cache, months[-1])
+        # `changed` tells the page whether the books moved: only then does it reload its figures.
+        changed = (fresh["accounts"], fresh["months"]) != (cache["accounts"], cache["months"])
+        return {**fixed_accounts.view(config, fresh, months[-1]), "changed": changed}
 
 
 @router.post("/annotations", status_code=201)

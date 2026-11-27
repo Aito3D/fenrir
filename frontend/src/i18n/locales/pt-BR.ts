@@ -13482,6 +13482,7 @@ export default {
       wear: 'Desgaste das impressoras',
       labor: 'Mão de obra',
       fixed: 'Custos fixos',
+      fixedEstimated: 'Custos fixos (estimados)',
       depreciation: 'Depreciação',
       margin: 'Margem bruta HT',
     },
@@ -13536,6 +13537,9 @@ export default {
     result: {
       title: 'Resultado operacional',
       month: 'Resultado do mês',
+      realResult: 'Resultado real (Zoho)',
+      projectedResult: 'Resultado com projeção',
+      estimatedNote: 'dos quais {{amount}} de despesas estimadas, ainda não lançadas',
       breakEven: 'Ponto de equilíbrio',
       reached: 'Atingido',
       reachedOn: 'ultrapassado em {{day}}',

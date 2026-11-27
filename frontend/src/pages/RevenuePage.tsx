@@ -304,6 +304,20 @@ export function RevenuePage() {
     setTick((n) => n + 1);
   };
 
+  // The fixed costs follow the books: opening the page re-reads the running month from Zoho (the server does it at
+  // most every 15 minutes) and reloads only if an amount moved. Silent: the last read stays in use on a failure.
+  const canManageCharges = can.margin && can.targets;
+  const reload = useRef(refresh);
+  reload.current = refresh;
+  useEffect(() => {
+    if (!canManageCharges) return;
+    void fetch('/api/v1/revenue/fixed-accounts/refresh?scope=current', { method: 'POST', headers: bearerAuthHeaders() })
+      .then(async (res) => {
+        if (res.ok && ((await readJsonBody(res)) as { changed?: boolean } | null)?.changed) reload.current();
+      })
+      .catch(() => {});
+  }, [canManageCharges]);
+
   const postSync = async () => {
     const res = await fetch('/api/v1/revenue/sync', { method: 'POST', headers: bearerAuthHeaders() });
     if (!res.ok) throw new Error(failureMessage(res.status, await readJsonBody(res)));

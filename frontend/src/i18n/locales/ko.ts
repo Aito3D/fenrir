@@ -13079,6 +13079,7 @@ export default {
       wear: '프린터 마모',
       labor: '인건비',
       fixed: '고정비',
+      fixedEstimated: '고정비(추정)',
       depreciation: '감가상각',
       margin: '매출총이익 HT',
     },
@@ -13133,6 +13134,9 @@ export default {
     result: {
       title: '영업 손익',
       month: '이번 달 손익',
+      realResult: '실제 결과(Zoho)',
+      projectedResult: '추정 포함 결과',
+      estimatedNote: '그중 {{amount}}은 아직 기입되지 않은 추정 비용',
       breakEven: '손익분기점',
       reached: '달성',
       reachedOn: '{{day}}에 돌파',

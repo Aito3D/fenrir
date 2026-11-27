@@ -13702,6 +13702,7 @@ export default {
       wear: 'Zużycie drukarek',
       labor: 'Praca',
       fixed: 'Koszty stałe',
+      fixedEstimated: 'Koszty stałe (szacowane)',
       depreciation: 'Amortyzacja',
       margin: 'Marża brutto HT',
     },
@@ -13756,6 +13757,9 @@ export default {
     result: {
       title: 'Wynik operacyjny',
       month: 'Wynik w tym miesiącu',
+      realResult: 'Wynik rzeczywisty (Zoho)',
+      projectedResult: 'Wynik z prognozą',
+      estimatedNote: 'w tym {{amount}} kosztów szacowanych, jeszcze niezaksięgowanych',
       breakEven: 'Próg rentowności',
       reached: 'Osiągnięty',
       reachedOn: 'przekroczony dnia {{day}}',

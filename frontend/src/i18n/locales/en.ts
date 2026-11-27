@@ -13553,6 +13553,7 @@ export default {
       wear: 'Printer wear',
       labor: 'Labour',
       fixed: 'Fixed costs',
+      fixedEstimated: 'Fixed costs (estimated)',
       depreciation: 'Depreciation',
       margin: 'Gross margin HT',
     },
@@ -13607,6 +13608,9 @@ export default {
     result: {
       title: 'Operating result',
       month: 'Result this month',
+      realResult: 'Real result (Zoho)',
+      projectedResult: 'Result with projection',
+      estimatedNote: 'of which {{amount}} of estimated costs not entered yet',
       breakEven: 'Break-even',
       reached: 'Reached',
       reachedOn: 'crossed on {{day}}',

@@ -13482,6 +13482,7 @@ export default {
       wear: 'Usura stampanti',
       labor: 'Manodopera',
       fixed: 'Costi fissi',
+      fixedEstimated: 'Costi fissi (stimati)',
       depreciation: 'Ammortamenti',
       margin: 'Margine lordo HT',
     },
@@ -13536,6 +13537,9 @@ export default {
     result: {
       title: 'Risultato operativo',
       month: 'Risultato del mese',
+      realResult: 'Risultato reale (Zoho)',
+      projectedResult: 'Risultato con proiezione',
+      estimatedNote: 'di cui {{amount}} di costi stimati, non ancora registrati',
       breakEven: 'Punto di pareggio',
       reached: 'Raggiunto',
       reachedOn: 'superato il {{day}}',

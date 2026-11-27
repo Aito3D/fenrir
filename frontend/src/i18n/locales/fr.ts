@@ -13482,6 +13482,7 @@ export default {
       wear: 'Usure des imprimantes',
       labor: 'Main-d\'œuvre',
       fixed: 'Charges fixes',
+      fixedEstimated: 'Charges fixes (estimées)',
       depreciation: 'Amortissements',
       margin: 'Marge brute HT',
     },
@@ -13536,6 +13537,9 @@ export default {
     result: {
       title: 'Résultat d\'exploitation',
       month: 'Résultat du mois',
+      realResult: 'Résultat réel (Zoho)',
+      projectedResult: 'Résultat avec projection',
+      estimatedNote: 'dont {{amount}} de charges estimées, pas encore saisies',
       breakEven: 'Point mort',
       reached: 'Atteint',
       reachedOn: 'franchi le {{day}}',

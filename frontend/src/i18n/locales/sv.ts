@@ -13554,6 +13554,7 @@ errors: {
       wear: 'Skrivarslitage',
       labor: 'Personal',
       fixed: 'Fasta kostnader',
+      fixedEstimated: 'Fasta kostnader (uppskattade)',
       depreciation: 'Avskrivningar',
       margin: 'Bruttomarginal HT',
     },
@@ -13608,6 +13609,9 @@ errors: {
     result: {
       title: 'Rörelseresultat',
       month: 'Resultat denna månad',
+      realResult: 'Faktiskt resultat (Zoho)',
+      projectedResult: 'Resultat med prognos',
+      estimatedNote: 'varav {{amount}} uppskattade, ännu inte bokförda kostnader',
       breakEven: 'Break-even-punkt',
       reached: 'Uppnådd',
       reachedOn: 'passerades den {{day}}',

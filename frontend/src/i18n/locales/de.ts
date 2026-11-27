@@ -13497,6 +13497,7 @@ export default {
       wear: 'Druckerverschleiß',
       labor: 'Personal',
       fixed: 'Fixkosten',
+      fixedEstimated: 'Fixkosten (geschätzt)',
       depreciation: 'Abschreibungen',
       margin: 'Bruttomarge HT',
     },
@@ -13551,6 +13552,9 @@ export default {
     result: {
       title: 'Betriebsergebnis',
       month: 'Ergebnis diesen Monat',
+      realResult: 'Tatsächliches Ergebnis (Zoho)',
+      projectedResult: 'Ergebnis mit Hochrechnung',
+      estimatedNote: 'davon {{amount}} geschätzte, noch nicht gebuchte Kosten',
       breakEven: 'Gewinnschwelle',
       reached: 'Erreicht',
       reachedOn: 'überschritten am {{day}}',

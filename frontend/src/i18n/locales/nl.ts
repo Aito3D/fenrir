@@ -13521,6 +13521,7 @@ export default {
       wear: 'Printerslijtage',
       labor: 'Personeel',
       fixed: 'Vaste kosten',
+      fixedEstimated: 'Vaste kosten (geschat)',
       depreciation: 'Afschrijvingen',
       margin: 'Brutomarge HT',
     },
@@ -13575,6 +13576,9 @@ export default {
     result: {
       title: 'Bedrijfsresultaat',
       month: 'Resultaat deze maand',
+      realResult: 'Werkelijk resultaat (Zoho)',
+      projectedResult: 'Resultaat met projectie',
+      estimatedNote: 'waarvan {{amount}} geschatte, nog niet geboekte kosten',
       breakEven: 'Break-evenpunt',
       reached: 'Bereikt',
       reachedOn: 'overschreden op {{day}}',

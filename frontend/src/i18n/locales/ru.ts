@@ -13101,6 +13101,7 @@ export default {
       wear: 'Износ принтеров',
       labor: 'Труд',
       fixed: 'Постоянные расходы',
+      fixedEstimated: 'Постоянные расходы (оценка)',
       depreciation: 'Амортизация',
       margin: 'Валовая маржа HT',
     },
@@ -13155,6 +13156,9 @@ export default {
     result: {
       title: 'Операционный результат',
       month: 'Результат за месяц',
+      realResult: 'Фактический результат (Zoho)',
+      projectedResult: 'Результат с прогнозом',
+      estimatedNote: 'из них {{amount}} — оценочные расходы, ещё не проведённые',
       breakEven: 'Точка безубыточности',
       reached: 'Достигнута',
       reachedOn: 'пройдена {{day}}',

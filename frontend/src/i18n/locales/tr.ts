@@ -13424,6 +13424,7 @@ export default {
       wear: 'Yazıcı aşınması',
       labor: 'İşçilik',
       fixed: 'Sabit giderler',
+      fixedEstimated: 'Sabit giderler (tahmini)',
       depreciation: 'Amortisman',
       margin: 'Brüt marj HT',
     },
@@ -13478,6 +13479,9 @@ export default {
     result: {
       title: 'Faaliyet sonucu',
       month: 'Bu ayın sonucu',
+      realResult: 'Gerçek sonuç (Zoho)',
+      projectedResult: 'Tahmin dahil sonuç',
+      estimatedNote: 'bunun {{amount}} kadarı henüz kaydedilmemiş tahmini gider',
       breakEven: 'Başa baş noktası',
       reached: 'Ulaşıldı',
       reachedOn: '{{day}} tarihinde aşıldı',

@@ -13480,6 +13480,7 @@ export default {
       wear: '印表機損耗',
       labor: '人工',
       fixed: '固定成本',
+      fixedEstimated: '固定費用(估算)',
       depreciation: '折舊',
       margin: '毛利 HT',
     },
@@ -13534,6 +13535,9 @@ export default {
     result: {
       title: '營運結果',
       month: '本月結果',
+      realResult: '實際結果(Zoho)',
+      projectedResult: '含估算的結果',
+      estimatedNote: '其中 {{amount}} 為尚未入帳的估算費用',
       breakEven: '損益兩平點',
       reached: '已達成',
       reachedOn: '已於 {{day}} 突破',

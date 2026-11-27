@@ -13496,6 +13496,7 @@ export default {
       wear: 'プリンター摩耗',
       labor: '人件費',
       fixed: '固定費',
+      fixedEstimated: '固定費(見積り)',
       depreciation: '減価償却',
       margin: '粗利 HT',
     },
@@ -13550,6 +13551,9 @@ export default {
     result: {
       title: '営業損益',
       month: '今月の損益',
+      realResult: '実績(Zoho)',
+      projectedResult: '見積りを含む結果',
+      estimatedNote: 'うち {{amount}} は未計上の見積り費用',
       breakEven: '損益分岐点',
       reached: '達成',
       reachedOn: '{{day}} に突破',

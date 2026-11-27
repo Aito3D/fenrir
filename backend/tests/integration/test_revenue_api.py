@@ -1019,7 +1019,7 @@ async def test_refresh_all_reads_23_months(async_client, revenue_db, tokens, mon
     assert [a["id"] for a in rows] == ["edf", "rent"]  # no share yet: by code; the sales account is not class 6
     rent = rows[1]
     assert (rent["month"], rent["year"], rent["usual"], rent["percent"]) == (160000, 1920000, 160000, 0)
-    assert (await async_client.get(FIXED, headers=tokens["labor"])).json() == r.json()
+    assert {**(await async_client.get(FIXED, headers=tokens["labor"])).json(), "changed": True} == r.json()
 
 
 @pytest.mark.asyncio
@@ -1030,11 +1030,15 @@ async def test_refresh_current_is_throttled(async_client, revenue_db, tokens, mo
 
     calls = _zoho_books(monkeypatch)
     # An empty cache reads everything, whatever the scope.
-    assert (await async_client.post(f"{FIXED}/refresh?scope=current", headers=tokens["labor"])).status_code == 200
+    first = await async_client.post(f"{FIXED}/refresh?scope=current", headers=tokens["labor"])
+    assert first.status_code == 200 and first.json()["changed"] is True
     read = len(calls)
     assert read >= 23
-    await async_client.post(f"{FIXED}/refresh?scope=current", headers=tokens["labor"])
-    assert len(calls) == read
+    again = await async_client.post(f"{FIXED}/refresh?scope=current", headers=tokens["labor"])
+    assert len(calls) == read and again.json()["changed"] is False
+    # Read again, nothing new in the books: the page has no reason to reload.
+    assert (await async_client.post(f"{FIXED}/refresh", headers=tokens["labor"])).json()["changed"] is False
+    calls.clear()
     # Older than 15 minutes: the current month only.
     async with store.snapshot() as conn:
         cache = await production.read_fixed_cache(conn)
@@ -1046,6 +1050,7 @@ async def test_refresh_current_is_throttled(async_client, revenue_db, tokens, mo
     assert len(calls) == 1
     rent = next(a for a in r.json()["accounts"] if a["id"] == "rent")
     assert (rent["month"], rent["usual"]) == (170000, 160000)
+    assert r.json()["changed"] is True
     assert r.json()["readAt"] == cache["readAt"]
 
 
@@ -1072,7 +1077,8 @@ async def test_refresh_failure_keeps_cache(async_client, revenue_db, tokens, mon
     from backend.app.services.zoho import ZohoNotConfiguredError
 
     _zoho_books(monkeypatch)
-    stored = (await async_client.post(f"{FIXED}/refresh", headers=tokens["labor"])).json()
+    await async_client.post(f"{FIXED}/refresh", headers=tokens["labor"])
+    stored = (await async_client.get(FIXED, headers=tokens["labor"])).json()
     _zoho_books(monkeypatch, amount=999, fail_at=14)
     r = await async_client.post(f"{FIXED}/refresh", headers=tokens["labor"])
     assert r.status_code == 502 and "SECRET" not in r.text

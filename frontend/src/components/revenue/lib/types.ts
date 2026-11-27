@@ -36,7 +36,7 @@ export interface RevenueBucket {
   /** Gross margin HT per key, services' print + labour costs shared pro rata of their HT; same stripping as cost. */
   marginSplit?: { nature: Record<string, number>; brand: Record<string, number>; segment?: Record<string, number>; kind: Record<string, number> };
   /** What `cost` is made of: Zoho item costs (`items`), then the services' filament, energy, wear, labour and the share of the fixed costs. */
-  costParts?: Partial<Record<'items' | 'filament' | 'energy' | 'wear' | 'labor' | 'fixed' | 'depreciation', number>>;
+  costParts?: Partial<Record<'items' | 'filament' | 'energy' | 'wear' | 'labor' | 'fixed' | 'fixedEstimated' | 'depreciation', number>>;
   /** Printer hours of the print log in the bucket (null before the log began); stripped with the margin figures. */
   printHours?: number | null;
   projection: Money | null;
@@ -454,9 +454,15 @@ export interface ResultMonth {
   ht: number;
   variable: number;
   labor: number;
+  /** Entered in the books. */
   fixed: number;
+  /** Usual charges the running month still misses; 0 on a closed month. */
+  fixedEstimated: number;
   depreciation: number;
+  /** With the estimate taken off. */
   result: number;
+  /** Without it: what the books say today. */
+  resultReal: number;
   /** Share of the HT whose cost is known (0–1); null without sales. */
   coverage: number | null;
   /** Before print and labour costs were tracked: the result would count services at full margin. */
@@ -466,7 +472,7 @@ export interface ResultMonth {
 export interface ResultResponse {
   fixedMonthly: number;
   /** The three charges of the whole current month. */
-  charges: { labor: number; fixed: number; depreciation: number };
+  charges: { labor: number; fixed: number; fixedEstimated: number; depreciation: number };
   months: ResultMonth[];
   /** First day print and labour costs exist; null when there are none yet. */
   costsSince: string | null;
