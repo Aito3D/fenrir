@@ -541,4 +541,106 @@ describe('useCounterPay', () => {
     act(() => r.result.current.reset());
     expect(r.result.current).toMatchObject({ active: true, step: 'invoice', busy: true });
   });
+
+  it('the retry credit cap is rounded to the cent (no float residue sent to Books)', async () => {
+    // 100.3 - 100.1 = 0.19999999999999574 held on the invoice, so 0.3 - that = 0.10000000000000426 unrounded.
+    const money = (balance: number) => mkRow({ payment: { invoices: [{ id: 'inv1', number: 'FAC-1', total: 100.3, balance }] } });
+    arrange(mkRow(), 12400);
+    m.createOrderInvoice.mockResolvedValue({ board: boardOf(money(100.3)), outcome: created } as never);
+    m.getOrderBoard.mockResolvedValue(boardOf(money(100.1)));
+    m.applyOrderCredit.mockResolvedValue({ applied: 0.1, board: boardOf(money(100.2)) } as never);
+    const r = setup();
+    await toPayment(r);
+    await act(async () => r.result.current.settle(0.3));
+    await waitFor(() => expect(r.result.current.error).toBe('orders.counterPay.notAttributed'));
+    await act(async () => r.result.current.retry());
+    await waitFor(() => expect(m.applyOrderCredit).toHaveBeenCalledTimes(1));
+    expect(m.applyOrderCredit).toHaveBeenCalledWith('so1', 'inv1', 0.1);
+  });
+
+  describe('re-entry guards', () => {
+    const toHandover = async (r: ReturnType<typeof setup>) => {
+      await toPayment(r);
+      await act(async () => r.result.current.settle(12400));
+      await waitFor(() => expect(r.result.current.step).toBe('handover'));
+    };
+
+    it('a second start() while the first runs creates one order', async () => {
+      arrange(mkRow());
+      const r = setup();
+      await act(async () => {
+        void r.result.current.start(body);
+        void r.result.current.start(body);
+      });
+      await waitFor(() => expect(r.result.current.step).toBe('payment'));
+      expect(m.createCounterOrder).toHaveBeenCalledTimes(1);
+    });
+
+    it('a second handOver() while the hand-over write is in flight posts once', async () => {
+      arrange(mkRow());
+      let release: (v: unknown) => void = () => {};
+      m.handOverOrderParcel.mockReturnValue(new Promise((res) => { release = res; }) as never);
+      const r = setup();
+      await toHandover(r);
+      await act(async () => {
+        r.result.current.handOver();
+        r.result.current.handOver();
+      });
+      expect(m.handOverOrderParcel).toHaveBeenCalledTimes(1);
+      await act(async () => r.result.current.handOver());
+      expect(m.handOverOrderParcel).toHaveBeenCalledTimes(1);
+      await act(async () => release({ board: boardOf(mkRow({}, 0)), outcome: created }));
+      await waitFor(() => expect(r.result.current.step).toBe('done'));
+    });
+
+    it('handOver() outside the hand-over step does nothing', async () => {
+      arrange(mkRow());
+      const r = setup();
+      await toPayment(r);
+      await act(async () => r.result.current.handOver());
+      expect(m.handOverOrderParcel).not.toHaveBeenCalled();
+      expect(r.result.current.step).toBe('payment');
+    });
+
+    it('handOver() with an error on screen does nothing (retry is the way)', async () => {
+      arrange(mkRow());
+      m.handOverOrderParcel.mockResolvedValueOnce({ board: boardOf(mkRow({}, 0)), outcome: { ...created, failed_step: 'delivered', error: 'x' } } as never);
+      const r = setup();
+      await toHandover(r);
+      await act(async () => r.result.current.handOver());
+      await waitFor(() => expect(r.result.current.error).toBeTruthy());
+      await act(async () => r.result.current.handOver());
+      expect(m.handOverOrderParcel).toHaveBeenCalledTimes(1);
+    });
+
+    it('cancelPayment() while a write is running keeps the sale active', async () => {
+      arrange(mkRow());
+      m.createOrderInvoice.mockReturnValue(new Promise(() => {}) as never);
+      const r = setup();
+      await toPayment(r);
+      // Same render closure: step is still 'payment' when the second call runs, the ref says a write started.
+      act(() => {
+        r.result.current.settle(12400);
+        r.result.current.cancelPayment();
+      });
+      await waitFor(() => expect(r.result.current.busy).toBe(true));
+      expect(r.result.current).toMatchObject({ active: true, wait: null });
+    });
+
+    it('cancelPayment() after the payment step keeps the sale active', async () => {
+      arrange(mkRow());
+      const r = setup();
+      await toHandover(r);
+      act(() => r.result.current.cancelPayment());
+      expect(r.result.current).toMatchObject({ active: true, step: 'handover', wait: 'handover' });
+    });
+
+    it('cancelPayment() on the payment step with nothing running ends the sale', async () => {
+      arrange(mkRow());
+      const r = setup();
+      await toPayment(r);
+      act(() => r.result.current.cancelPayment());
+      expect(r.result.current).toMatchObject({ active: false, wait: null });
+    });
+  });
 });

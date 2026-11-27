@@ -407,10 +407,12 @@ describe('Create invoice on the invoices card', () => {
     const user = userEvent.setup();
     let body: unknown;
     let hits = 0;
+    let release: () => void = () => {};
+    const gate = new Promise<void>(r => { release = r; });
     server.use(http.post('/api/v1/order-board/orders/so1/invoice', async ({ request }) => {
       hits++;
       body = await request.json();
-      await new Promise(r => setTimeout(r, 150));
+      await gate;
       return HttpResponse.json(answer({ package_number: '' }));
     }));
     render(<OrderLinesPanel row={panelRow({ unbilled_units: 2, packages: [] })} />);
@@ -418,6 +420,7 @@ describe('Create invoice on the invoices card', () => {
     await user.click(create);
     await user.click(create);
     expect(create).toBeDisabled();
+    release();
     expect(await screen.findByText('Invoice FAC-7 created')).toBeInTheDocument();
     expect(body).toEqual({ apply_credit: false });
     expect(hits).toBe(1);
