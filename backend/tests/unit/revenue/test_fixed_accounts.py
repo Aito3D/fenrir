@@ -102,3 +102,98 @@ def test_flag():
     assert flag("641100") == "staff"
     assert flag("68110000") == "depreciation"
     assert flag("61320000") is None
+
+
+def _row(account_id, code, total, **extra):
+    return {"account_id": account_id, "account_code": code, "name": code, "total": total, **extra}
+
+
+def test_class6_totals_walks_every_section_and_keys_by_id():
+    from backend.app.services.revenue.fixed_accounts import class6_totals
+
+    report = {
+        "profit_and_loss": [
+            {
+                "name": "Profit brut",
+                "total": 1,
+                "account_transactions": [
+                    {"name": "Produits", "account_transactions": [_row("s1", "70610000", 1247739)]},
+                    {"name": "Coût des marchandises vendues", "account_transactions": [_row("c1", "60810000", 50878)]},
+                ],
+            },
+            {
+                "name": "Bénéfice d'exploitation",
+                "account_transactions": [
+                    {
+                        "name": "Dépenses d'exploitation",
+                        "account_transactions": [
+                            _row("a", "60431000", -17857),
+                            _row("b", "60431000", 599325),
+                            _row("p", "61", 10, total_sub_account=50, account_transactions=[_row("k", "61320000", 40)]),
+                            _row("z", "62700000", 0),
+                            _row("", "62", 5),
+                            _row("n", "63", "n/a"),
+                        ],
+                    }
+                ],
+            },
+        ]
+    }
+    assert class6_totals(report) == {"c1": 50878, "a": -17857, "b": 599325, "p": 10, "k": 40}
+    assert class6_totals({}) == {}
+
+
+def test_class6_accounts_keeps_expense_codes_only():
+    from backend.app.services.revenue.fixed_accounts import class6_accounts
+
+    rows = [
+        {"account_id": 7, "account_code": "61320000", "account_name": "Location", "is_active": True},
+        {"account_id": "8", "account_code": "70610000", "account_name": "Ventes", "is_active": True},
+        {"account_id": "9", "account_code": "625", "account_name": "Déplacements", "is_active": False},
+        {"account_id": "10", "account_name": "Sans code", "is_active": True},
+        {"account_code": "62", "account_name": "Sans id"},
+    ]
+    assert class6_accounts(rows) == [
+        {"id": "7", "code": "61320000", "name": "Location", "active": True},
+        {"id": "9", "code": "625", "name": "Déplacements", "active": False},
+    ]
+
+
+def test_view_lists_active_accounts_and_those_with_a_share_first():
+    from backend.app.services.revenue.fixed_accounts import view
+
+    cache = {
+        "accounts": [
+            {"id": "edf", "code": "60612000", "name": "Electricite", "active": True},
+            {"id": "rent", "code": "61320000", "name": "Location", "active": True},
+            {"id": "old", "code": "62", "name": "Ancien", "active": False},
+            {"id": "gone", "code": "63", "name": "Parti", "active": False},
+        ],
+        "months": M,
+        "readAt": "2026-11-27T10:00:00+00:00",
+        "currentReadAt": "2026-11-27T10:00:00+00:00",
+    }
+    out = view({"rent": RENT, "old": PC}, cache, "2026-11")
+    assert (out["month"], out["readAt"]) == ("2026-11", "2026-11-27T10:00:00+00:00")
+    assert [a["id"] for a in out["accounts"]] == ["rent", "old", "edf"]
+    assert out["accounts"][0] == {
+        "id": "rent",
+        "code": "61320000",
+        "name": "Location",
+        "active": True,
+        "flag": None,
+        "month": 0,
+        "year": 480000,
+        "usual": 160000,
+        "percent": 50,
+        "type": "monthly",
+        "goodsShare": 40,
+    }
+    edf = out["accounts"][2]
+    assert (edf["flag"], edf["month"], edf["percent"], edf["type"], edf["goodsShare"]) == (
+        "purchases",
+        24000,
+        0,
+        "monthly",
+        50,
+    )

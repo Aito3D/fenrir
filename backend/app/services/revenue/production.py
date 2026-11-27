@@ -30,6 +30,12 @@ FIXED_COSTS_KEY = "revenue_fixed_costs"
 # Settings row: {"assets": [{"id", "number", "name", "type", "cost", "start", "months", "status"}], "selected": [id],
 # "readAt"}: Zoho's fixed assets as last read, and the ones the operator charges to 3D printing.
 DEPRECIATION_KEY = "revenue_depreciation"
+# Settings row: {account id: {"percent", "type", "goodsShare"}}: the share of each Zoho class 6 account that is 3D's.
+FIXED_ACCOUNTS_KEY = "revenue_fixed_accounts"
+# Settings row: {"accounts": [{"id", "code", "name", "active"}], "months": {"YYYY-MM": {account id: total}},
+# "readAt", "currentReadAt"}: Zoho's expense accounts and their monthly totals as last read. A row of its own, so a
+# refresh and a save of the shares never overwrite each other.
+FIXED_ACCOUNTS_CACHE_KEY = "revenue_fixed_accounts_cache"
 
 
 @dataclass(frozen=True)
@@ -269,6 +275,23 @@ async def read_depreciation(conn: AsyncConnection) -> dict:
 
 async def save_depreciation(db, value: dict) -> dict:
     return await _save_json(db, DEPRECIATION_KEY, value)
+
+
+async def read_fixed_accounts(conn: AsyncConnection) -> dict[str, dict]:
+    return cast(dict, await _read_json(conn, FIXED_ACCOUNTS_KEY)) or {}
+
+
+async def save_fixed_accounts(db, config: dict[str, dict]) -> dict[str, dict]:
+    return await _save_json(db, FIXED_ACCOUNTS_KEY, config)
+
+
+async def read_fixed_cache(conn: AsyncConnection) -> dict:
+    cache = cast(dict, await _read_json(conn, FIXED_ACCOUNTS_CACHE_KEY))
+    return cache or {"accounts": [], "months": {}, "readAt": None, "currentReadAt": None}
+
+
+async def save_fixed_cache(db, cache: dict) -> dict:
+    return await _save_json(db, FIXED_ACCOUNTS_CACHE_KEY, cache)
 
 
 def fixed_monthly(costs: Iterable[dict]) -> float:

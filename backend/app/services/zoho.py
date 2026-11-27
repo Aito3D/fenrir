@@ -1086,6 +1086,16 @@ class ZohoService:
         """Every fixed asset's list row: cost, depreciation start, life in months, status, asset type."""
         return await self._list_all(db, "/fixedassets", "fixedassets")
 
+    async def list_chart_of_accounts(self, db: AsyncSession) -> list[dict]:
+        """Every account of the books: id, code (not unique), name, type, active flag."""
+        return await self._list_all(db, "/chartofaccounts", "chartofaccounts")
+
+    async def profit_and_loss(self, db: AsyncSession, from_date: str, to_date: str) -> dict:
+        """The profit-and-loss report of a period (accrual): a tree of sections down to each account's total."""
+        return await self._request(
+            db, "GET", "/reports/profitandloss", params={"from_date": from_date, "to_date": to_date}
+        )
+
     async def list_estimates(self, db: AsyncSession) -> list[dict]:
         """Every estimate's list row (no line items)."""
         return await self._list_all(db, "/estimates", "estimates")

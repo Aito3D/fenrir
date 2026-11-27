@@ -102,3 +102,64 @@ def month_charge(config: Config, months: Months, month: str, current: bool) -> C
 
 def flag(code: str) -> str | None:
     return next((name for prefix, name in _FLAGS if code.startswith(prefix)), None)
+
+
+def _is_class6(code: object) -> bool:
+    return isinstance(code, str) and code.startswith("6")
+
+
+def class6_totals(report: dict) -> dict[str, float]:
+    """Each class 6 account's own total in a Books profit-and-loss report, by account id.
+
+    The report is a tree of sections; expense accounts sit under both « Coût des marchandises vendues » and
+    « Dépenses d'exploitation ». `total` is the account's own figure (`total_sub_account` adds its children).
+    """
+    totals: dict[str, float] = {}
+
+    def walk(rows: object) -> None:
+        for row in rows if isinstance(rows, list) else []:
+            total = row.get("total")
+            if row.get("account_id") and _is_class6(row.get("account_code")) and isinstance(total, (int, float)):
+                if total:
+                    totals[str(row["account_id"])] = total
+            walk(row.get("account_transactions"))
+
+    walk(report.get("profit_and_loss"))
+    return totals
+
+
+def class6_accounts(rows: list[dict]) -> list[dict]:
+    """The chart of accounts' expense accounts (code starting with 6) as the cache stores them."""
+    return [
+        {
+            "id": str(r["account_id"]),
+            "code": r["account_code"],
+            "name": r.get("account_name") or "",
+            "active": bool(r.get("is_active")),
+        }
+        for r in rows
+        if r.get("account_id") and _is_class6(r.get("account_code"))
+    ]
+
+
+DEFAULT_SHARE = {"percent": 0, "type": "monthly", "goodsShare": 50}
+
+
+def view(config: Config, cache: dict, month: str) -> dict:
+    """What the table shows: active accounts and any account with a share, those with a share first."""
+    months = cache["months"]
+    rows = [
+        {
+            **a,
+            "flag": flag(a["code"]),
+            "month": _entered(months, a["id"], month),
+            "year": rolling_year(months, a["id"], month),
+            "usual": usual(months, a["id"], month),
+            **DEFAULT_SHARE,
+            **config.get(a["id"], {}),
+        }
+        for a in cache["accounts"]
+        if a["active"] or a["id"] in config
+    ]
+    rows.sort(key=lambda r: (r["percent"] <= 0, r["code"], r["name"]))
+    return {"month": month, "readAt": cache["readAt"], "accounts": rows}
