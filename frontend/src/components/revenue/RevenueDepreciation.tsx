@@ -33,8 +33,8 @@ const frDay = (day: string) => `${day.slice(8, 10)}/${day.slice(5, 7)}/${day.sli
 export function RevenueDepreciation({ canManage, onChanged, onClose, returnFocus }: {
   canManage: boolean;
   onChanged: () => void;
-  onClose: () => void;
-  returnFocus: () => void;
+  onClose?: () => void;
+  returnFocus?: () => void;
 }) {
   const { t } = useTranslation();
   const { showToast } = useToast();

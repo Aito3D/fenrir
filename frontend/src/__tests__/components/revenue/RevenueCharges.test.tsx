@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { render, screen, within } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { ToastProvider } from '../../../contexts/ToastContext';
 import { RevenueCharges } from '../../../components/revenue/RevenueCharges';
 
@@ -20,11 +20,17 @@ describe('RevenueCharges', () => {
       if (url.endsWith('/fixed-costs')) return json({ costs: [] });
       return json({ assets: [], selected: [], readAt: '2026-11-25T10:00:00+00:00' });
     }));
-    render(
+    const onClose = vi.fn();
+    const returnFocus = vi.fn();
+    const { unmount } = render(
       <ToastProvider>
-        <RevenueCharges canManage={false} version={0} onChanged={vi.fn()} onClose={vi.fn()} returnFocus={vi.fn()} />
+        <RevenueCharges canManage={false} version={0} onChanged={vi.fn()} onClose={onClose} returnFocus={returnFocus} />
       </ToastProvider>,
     );
+    const dialog = screen.getByRole('dialog', { name: 'Costs' });
+    expect(document.body.style.overflow).toBe('hidden');
+    // One × for the dialog, none on the tables inside.
+    expect(within(dialog).getAllByRole('button', { name: /close/i })).toHaveLength(1);
     const summary = await screen.findByRole('table', { name: 'Costs' });
     const row = (name: string) => within(summary).getByRole('row', { name: new RegExp(`^${name}`) });
     expect(within(row('Labour')).getByText('1,0 FCP/min')).toBeInTheDocument();
@@ -35,5 +41,10 @@ describe('RevenueCharges', () => {
     // The three tables follow.
     expect(screen.getByRole('heading', { name: 'Fixed costs' })).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Depreciation (Zoho)' })).toBeInTheDocument();
+    fireEvent.keyDown(window, { key: 'Escape' });
+    await waitFor(() => expect(onClose).toHaveBeenCalledTimes(1));
+    unmount();
+    expect(document.body.style.overflow).toBe('');
+    expect(returnFocus).toHaveBeenCalled();
   });
 });

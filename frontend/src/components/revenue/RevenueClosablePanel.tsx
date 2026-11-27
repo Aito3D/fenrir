@@ -11,8 +11,9 @@ import { focusRingCls } from '../formStyles';
 export function RevenueClosablePanel({ title, action, onClose, returnFocus, children }: {
   title: string;
   action?: ReactNode;
-  onClose: () => void;
-  returnFocus: () => void;
+  /** Absent inside a dialog that owns closing and focus: no ×, no focus on mount. */
+  onClose?: () => void;
+  returnFocus?: () => void;
   children: ReactNode;
 }) {
   const { t } = useTranslation();
@@ -23,11 +24,13 @@ export function RevenueClosablePanel({ title, action, onClose, returnFocus, chil
     restore.current = returnFocus;
   });
   useEffect(() => {
+    if (!onClose) return;
     heading.current?.focus();
     // Runs once the panel's nodes are gone: focus inside it has fallen to the body.
     return () => {
-      if (!document.activeElement || document.activeElement === document.body) restore.current();
+      if (!document.activeElement || document.activeElement === document.body) restore.current?.();
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- mount-once: a panel never gains or loses its ×
   }, []);
   return (
     <div role="region" aria-labelledby={id} className="animate-rise-sm">
@@ -40,10 +43,10 @@ export function RevenueClosablePanel({ title, action, onClose, returnFocus, chil
         action={
           <div className="flex flex-wrap items-center gap-3">
             {action}
-            <button type="button" aria-label={t('revenue.panelClose')} title={t('revenue.panelClose')} onClick={onClose}
+            {onClose && <button type="button" aria-label={t('revenue.panelClose')} title={t('revenue.panelClose')} onClick={onClose}
               className={`rounded p-1 text-bambu-gray hover:text-white ${focusRingCls}`}>
               <X aria-hidden className="h-4 w-4" />
-            </button>
+            </button>}
           </div>
         }
       >

@@ -1,5 +1,9 @@
 import { useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { useTranslation } from 'react-i18next';
+import { X } from 'lucide-react';
+import { useDismissableDialog } from '../../hooks/useDismissableDialog';
+import { focusRingCls } from '../formStyles';
 import { Panel } from '../aito/stats/primitives';
 import { RevenueDepreciation } from './RevenueDepreciation';
 import { RevenueFixedCosts } from './RevenueFixedCosts';
@@ -8,7 +12,9 @@ import { formatFcp, formatPerMinute } from './lib/format';
 import type { ResultResponse } from './lib/types';
 import { useRevenueResource } from './useRevenueResource';
 
-/** The shop's three charges in one place: what each costs a month and a minute, then the table that sets it. */
+const MODAL_OUT_MS = 170;
+
+/** The shop's three charges in one dialog: what each costs a month and a minute, then the table that sets it. */
 export function RevenueCharges({ canManage, version, onChanged, onClose, returnFocus }: {
   canManage: boolean;
   /** Moves when the page's data does, so the summary follows a saved table. */
@@ -19,16 +25,37 @@ export function RevenueCharges({ canManage, version, onChanged, onClose, returnF
 }) {
   const { t } = useTranslation();
   const { data } = useRevenueResource<ResultResponse>('/api/v1/revenue/result', version);
-  const top = useRef<HTMLDivElement>(null);
-  // Each table takes focus as it mounts; the reader starts at the top, and this effect runs after theirs.
-  useEffect(() => top.current?.focus(), []);
+  const { closing, requestClose, dialogRef } = useDismissableDialog(onClose, { animationMs: MODAL_OUT_MS });
+  const restore = useRef(returnFocus);
+  restore.current = returnFocus;
+  // The page behind stays put while the dialog is open; focus goes back to what opened it.
+  useEffect(() => {
+    const previous = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.body.style.overflow = previous;
+      restore.current();
+    };
+  }, []);
   const c = data?.charges;
   const rows = c ? ([['result.colLabor', c.labor], ['result.colFixed', c.fixed], ['result.colDepreciation', c.depreciation]] as const) : [];
   const total = rows.reduce((s, [, v]) => s + v, 0);
-  const panel = { canManage, onChanged, onClose, returnFocus };
-  return (
-    <div ref={top} tabIndex={-1} className="space-y-3 outline-none">
-      <Panel title={t('revenue.charges.title')}>
+  const panel = { canManage, onChanged };
+  // Portalled: an animated ancestor would otherwise become the containing block of `fixed`.
+  // No close on a backdrop click: a stray click would drop unsaved rows.
+  return createPortal(
+    <div className={`fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-2 backdrop-blur-sm sm:p-4 ${closing ? 'animate-overlay-out pointer-events-none' : 'animate-overlay-in'}`}>
+      <div ref={dialogRef} role="dialog" aria-modal="true" aria-label={t('revenue.charges.title')} tabIndex={-1}
+        className={`flex max-h-full w-full max-w-5xl flex-col rounded-xl border border-bambu-dark-tertiary bg-bambu-dark shadow-2xl outline-none ${closing ? 'animate-modal-out' : 'animate-modal-in'}`}>
+        <header className="flex items-center justify-between gap-3 border-b border-bambu-dark-tertiary px-4 py-3">
+          <h2 className="text-base font-semibold text-white">{t('revenue.charges.title')}</h2>
+          <button type="button" aria-label={t('common.close')} title={t('common.close')} onClick={requestClose}
+            className={`rounded-md p-1.5 text-bambu-gray hover:bg-bambu-dark-tertiary hover:text-white ${focusRingCls}`}>
+            <X aria-hidden className="h-4 w-4" />
+          </button>
+        </header>
+        <div className="min-h-0 flex-1 space-y-3 overflow-y-auto overscroll-contain p-3">
+      <Panel>
         {c && (
           <table aria-label={t('revenue.charges.title')} className="w-full max-w-xl text-sm tabular-nums">
             <thead className="text-xs text-bambu-gray">
@@ -58,6 +85,9 @@ export function RevenueCharges({ canManage, version, onChanged, onClose, returnF
       <RevenueLabor {...panel} />
       <RevenueFixedCosts {...panel} />
       <RevenueDepreciation {...panel} />
-    </div>
+        </div>
+      </div>
+    </div>,
+    document.body,
   );
 }

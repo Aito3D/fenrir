@@ -18,8 +18,8 @@ const valid = (c: FixedCost) => c.label.trim() !== '' && c.label.length <= 80 &&
 export function RevenueFixedCosts({ canManage, onChanged, onClose, returnFocus }: {
   canManage: boolean;
   onChanged: () => void;
-  onClose: () => void;
-  returnFocus: () => void;
+  onClose?: () => void;
+  returnFocus?: () => void;
 }) {
   const { t } = useTranslation();
   const { showToast } = useToast();
