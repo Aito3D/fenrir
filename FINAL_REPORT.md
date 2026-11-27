@@ -1,81 +1,76 @@
-# Refactor loop — campaign O7: the order page (/orders)
+# Refactor-loop campaign Q1 — the print queue — final report
 
-Run 2026-11-22 → 2026-11-23 on `/refactor-loop:refactor-loop focus on order page`. Auto mode, defaults (MAX_ITER 8,
-MAX_ROUNDS 3, BATCH 3, TRIAGE P2,P3, grouped commits, merge at exit).
+Date: 2026-11-25 → 2026-11-26 · Branch `auto-refactor-loop-q1` · UPSTREAM `5ff727a4d` (main) · BASE tag `q1/refactor-base` (`1a43aeee4`)
 
-- Worktree `../bambuddy-refactor-o7`, branch `auto-refactor-loop-o7`, cut from main `6672584de` (order quotes pushed).
-- Names deviate from the skill defaults (user-approved): a peer session ran campaign RV2 (Revenue page) at the same time
-  in `../bambuddy-refactor` with the default `refactor-base` / `loop-N` tags. O7 uses `o7/refactor-base` (setup
-  `e770d4d83`) and `o7/loop-1` … `o7/loop-8`.
-- **8 iterations, 3 survey rounds, 8 squashed commits + setup, 9 tags.**
-- **Why it ended:** the plan was exhausted after iteration 8, and the RESURVEY cap check stopped it (round 3 = MAX_ROUNDS).
-  The iteration budget (8/8) was spent at the same time. It did not converge: round 3 was still productive.
+## Outcome
+- Campaign Q1 (first on this scope). 8 iterations, 2 survey rounds, 8 squashed commits, tags `q1/loop-1` … `q1/loop-8`.
+- Ended on **MAX_ITER** (8 of 8), with 3 approved tasks still open. Round 3 was not surveyed.
+- 23 of 28 planned tasks DONE and verified; 2 closed as duplicates; 3 OPEN; 6 parked in TRIAGE.md.
+- Every iteration passed the blind verifier (iteration 2 on its second attempt: the first failed the basedpyright gate on three `rowcount` reads; fixed with `cast(CursorResult, …)`).
 
-## User-approved behavior changes (BASELINE-CHANGELOG.md, 2026-11-22)
-All are in the new quote **Undo** ("Annuler" after Accepté), which deletes the sales order in Books. That path had never
-been run live.
-- **T-149 + T-155:** Undo deletes only the order that this board's own accept / create-order click made. The board
-  remembers it in a bounded in-process map, so after a restart Undo is refused. The accept and order responses carry
-  `undoable`, and the notice's Annuler button follows it instead of the cached `has_draft_order`.
-- **T-156:** Undo is refused (`undo_too_late`) while a payment link is pending or a terminal charge is pending or
-  processing. The undo route holds the order's payment lock, and a held lock means `undo_too_late`.
-- **T-159:** Undo is also refused when the last terminal charge is `needs_attention` (outcome unknown), or is paid but
-  not booked in Books (`booking_status != "booked"`, which includes Heimdall's `not_booked`).
-- **T-158 + T-160:** the order payment-link route takes the same per-order payment lock (409 `terminal_in_progress`
-  when held), so creating a link and undoing can't overlap. Side effect: sending a link is refused while a terminal
-  start or a manual payment holds that order's lock.
-- **T-168:** a regression from T-158, found by the round-3 auditors. A pending link blocks Undo only once it was
-  minted (it has a heimdall_id). A failed-mint placeholder no longer blocks Undo forever (nothing clears it when
-  Heimdall isn't configured). A link being minted right now is still covered by the lock.
-- Declined: **T-165**, moving the lock to `_common.py` and making `_made_here` public. It was renaming churn that would
-  move SURFACE.
+## Scope
+`backend/app/api/routes/print_queue.py`, `services/queue_*.py`, `models/print_queue.py`, `schemas/print_queue.py`;
+`frontend/src/pages/QueuePage.tsx`, `components/Queue*.tsx`, `PrinterQueueWidget.tsx`, `components/queue/**`, `utils/queue*.ts`; their tests.
+`services/print_scheduler.py` was out of scope by the user's choice.
 
-No golden was re-recorded for any of them, and SURFACE.md never moved. The new `undoable` key is not in a response model.
+## User-approved behavior changes (BASELINE-CHANGELOG.md has the exact entries)
+| Task | Change |
+|---|---|
+| T-010 | Drag reorder only in ascending position sort with Shortest-Job-First off |
+| T-030 | Phone up/down arrows follow the same rule (hidden in descending sort) |
+| T-011 | Reordering a filtered view keeps hidden jobs' positions (visible jobs reuse the positions they hold) |
+| T-031 | Tied positions are nudged apart instead of falling back to 1..n |
+| T-012 | Cancel, batch cancel and single delete are guarded writes; a job that started printing in the gap → 409 |
+| T-032 | Stop is a guarded write; a job that finished in the gap → 409 and stays completed (the stop command is still sent to the printer first, as before) |
+| T-033 | Single edit re-checks status before saving; a job that started printing in the gap → 409 |
+| T-013 | `quantity` on POST /queue/ capped at 999 (0 or negative still treated as 1) |
+| T-004 | `position` removed from the PATCH schema; a sent `position` is ignored (200), not rejected |
+| T-005 | An ownerless batch needs `queue:update_all` |
+| T-027 | Duplicate skips a job linked to an Aito task for a user without `aito:read` (duplicate route only) |
+| T-014 | Bulk cancel continues past failures; a mixed result shows one new toast with both counts (16 locales) |
 
-## What each survey round found
-- **Round 1:** the Undo authorization gap (security and robustness found it independently), the payment-in-flight race,
-  5 test gaps in the quotes backend, and 3 cleanliness items.
-- **Round 2:** money taken by the terminal but not in Books still allowed Undo (high); a link-creation race (security and
-  robustness again); 3 test gaps; 1 dead field. Worker leads checked and rejected: "edit wipes kept-line discounts" and
-  "numeric discount → 500" are not bugs.
-- **Round 3:** T-168 (above); a lock-release test gap; 4 small cleanliness items; the customer-credit display untested.
-  Security found nothing.
+## Survey rounds
+- Round 1: cleanliness 0 new + 2 triaged; security 3 new (all behavior changes); tests 0 new + 4 triaged; robustness 5 new (all behavior changes). 7 approved, 1 closed as duplicate (T-003 = T-013), 4 test items promoted.
+- Round 2: cleanliness 0 new + 4 triaged; tests 2 new + 6 triaged; security 3 new; robustness 5 new. Found two half-applied round-1 rules (T-030, T-031) and no regression. 8 approved, 1 closed as duplicate (T-024 = T-030), 6 test items promoted.
+- Round 3: not run (iteration budget spent).
 
-## Findings by auditor (filed into PLAN.md this campaign → outcome)
-| Auditor | Filed | DONE | BLOCKED | WONTFIX |
-|---|---|---|---|---|
-| audit-security | 2 | 2 | 0 | 0 |
-| audit-robustness | 5 | 5 | 0 | 0 |
-| audit-cleanliness | 7 | 5 | 1 (T-146) | 1 (T-165) |
-| audit-tests | 10 | 10 | 0 | 0 |
+## Findings by auditor (plan.py stats)
+| Auditor | Filed in PLAN | DONE | OPEN | Closed as duplicate | Triaged at ingest |
+|---|---|---|---|---|---|
+| audit-security | 6 | 3 | 2 | 1 | 0 |
+| audit-robustness | 10 | 9 | 1 | 0 | 0 |
+| audit-tests | 12 (2 filed + 10 promoted) | 11 | 0 | 1 | 10 |
+| audit-cleanliness | 0 | 0 | 0 | 0 | 6 |
+16 findings were triaged over the campaign (cleanliness 6, tests 10); 10 were promoted and done, 6 remain in TRIAGE.md
+(`plan.py --file TRIAGE.md render --iteration 8`; promote with `plan.py promote <id> --iteration N`, the flag is required).
 
-**Triaged this campaign:** 17 in total: cleanliness 7, tests 10, security 0, robustness 0. You promoted 16 of them into
-the plan by hand. One is still in TRIAGE.md: **T-148**, cross-module imports of underscore-private helpers between the
-quote modules. Fixing it means renaming to public names, which moves SURFACE. Promote it later with
-`plan.py promote T-148 --iteration N` (the flag is required).
-
-## Gates
-- **Coverage, scoped statements:**
-  - backend 97.09% → **99.42%** (4000/4120 at base)
-  - frontend 97.56% → **97.72%**
-- **Final full suites on `o7/loop-8`:**
-  - backend 29,508 passed, 0 failed
-  - frontend 12,475 passed, 0 failed
-- **Known-broken tests:** 1 → 1. `test_migration_backfills_calibrated_at_from_offset` is time-of-day dependent and out of scope; it passed in every run of this campaign.
-- **Snapshot probes:** 31/31 matching at every iteration. At setup, 7 goldens were re-recorded for post-O6 drift and the 4 `revenue-*` probes were dropped (they shared /tmp with RV2).
-- **SURFACE.md:** unchanged throughout (`tools/gen_surface_orders.sh`).
-- **Diff vs base:** 20 files, +725 / −35. Production code: 9 files, +86 / −32. Tests: 10 files, +634 / −3.
+## Metrics
+- Coverage (queue scope, statements, full suites): backend 93.28% → 95.08%; frontend 80.58% → 84.94%.
+- Tests: backend 30,165 → 30,220 passing; frontend 12,765 → 12,797 passing. 17 test files added or extended, +1,532 lines.
+- Production diff: 19 files, +124 / −29 lines (16 of the files are the locale files, one line each).
+- Golden probes: 38/38 matching at every verdict. Re-recorded under approved changes: queue-openapi, queue-schemas (T-013, T-004), queue-http, app-openapi-index (T-004), queue-i18n (T-014).
+- SURFACE.md: two sanctioned changes (PrintQueueItemUpdate loses `position`; new key `queue.toast.bulkCancelledSome`).
+- known_broken before → after: unchanged. `test_project_files_permissions.py::test_permission_matrix_covers_every_swept_route` still fails (out of scope; the primary checkout had an uncommitted edit to that file). `test_printer_hours_migrations.py::test_migration_backfills_calibrated_at_from_offset` is time-of-day dependent.
 
 ## Left for humans
-- **T-146** (BLOCKED, no change made): one shared `BOARD_KEY` for `['order-board']` needs a new export, which moves SURFACE.
-- **T-148** (TRIAGE): see above.
-- **T-165** (WONTFIX, declined).
-- The quote Undo is still unproven live: watch it on one real quote. The in-process `_made` map and the payment lock only protect a single-worker deployment.
-- **Worker oddity, iteration 3:** a worker reported killing "stuck" `snapshot.py` processes, some of which it hadn't started. Later dispatches forbid that. Nothing visibly broke; the dev server on :8000 survived.
+OPEN, already approved by the user on 2026-11-26 (not worked: budget):
+- T-028 hide `aito_task_id` in GET /bulk/printer-queues for users without `aito:read` (fix sits in `bulk.py`; user allowed that edit).
+- T-029 cap the id lists of reorder, bulk update and create-batch at 500.
+- T-034 Clear history skips a row that is no longer history.
+Closed as duplicates: T-003 (of T-013), T-024 (of T-030).
+TRIAGE.md (no behavior change, not promoted): T-001 dead `useKg` branch, T-002 stale TODO, T-015 dead `position` prop on SortableQueueItem, T-016 shared helper for the two cancel guarded writes, T-017 redundant inner except in queue_announcements, T-018 shared test fixture.
 
-## Merge notes
-- Merging `auto-refactor-loop-o7` into main conflicts with RV2 on PROBES.json, snapshots/ and SURFACE.md (the loop's own
-  machinery). Whichever campaign merges second takes its own copy of those files.
-- The frontend changed (`OrderBoardPage.tsx`, `useQuoteActions.ts`, `QuoteAcceptedNotice.tsx`, `api/client.ts`), so
-  rebuild static/ and restart :8000 after the merge.
-- Loop state is preserved in `plans/refactor-campaign-orders-o7/` in the main checkout.
+Not filed, needs a decision:
+- T-027 covers only the duplicate route. Batch dispatch and PATCH `add_copies` still copy an Aito link without checking `aito:read`; neither has a per-copy "skipped" convention.
+- `frontend/src/api/client.ts` still declares `position?` on PrintQueueItemUpdate (out of scope; harmless).
+- The Aito MCP server's code is not in this repo: if its queue-reorder tool moves jobs through PATCH `position`, it stops moving them once this merges.
+- T-031 edge: a tie nudged up by one can land on a position a hidden job holds.
+- Tests pin outcomes, not each guard, where two guards overlap (edit route dispatch 409; duplicate printer-scope check).
+- Unpinned: out-of-scope-printer 404 on edit, budget-failure rollback on duplicate, stop with no printer assigned.
+- Frontend eager preload is at 289.3 KB of a 290.0 KB build budget (not caused by this campaign).
+- The 15 non-English translations of the new toast were written by the worker and not proofread.
+
+## Not verified
+- The race fixes (cancel, delete, stop, edit) against a live scheduler on PostgreSQL: read by eye and covered by SQLite integration tests only.
+- Dependency CVE scanners (pip-audit, npm audit, semgrep) in round 2.
+- React rendering, auth-on behavior and billing are outside the golden probes; covered by unit tests and the verifier's reading of each diff.
