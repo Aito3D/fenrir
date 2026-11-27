@@ -4207,3 +4207,148 @@ async def test_stop_online_leaves_archive_for_mqtt_to_reconcile_2603(
     await db_session.refresh(archive)
     assert item.status == "cancelled"
     assert archive.status == "printing", "an online stop must leave the archive for the MQTT completion path"
+
+
+@pytest.mark.asyncio
+async def test_stop_pending_item_is_refused_and_row_unchanged(async_client: AsyncClient, printer_factory, db_session):
+    from unittest.mock import MagicMock, patch
+
+    from backend.app.models.print_queue import PrintQueueItem
+
+    printer = await printer_factory(name="Idle printer")
+    item = PrintQueueItem(printer_id=printer.id, status="pending")
+    db_session.add(item)
+    await db_session.commit()
+    await db_session.refresh(item)
+
+    stop = MagicMock(return_value=True)
+    with patch("backend.app.services.printer_manager.printer_manager.stop_print", stop):
+        resp = await async_client.post(f"/api/v1/queue/{item.id}/stop")
+
+    assert resp.status_code == 400
+    assert resp.json()["detail"] == "Can only stop items that are printing, current status: 'pending'"
+    stop.assert_not_called()
+    await db_session.refresh(item)
+    assert item.status == "pending"
+    assert item.completed_at is None
+    assert item.error_message is None
+
+
+@pytest.mark.asyncio
+async def test_stop_unknown_item_is_404(async_client: AsyncClient):
+    resp = await async_client.post("/api/v1/queue/999999/stop")
+
+    assert resp.status_code == 404
+    assert resp.json()["detail"] == "Queue item not found"
+
+
+@pytest.mark.asyncio
+async def test_stop_item_on_out_of_scope_printer_is_404_and_row_unchanged(
+    async_client: AsyncClient, printer_factory, db_session
+):
+    from unittest.mock import MagicMock, patch
+
+    from backend.app.models.print_queue import PrintQueueItem
+    from backend.tests.integration.test_projects_batches_scope import _member
+
+    mine = await printer_factory(name="Mine")
+    other = await printer_factory(name="Other")
+    headers, _admin = await _member(async_client, [mine.id])
+    item = PrintQueueItem(printer_id=other.id, status="printing")
+    db_session.add(item)
+    await db_session.commit()
+    await db_session.refresh(item)
+
+    stop = MagicMock(return_value=True)
+    with patch("backend.app.services.printer_manager.printer_manager.stop_print", stop):
+        resp = await async_client.post(f"/api/v1/queue/{item.id}/stop", headers=headers)
+
+    assert resp.status_code == 404
+    assert resp.json()["detail"] == "Queue item not found"
+    stop.assert_not_called()
+    await db_session.refresh(item)
+    assert item.status == "printing"
+
+
+@pytest.mark.asyncio
+async def test_stop_that_raises_still_closes_the_item_as_offline(
+    async_client: AsyncClient, printer_factory, db_session
+):
+    from unittest.mock import MagicMock, patch
+
+    from backend.app.models.print_queue import PrintQueueItem
+
+    printer = await printer_factory(name="Broken printer")
+    item = PrintQueueItem(printer_id=printer.id, status="printing")
+    db_session.add(item)
+    await db_session.commit()
+    await db_session.refresh(item)
+
+    with patch(
+        "backend.app.services.printer_manager.printer_manager.stop_print",
+        MagicMock(side_effect=RuntimeError("mqtt down")),
+    ):
+        resp = await async_client.post(f"/api/v1/queue/{item.id}/stop")
+
+    assert resp.status_code == 200
+    assert resp.json()["message"] == "Queue item cancelled (printer was offline)"
+    await db_session.refresh(item)
+    assert item.status == "cancelled"
+    assert item.completed_at is not None
+    assert item.error_message == "Stopped by user (printer was offline)"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("schedule_fails", [False, True])
+async def test_stop_with_auto_off_schedules_power_off_and_swallows_failure(
+    async_client: AsyncClient, printer_factory, db_session, schedule_fails
+):
+    from unittest.mock import AsyncMock, MagicMock, patch
+
+    from backend.app.models.print_queue import PrintQueueItem
+
+    printer = await printer_factory(name="Auto-off printer")
+    item = PrintQueueItem(printer_id=printer.id, status="printing", auto_off_after=True)
+    db_session.add(item)
+    await db_session.commit()
+    await db_session.refresh(item)
+
+    schedule = AsyncMock(side_effect=RuntimeError("plug unreachable") if schedule_fails else None)
+    with (
+        patch("backend.app.services.printer_manager.printer_manager.stop_print", MagicMock(return_value=True)),
+        patch("backend.app.services.smart_plug_manager.smart_plug_manager.schedule_off_after_queue_job", schedule),
+    ):
+        resp = await async_client.post(f"/api/v1/queue/{item.id}/stop")
+
+    assert resp.status_code == 200
+    assert resp.json()["message"] == "Print stopped"
+    schedule.assert_awaited_once()
+    assert schedule.await_args.args[0] == printer.id
+    await db_session.refresh(item)
+    assert item.status == "cancelled"
+    assert item.error_message == "Stopped by user"
+
+
+@pytest.mark.asyncio
+async def test_stop_without_auto_off_does_not_schedule_power_off(
+    async_client: AsyncClient, printer_factory, db_session
+):
+    from unittest.mock import AsyncMock, MagicMock, patch
+
+    from backend.app.models.print_queue import PrintQueueItem
+
+    printer = await printer_factory(name="No auto-off printer")
+    item = PrintQueueItem(printer_id=printer.id, status="printing", auto_off_after=False)
+    db_session.add(item)
+    await db_session.commit()
+    await db_session.refresh(item)
+
+    schedule = AsyncMock()
+    with (
+        patch("backend.app.services.printer_manager.printer_manager.stop_print", MagicMock(return_value=True)),
+        patch("backend.app.services.smart_plug_manager.smart_plug_manager.schedule_off_after_queue_job", schedule),
+    ):
+        resp = await async_client.post(f"/api/v1/queue/{item.id}/stop")
+
+    assert resp.status_code == 200
+    schedule.assert_not_awaited()

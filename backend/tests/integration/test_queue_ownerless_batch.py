@@ -10,7 +10,7 @@ from __future__ import annotations
 import pytest
 
 from backend.app.core import database as _database_module
-from backend.app.models.print_queue import PrintBatch
+from backend.app.models.print_queue import PrintBatch, PrintQueueItem
 from backend.tests.integration.test_queue_review_1620 import STAFF, STUDENT, _admin_token, _auth, _user
 
 pytestmark = [pytest.mark.asyncio, pytest.mark.integration]
@@ -81,3 +81,48 @@ async def test_auth_off_still_reaches_an_ownerless_batch(async_client, printer_f
     responses = await _calls(async_client, {}, batch_id, {"printer": printer, "archive": archive})
 
     assert all(r.status_code != 404 for r in responses.values()), {k: r.text for k, r in responses.items()}
+
+
+async def _member_row(batch_id: int | None, owner_id: int | None, users) -> int:
+    async with _database_module.async_session() as session:
+        item = PrintQueueItem(
+            printer_id=users["printer"].id,
+            archive_id=users["archive"].id,
+            batch_id=batch_id,
+            status="pending",
+            created_by_id=owner_id,
+        )
+        session.add(item)
+        await session.commit()
+        return item.id
+
+
+async def _member_batch_id(item_id: int) -> int | None:
+    async with _database_module.async_session() as session:
+        return (await session.get(PrintQueueItem, item_id)).batch_id
+
+
+async def _batch_exists(batch_id: int) -> bool:
+    async with _database_module.async_session() as session:
+        return await session.get(PrintBatch, batch_id) is not None
+
+
+async def test_ungroup_by_an_update_own_user_keeps_other_peoples_members_in_the_batch(async_client, users):
+    batch_id = await _batch(users["student_id"])
+    mine = await _member_row(batch_id, users["student_id"], users)
+    theirs = await _member_row(batch_id, None, users)
+
+    response = await async_client.post(f"/api/v1/queue/batches/{batch_id}/ungroup", headers=_auth(users["student"]))
+
+    assert response.status_code == 200, response.text
+    assert response.json() == {"ungrouped_count": 1, "message": "Ungrouped 1 item(s)"}
+    assert await _member_batch_id(mine) is None
+    assert await _member_batch_id(theirs) == batch_id
+    assert await _batch_exists(batch_id)
+
+
+async def test_ungroup_of_an_unknown_batch_is_404(async_client, users):
+    response = await async_client.post("/api/v1/queue/batches/999999/ungroup", headers=_auth(users["student"]))
+
+    assert response.status_code == 404
+    assert response.json()["detail"] == "Batch not found"
