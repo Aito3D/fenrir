@@ -1857,11 +1857,11 @@ const EMPTY_QUEUE: PrintQueueItem[] = [];
 // Positions are one sequence across every pending job, so a reorder of a filtered
 // view hands the visible jobs the positions they already occupy (hidden jobs keep
 // their place). The reorder route rejects duplicate positions in one request, so
-// if two visible jobs share a position we fall back to 1..n.
+// two visible jobs that share a position are separated by pushing the later one up.
 function reorderUpdates(reordered: PrintQueueItem[]) {
   const slots = reordered.map((i) => i.position).sort((a, b) => a - b);
-  const distinct = new Set(slots).size === slots.length;
-  return reordered.map((item, index) => ({ id: item.id, position: distinct ? slots[index] : index + 1 }));
+  for (let i = 1; i < slots.length; i++) slots[i] = Math.max(slots[i], slots[i - 1] + 1);
+  return reordered.map((item, index) => ({ id: item.id, position: slots[index] }));
 }
 
 export function QueuePage() {

@@ -124,12 +124,24 @@ describe('QueuePage reorder positions', () => {
     ]);
   });
 
-  it('falls back to 1..n when two visible jobs share a position (the route rejects duplicates)', async () => {
+  // User-approved behavior change (T-031): the old expectation here was a 1..n fallback.
+  it('separates two visible jobs that share a position without leaving their slots', async () => {
     await renderQueue([item(1, 2), item(3, 2)]);
     fireEvent.click(screen.getAllByLabelText(/move down/i)[0]);
     await expectBody([
-      { id: 3, position: 1 },
-      { id: 1, position: 2 },
+      { id: 3, position: 2 },
+      { id: 1, position: 3 },
+    ]);
+  });
+
+  it('keeps hidden jobs in front when visible jobs share a position', async () => {
+    // jobs at positions 1..4 belong to another printer and are hidden
+    await renderQueue([item(1, 5), item(3, 5), item(4, 7)]);
+    act(() => dnd.onDragEnd?.({ active: { id: 4 }, over: { id: 1 } }));
+    await expectBody([
+      { id: 4, position: 5 },
+      { id: 1, position: 6 },
+      { id: 3, position: 7 },
     ]);
   });
 });

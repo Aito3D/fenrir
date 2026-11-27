@@ -2040,9 +2040,13 @@ async def duplicate_queue_items(
     by_id = {item.id: item for item in result.scalars().all()}
     can_read_all = actor is None or actor.has_permission(Permission.QUEUE_READ_ALL.value)
     can_read_own = actor is None or actor.has_permission(Permission.QUEUE_READ_OWN.value)
+    can_read_aito = actor is None or actor.has_permission(Permission.AITO_READ.value)  # Fenrir
 
     async def _may_copy(item: PrintQueueItem) -> bool:
         if not printer_scope.allows(item.printer_id):
+            return False
+        # Fenrir: a copy credits the Aito task, which POST /queue/ only lets aito:read holders attach.
+        if item.aito_task_id is not None and not can_read_aito:
             return False
         if not can_read_all and not (can_read_own and actor is not None and item.created_by_id == actor.id):
             return False
@@ -3444,9 +3448,24 @@ async def stop_queue_item(
         logger.error("Error sending stop command for queue item %s: %s", item_id, e)
 
     # Update queue item status regardless - if printer is off, print is already stopped
+    # Conditional write: the print may have completed since the read (on_print_complete).
+    stopped_at = datetime.now(timezone.utc)
+    stop_message = "Stopped by user" if stop_sent else "Stopped by user (printer was offline)"
+    claimed = cast(
+        CursorResult,
+        await db.execute(
+            update(PrintQueueItem)
+            .where(PrintQueueItem.id == item.id, PrintQueueItem.status == "printing")
+            .values(status="cancelled", completed_at=stopped_at, error_message=stop_message)
+            .execution_options(synchronize_session=False)
+        ),
+    )
+    if claimed.rowcount == 0:
+        raise HTTPException(409, "Cannot stop item: it is no longer printing")
+    # Mirror the write on the loaded row: keeps it fresh and marks the session dirty (wakes the scheduler on commit).
     item.status = "cancelled"
-    item.completed_at = datetime.now(timezone.utc)
-    item.error_message = "Stopped by user" if stop_sent else "Stopped by user (printer was offline)"
+    item.completed_at = stopped_at
+    item.error_message = stop_message
 
     # Reconcile the linked archive when the printer is offline (#2603). When the
     # stop command reaches the printer it later reports the stop over MQTT and
