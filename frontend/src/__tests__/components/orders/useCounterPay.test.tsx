@@ -430,6 +430,57 @@ describe('useCounterPay', () => {
     await waitFor(() => expect(m.createOrderInvoice).toHaveBeenCalledTimes(2));
   });
 
+  describe('a lost invoice answer (outcome none): which live invoice is adopted', () => {
+    const iv = (id: string, number: string, date: string | undefined, status: string) => ({ id, number, date, status, total: 12400, balance: 0 });
+    const adopt = async (invoices: unknown[]) => {
+      arrange(mkRow());
+      m.createOrderInvoice.mockResolvedValue({ board: boardOf(mkRow({ payment: { invoices } })), outcome: { ...created, invoice: 'none', invoice_number: null } } as never);
+      const r = setup();
+      await toPayment(r);
+      await act(async () => r.result.current.settle(12400));
+      await waitFor(() => expect(r.result.current.step).toBe('handover'));
+      return r;
+    };
+
+    it('takes the newest live invoice, skipping a newer void one and a newer draft', async () => {
+      const r = await adopt([
+        iv('i1', 'FAC-1', '2026-01-01', 'paid'), iv('i2', 'FAC-2', '2026-03-01', 'sent'),
+        iv('i3', 'FAC-3', '2026-05-01', 'void'), iv('i4', 'FAC-4', '2026-06-01', 'draft'),
+      ]);
+      expect(r.result.current.invoice).toMatchObject({ id: 'i2', number: 'FAC-2' });
+    });
+
+    it('with equal dates the later one on the row wins', async () => {
+      const r = await adopt([iv('i1', 'FAC-1', '2026-03-01', 'sent'), iv('i2', 'FAC-2', '2026-03-01', 'sent')]);
+      expect(r.result.current.invoice).toMatchObject({ id: 'i2' });
+    });
+
+    it('ODDITY: an invoice with no date, met first, is never replaced by a dated one', async () => {
+      const r = await adopt([iv('i1', 'FAC-1', undefined, 'sent'), iv('i2', 'FAC-2', '2026-03-01', 'sent')]);
+      expect(r.result.current.invoice).toMatchObject({ id: 'i1' });
+    });
+
+    it('only void and draft invoices on the row is the no-invoice error', async () => {
+      arrange(mkRow());
+      m.createOrderInvoice.mockResolvedValue({ board: boardOf(mkRow({ payment: { invoices: [iv('i3', 'FAC-3', '2026-05-01', 'void'), iv('i4', 'FAC-4', '2026-06-01', 'draft')] } })), outcome: { ...created, invoice: 'none', invoice_number: null } } as never);
+      const r = setup();
+      await toPayment(r);
+      await act(async () => r.result.current.settle(12400));
+      await waitFor(() => expect(r.result.current.error).toBe('orders.counterPay.noInvoice'));
+    });
+  });
+
+  it('a failed invoice outcome with no failed_step falls back to the invoice wording', async () => {
+    arrange(mkRow());
+    m.createOrderInvoice.mockResolvedValue({ board: boardOf(mkRow()), outcome: { ...created, invoice: 'failed', invoice_number: null, failed_step: null, error: 'zoho 500' } } as never);
+    const r = setup();
+    await toPayment(r);
+    await act(async () => r.result.current.settle(12400));
+    await waitFor(() => expect(r.result.current.error).toBe('orders.handover.invoiceFailed'));
+    expect(tSpy).toHaveBeenCalledWith('orders.handover.invoiceFailed', { reason: 'zoho 500' });
+    expect(r.result.current.step).toBe('invoice');
+  });
+
   it('a failed invoice outcome is worded, never empty', async () => {
     arrange(mkRow());
     m.createOrderInvoice.mockResolvedValue({ board: boardOf(mkRow()), outcome: { ...created, invoice: 'failed', invoice_number: null, failed_step: 'invoice', error: 'zoho 500' } } as never);
