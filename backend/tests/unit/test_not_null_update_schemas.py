@@ -73,7 +73,7 @@ NOT_A_ROW_UPDATE = {
     "TreeUpdate": "Fenrir: null skip_02 means auto; a null source field keeps the current one",
     "ColorUpdate": "Fenrir: name required; a null hex keeps the current colour",
     "LaborBody": "Fenrir: the revenue labour list, stored as a setting and replaced as a whole",
-    "FixedCostsBody": "Fenrir: the revenue fixed-cost list, stored as a setting and replaced as a whole",
+    "FixedAccountsBody": "Fenrir: the 3D share of Zoho's expense accounts, a setting replaced as a whole",
     "DepreciationBody": "Fenrir: the selected Zoho fixed assets, stored as a setting and replaced as a whole",
 }
 

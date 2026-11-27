@@ -249,6 +249,8 @@ class _Acc:
         # Margin per split key: lines with a Zoho cost carry their own; service lines costed by the
         # print log share the bucket's production cost pro rata of their HT (`pool`).
         self.prod_cost = 0.0
+        # The goods' part of the fixed costs: charged to the goods, never shared among the service lines.
+        self.goods_fixed = 0.0
         self.prod_parts: dict[str, float] = {}
         self.margin: dict[str, dict[str, float]] = {d: {} for d in MARGIN_DIMS}
         self.pool: dict[str, dict[str, float]] = {d: {} for d in MARGIN_DIMS}
@@ -316,6 +318,9 @@ def _margin_split(acc: "_Acc") -> dict[str, dict[str, int]]:
             # Printing with no service sold in the bucket: nobody to charge it to.
             key = UNALLOCATED[dim]
             merged[key] = merged.get(key, 0) - acc.prod_cost
+        if acc.goods_fixed:
+            key = KIND_KEY[False] if dim == "kind" else UNALLOCATED[dim]
+            merged[key] = merged.get(key, 0) - acc.goods_fixed
         out[dim] = _round_record(merged)
     return out
 
@@ -367,8 +372,12 @@ def build_revenue_series(
 ) -> list[dict]:
     g = granularity
     filters = filters or LineFilters()
-    # Printing costs belong to the services as a whole: no item, brand or customer slice can claim them.
-    if filters.item_ids is not None or filters.brands is not None or filters.segment or filters.kind == "goods":
+    # Printing costs belong to the services as a whole: no item, brand or customer slice can claim them. The fixed
+    # costs alone are split: their goods part is the only production cost a goods view carries.
+    fixed_goods = production.fixed_goods_by_day if production and filters.kind != "services" else {}
+    if filters.item_ids is not None or filters.brands is not None or filters.segment:
+        production, fixed_goods = None, {}
+    elif filters.kind == "goods":
         production = None
     production_from = production.first_day if production else None
     totals: dict[str, _Acc] = {}
@@ -385,9 +394,17 @@ def build_revenue_series(
             print_hours[key] = print_hours.get(key, 0.0) + hours
         for day, parts in production.by_day.items():
             acc = totals.setdefault(bucket_key_for(day, g), _Acc())
+            goods = production.fixed_goods_by_day.get(day, {})
             for part, cost in parts.items():
-                acc.prod_cost += cost
-                acc.prod_parts[part] = acc.prod_parts.get(part, 0) + cost
+                cost -= goods.get(part, 0)
+                if cost:
+                    acc.prod_cost += cost
+                    acc.prod_parts[part] = acc.prod_parts.get(part, 0) + cost
+    for day, parts in fixed_goods.items():
+        acc = totals.setdefault(bucket_key_for(day, g), _Acc())
+        for part, cost in parts.items():
+            acc.goods_fixed += cost
+            acc.prod_parts[part] = acc.prod_parts.get(part, 0) + cost
 
     keys: list[str] = []
     for day in all_days(from_, to):
@@ -463,7 +480,7 @@ def build_revenue_series(
                 **({"byItemTtc": _round_record(sp["item_ttc"])} if show_items else {}),
                 "bySegment": _round_record(sp["segment"]),
                 "bySegmentTtc": _round_record(sp["segment_ttc"]),
-                "cost": js_round(acc.cost + acc.prod_cost),
+                "cost": js_round(acc.cost + acc.prod_cost + acc.goods_fixed),
                 "marginSplit": acc.margin_split(),
                 # What the cost is made of: Zoho item costs, then the services' print and labour costs.
                 "costParts": _round_record({"items": acc.cost, **acc.prod_parts}),

@@ -163,3 +163,25 @@ def view(config: Config, cache: dict, month: str) -> dict:
     ]
     rows.sort(key=lambda r: (r["percent"] <= 0, r["code"], r["name"]))
     return {"month": month, "readAt": cache["readAt"], "accounts": rows}
+
+
+def _months_from(first: str, last: str) -> list[str]:
+    span = (int(last[:4]) - int(first[:4])) * 12 + int(last[5:7]) - int(first[5:7])
+    return [*months_before(last, span), last]
+
+
+def months_to_read(today: str, costs_start: str) -> list[str]:
+    """Every month a full refresh asks Zoho for, oldest first: the 12 the result shows and the 11 before (accounts
+    spread over a rolling year), and back to 11 months before the day costs are spread from."""
+    month = today[:7]
+    # shortcut: one Zoho call per month since costs_start, cache the closed years apart if a refresh gets slow
+    return _months_from(min(months_before(month, 22)[0], months_before(costs_start[:7], 11)[0]), month)
+
+
+def charges_by_month(config: Config, cache: dict, today: str) -> dict[str, Charge]:
+    """Each cached month's charge, up to today's month; only today's month projects."""
+    months = cache["months"]
+    if not months or not config:
+        return {}
+    month = today[:7]
+    return {m: month_charge(config, months, m, m == month) for m in _months_from(min(months), month)}

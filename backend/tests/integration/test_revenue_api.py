@@ -743,8 +743,10 @@ async def test_result_needs_margin_and_carries_twelve_months(async_client, reven
         "variable",
         "labor",
         "fixed",
+        "fixedEstimated",
         "depreciation",
         "result",
+        "resultReal",
         "coverage",
         "partial",
     }
@@ -1005,7 +1007,12 @@ async def test_refresh_all_reads_23_months(async_client, revenue_db, tokens, mon
     calls = _zoho_books(monkeypatch)
     r = await async_client.post(f"{FIXED}/refresh", headers=tokens["labor"])
     assert r.status_code == 200 and r.json()["readAt"]
-    assert len(calls) == 23 and len(set(calls)) == 23
+    from backend.app.services.revenue.dates import org_today
+    from backend.app.services.revenue.fixed_accounts import months_to_read
+
+    # 23 months until mid-2027, then every month since the costs began.
+    wanted = months_to_read(org_today(datetime.now(timezone.utc)), "2026-07-01")
+    assert len(calls) == len(wanted) >= 23 and [c[0][:7] for c in calls] == wanted
     first, last = calls[-1]
     assert first.endswith("-01") and first == f"{r.json()['month']}-01" and last[:7] == first[:7] and last[8:] >= "28"
     rows = r.json()["accounts"]
@@ -1024,9 +1031,10 @@ async def test_refresh_current_is_throttled(async_client, revenue_db, tokens, mo
     calls = _zoho_books(monkeypatch)
     # An empty cache reads everything, whatever the scope.
     assert (await async_client.post(f"{FIXED}/refresh?scope=current", headers=tokens["labor"])).status_code == 200
-    assert len(calls) == 23
+    read = len(calls)
+    assert read >= 23
     await async_client.post(f"{FIXED}/refresh?scope=current", headers=tokens["labor"])
-    assert len(calls) == 23
+    assert len(calls) == read
     # Older than 15 minutes: the current month only.
     async with store.snapshot() as conn:
         cache = await production.read_fixed_cache(conn)
@@ -1144,3 +1152,26 @@ async def test_save_during_refresh_keeps_both(async_client, revenue_db, tokens, 
 @pytest.mark.asyncio
 async def test_fixed_costs_routes_are_gone(async_client, revenue_db, tokens):
     assert (await async_client.get(f"{URL}/fixed-costs", headers=tokens["labor"])).status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_result_and_series_follow_the_fixed_accounts(async_client, revenue_db, tokens, monkeypatch):
+    url = f"{URL}/result"
+    etag = (await async_client.get(url, headers=tokens["labor"])).headers["etag"]
+    assert (await async_client.get(url, headers={**tokens["labor"], "If-None-Match": etag})).status_code == 304
+    # Reading Zoho moves the stamp, a share moves the figures.
+    _zoho_books(monkeypatch)
+    await async_client.post(f"{FIXED}/refresh", headers=tokens["labor"])
+    again = await async_client.get(url, headers={**tokens["labor"], "If-None-Match": etag})
+    assert again.status_code == 200 and again.json()["fixedMonthly"] == 0
+    etag = again.headers["etag"]
+    await async_client.put(FIXED, json={"accounts": {"rent": SHARE}}, headers=tokens["labor"])
+    body = (await async_client.get(url, headers={**tokens["labor"], "If-None-Match": etag})).json()
+    assert body["fixedMonthly"] == 80000
+    assert body["charges"]["fixed"] == 80000 and body["charges"]["fixedEstimated"] == 0
+    assert body["months"][0]["fixed"] == 80000 and 0 < body["months"][-1]["fixed"] <= 80000
+    # Nothing entered this month yet: the usual rent is projected, apart.
+    _zoho_books(monkeypatch, amount=0)
+    await async_client.post(f"{FIXED}/refresh", headers=tokens["labor"])
+    body = (await async_client.get(url, headers=tokens["labor"])).json()
+    assert body["fixedMonthly"] == 0  # the three months before are empty too now

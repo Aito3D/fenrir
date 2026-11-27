@@ -96,7 +96,7 @@ async def _respond(
         if extra_stamp is not None:
             stamp += f"|{await extra_stamp(conn)}"
         if flags.margin and (
-            await production.read_fixed_costs(conn)
+            await production.read_fixed_accounts(conn)
             or await production.read_labor(conn)
             or production.selected_assets(await production.read_depreciation(conn))
         ):
@@ -778,7 +778,12 @@ async def get_result(
     start = max(f"{cash.last_months(today, 12)[0]}-01", REVENUE_HISTORY_START)
 
     async def stamp(conn) -> str:
-        keys = (production.FIXED_COSTS_KEY, production.LABOR_KEY, production.DEPRECIATION_KEY)
+        keys = (
+            production.FIXED_ACCOUNTS_KEY,
+            production.FIXED_ACCOUNTS_CACHE_KEY,
+            production.LABOR_KEY,
+            production.DEPRECIATION_KEY,
+        )
         return "|".join([str(await store.get_setting(conn, k)) for k in keys])
 
     async def build(conn, _now, _status):
@@ -796,7 +801,7 @@ async def get_result(
                 production=costs,
             )
 
-        fixed = production.fixed_monthly(await production.read_fixed_costs(conn))
+        fixed = {m: (c.real, c.estimated) for m, c in (await production.read_fixed_charges(conn, today)).items()}
         month_start = f"{today[:7]}-01"
         next_month = add_days(month_start, days_in_month(int(today[:4]), int(today[5:7])))
         # The whole month's labour, days still to come included.
@@ -891,8 +896,6 @@ async def put_depreciation(
 
 # The running month is re-read at most this often when the page opens.
 _FIXED_CURRENT_MAX_AGE_S = 15 * 60
-# Months read: the 12 the result shows plus the 11 before, for the accounts spread over a rolling year.
-_FIXED_MONTHS = 23
 _fixed_refresh_lock = asyncio.Lock()
 
 
@@ -937,7 +940,7 @@ async def refresh_fixed_accounts(
     failure leaves the cache as it was. `current` is the page opening: the months since the last read, at most
     every 15 minutes."""
     now = datetime.now(timezone.utc)
-    months = cash.last_months(org_today(now), _FIXED_MONTHS)
+    months = fixed_accounts.months_to_read(org_today(now), production.COSTS_START)
     async with _fixed_refresh_lock, _writer()() as db:
         async with store.snapshot() as conn:
             cache = await production.read_fixed_cache(conn)
@@ -968,7 +971,7 @@ async def refresh_fixed_accounts(
             # The upstream message can carry a URL with credentials: only its kind is logged or returned.
             logger.warning("Fixed-account refresh failed: %s", type(e).__name__)
             raise HTTPException(status_code=502, detail="Zoho could not be read") from None
-        kept = {m: v for m, v in cache["months"].items() if m in months} if partial else {}
+        kept = cache["months"] if partial else {}
         cache = await production.save_fixed_cache(
             db,
             {

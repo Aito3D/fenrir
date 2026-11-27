@@ -1,8 +1,13 @@
 from backend.app.services.revenue import result
 
 
+def every(months, fixed, estimated=0):
+    """The same whole-month fixed costs for each bucket."""
+    return {m["key"]: (fixed, estimated) for m in months}
+
+
 def build_result(months, day_buckets, fixed, today, month_labor=0, costs_since="2024-01-01"):
-    return result.build_result(months, day_buckets, fixed, today, month_labor, costs_since)
+    return result.build_result(months, day_buckets, every(months, fixed), today, month_labor, costs_since)
 
 
 def mb(month, ht, items=0, filament=0, labor=0, costed=None):
@@ -32,8 +37,10 @@ def test_closed_month_result_takes_every_cost_off_the_revenue():
         "variable": 400_000,
         "labor": 200_000,
         "fixed": 150_000,
+        "fixedEstimated": 0,
         "depreciation": 0,
         "result": 250_000,
+        "resultReal": 250_000,
         "coverage": 1.0,
         "partial": False,
     }
@@ -47,7 +54,7 @@ def test_the_buckets_daily_fixed_share_is_not_counted_twice():
 
 
 def test_current_month_fixed_costs_grow_with_the_share_of_today_gone():
-    r = result.build_result([mb("2026-11", 0)], [], 120_000, "2026-11-11", 0, "2024-01-01", 0.5)
+    r = result.build_result([mb("2026-11", 0)], [], {"2026-11": (120_000, 0)}, "2026-11-11", 0, "2024-01-01", 0.5)
     assert r["months"][0]["fixed"] == 42_000
 
 
@@ -126,8 +133,50 @@ def test_depreciation_is_its_own_charge_not_a_variable_cost():
 
 def test_break_even_counts_the_months_depreciation():
     months, day_buckets = [mb("2026-11", 1_000_000, items=400_000)], days([100_000] * 10)
-    args = (months, day_buckets, 30_000, "2026-11-11", 0, "2024-01-01")
+    args = (months, day_buckets, every(months, 30_000), "2026-11-11", 0, "2024-01-01")
     without = result.build_result(*args)
     with_dep = result.build_result(*args, month_depreciation=30_000)
     assert with_dep["breakEven"]["amount"] == 2 * without["breakEven"]["amount"]
-    assert with_dep["charges"] == {"labor": 0, "fixed": 30_000, "depreciation": 30_000}
+    assert with_dep["charges"] == {"labor": 0, "fixed": 30_000, "fixedEstimated": 0, "depreciation": 30_000}
+
+
+def test_rows_carry_their_own_month():
+    months = [mb("2026-09", 1000), mb("2026-10", 1000), mb("2026-11", 0)]
+    r = result.build_result(months, [], {"2026-09": (100, 0), "2026-10": (300, 0)}, "2026-11-01", 0, "2024-01-01")
+    assert [(m["fixed"], m["result"]) for m in r["months"]] == [(100, 900), (300, 700), (0, 0)]
+    assert r["fixedMonthly"] == 0
+
+
+def test_current_month_is_prorated_real_and_estimate():
+    r = result.build_result([mb("2026-11", 0)], [], {"2026-11": (90_000, 9_000)}, "2026-11-16", 0, "2024-01-01")
+    row = r["months"][0]
+    assert (row["fixed"], row["fixedEstimated"]) == (45_000, 4_500)
+    assert (row["result"], row["resultReal"]) == (-49_500, -45_000)
+    # The whole month's figures, the estimate apart.
+    assert r["fixedMonthly"] == 99_000
+    assert r["charges"] == {"labor": 0, "fixed": 90_000, "fixedEstimated": 9_000, "depreciation": 0}
+
+
+def test_a_closed_month_is_never_projected():
+    months = [mb("2026-10", 1000), mb("2026-11", 0)]
+    row = result.build_result(months, [], {"2026-10": (100, 0)}, "2026-11-01", 0, "2024-01-01")["months"][0]
+    assert (row["fixedEstimated"], row["result"], row["resultReal"]) == (0, 900, 900)
+
+
+def test_estimate_is_not_variable():
+    month = mb("2026-10", 1000, items=200)
+    month["costParts"] |= {"fixed": 50, "fixedEstimated": 5}
+    row = build_result([month, mb("2026-11", 0)], [], 0, "2026-11-01")["months"][0]
+    assert row["variable"] == 200
+
+
+def test_break_even_counts_estimate_and_one_offs():
+    months, day_buckets = [mb("2026-11", 1_000_000, items=400_000)], days([100_000] * 10)
+    real_only = result.build_result(months, day_buckets, {"2026-11": (30_000, 0)}, "2026-11-11", 0, "2024-01-01")
+    both = result.build_result(months, day_buckets, {"2026-11": (30_000, 30_000)}, "2026-11-11", 0, "2024-01-01")
+    assert both["breakEven"]["amount"] == 2 * real_only["breakEven"]["amount"] == 100_000
+    # Labour and depreciation of the whole month still count.
+    full = result.build_result(
+        months, day_buckets, {"2026-11": (30_000, 30_000)}, "2026-11-11", 30_000, "2024-01-01", 0.0, 30_000
+    )
+    assert full["breakEven"]["amount"] == 200_000
