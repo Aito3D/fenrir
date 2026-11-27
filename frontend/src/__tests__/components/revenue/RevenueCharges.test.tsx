@@ -17,7 +17,7 @@ describe('RevenueCharges', () => {
     vi.stubGlobal('fetch', vi.fn(async (url: string) => {
       if (url.endsWith('/result')) return json({ fixedMonthly: 86_400, charges: { labor: 43_200, fixed: 86_400, depreciation: 129_600 }, months: [], costsSince: null, breakEven: null });
       if (url.endsWith('/labor')) return json({ providers: [] });
-      if (url.endsWith('/fixed-costs')) return json({ costs: [] });
+      if (url.endsWith('/fixed-accounts')) return json({ month: '2026-11', readAt: null, accounts: [] });
       return json({ assets: [], selected: [], readAt: '2026-11-25T10:00:00+00:00' });
     }));
     const onClose = vi.fn();

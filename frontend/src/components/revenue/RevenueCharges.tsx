@@ -6,7 +6,7 @@ import { useDismissableDialog } from '../../hooks/useDismissableDialog';
 import { focusRingCls } from '../formStyles';
 import { Panel } from '../aito/stats/primitives';
 import { RevenueDepreciation } from './RevenueDepreciation';
-import { RevenueFixedCosts } from './RevenueFixedCosts';
+import { RevenueFixedAccounts } from './RevenueFixedAccounts';
 import { RevenueLabor } from './RevenueLabor';
 import { formatFcp, formatPerMinute } from './lib/format';
 import type { ResultResponse } from './lib/types';
@@ -83,7 +83,7 @@ export function RevenueCharges({ canManage, version, onChanged, onClose, returnF
         )}
       </Panel>
       <RevenueLabor {...panel} />
-      <RevenueFixedCosts {...panel} />
+      <RevenueFixedAccounts {...panel} />
       <RevenueDepreciation {...panel} />
         </div>
       </div>

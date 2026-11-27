@@ -400,9 +400,34 @@ export interface AnalysisResponse {
   dormant: DormantRow[];
 }
 
-export interface FixedCost {
-  label: string;
-  monthly: number;
+export type FixedAccountType = 'monthly' | 'annual' | 'one_off';
+
+/** A Zoho expense account (code starting with 6) and the share of it that is 3D printing's. */
+export interface FixedAccount {
+  id: string;
+  /** Not unique in Zoho: the id is the key. */
+  code: string;
+  name: string;
+  active: boolean;
+  /** Set when the page already counts this kind of account elsewhere. */
+  flag: 'purchases' | 'staff' | 'depreciation' | null;
+  /** Entered in the running month. */
+  month: number;
+  /** The twelve months ending with the running one. */
+  year: number;
+  /** Mean of the three closed months before. */
+  usual: number;
+  percent: number;
+  type: FixedAccountType;
+  /** Share of the charge that weighs on the goods (0–100); the rest weighs on the services. */
+  goodsShare: number;
+}
+
+export interface FixedAccountsResponse {
+  month: string;
+  /** Null until Zoho was read once. */
+  readAt: string | null;
+  accounts: FixedAccount[];
 }
 
 /** A Zoho fixed asset as the server stored it; Zoho may leave cost, start or life empty. */
