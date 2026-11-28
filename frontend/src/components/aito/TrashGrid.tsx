@@ -1,22 +1,19 @@
 import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useQueryClient } from '@tanstack/react-query';
 import { AlertTriangle, Loader2, Trash2, Undo2 } from 'lucide-react';
 import { ArchiveGrid } from './archives/ArchiveGrid';
 import { ArchiveToolbar } from './ArchiveToolbar';
 import { CardView } from './CardView';
 import { HoldButton } from './HoldButton';
 import { Button } from '../Button';
-import { api, ApiError, type AitoProject } from '../../api/client';
-import { useOptimisticBoardMutation } from '../../hooks/useOptimisticBoardMutation';
-import { useToast } from '../../contexts/ToastContext';
-import { applyRestore, replaceProject } from '../../utils/aitoOptimistic';
+import type { AitoProject } from '../../api/client';
 import { useArchiveGroups } from '../../hooks/useArchiveGroups';
 import { sortDone, type DoneSort } from '../../utils/aitoDoneArchive';
 import { matchesSearch } from '../../utils/aitoSearch';
 import { useProjectCodes } from '../projects/aito/useProjectCodes';
 import { formatElapsedTime } from '../../utils/date';
 import { restoreButtonCls, restoreHoldDurationMs } from './restoreButton';
+import { useRestoreProject } from './useRestoreProject';
 
 /** One deleted project, with the only action it has left.
  *
@@ -34,30 +31,7 @@ function TrashCard({
   canUpdate: boolean;
 }) {
   const { t } = useTranslation();
-  const { showToast } = useToast();
-  const queryClient = useQueryClient();
-
-  const restore = useOptimisticBoardMutation<AitoProject, AitoProject>({
-    mutationFn: (target) => api.restoreAitoProject(target.id),
-    // The restored card lands on the board immediately. Its column comes from
-    // the server on success — the trash row's stored column can be stale, and
-    // the rules may relocate it — so this is the one transform that predicts a
-    // column it does not compute.
-    // applyRestore, not applyCreate: restore_project APPENDS to the end of
-    // the card's own column, where create_project prepends to Devis.
-    transform: (previous, target) => applyRestore(previous, { ...target, status: 'active' }),
-    flashId: (target) => target.id,
-    onSuccess: (restored) => {
-      queryClient.setQueryData<AitoProject[]>(['aito-projects'], (prev) => replaceProject(prev, restored));
-      queryClient.invalidateQueries({ queryKey: ['aito-trash'] });
-      showToast(t('aito.restored'));
-    },
-    onError: (error) => {
-      const conflict = error instanceof ApiError && error.status === 409;
-      showToast(t(conflict ? 'aito.restoreBlockedByQuote' : 'aito.restoreFailed'), 'error');
-      queryClient.invalidateQueries({ queryKey: ['aito-trash'] });
-    },
-  });
+  const restore = useRestoreProject();
 
   return (
     <CardView
@@ -68,14 +42,7 @@ function TrashCard({
       actions={
         canUpdate ? (
           <HoldButton
-            onHold={() => {
-              // Drop it from the trash list too — the mutation wrapper's
-              // transform only owns the board query.
-              queryClient.setQueryData<AitoProject[]>(['aito-trash'], (prev) =>
-                prev?.filter((p) => p.id !== project.id) ?? prev,
-              );
-              restore.mutate(project);
-            }}
+            onHold={() => restore.run(project)}
             durationMs={restoreHoldDurationMs}
             disabled={restore.isPending}
             label={t('aito.restore')}

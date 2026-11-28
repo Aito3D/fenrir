@@ -4447,8 +4447,21 @@ describe('ProjectDetailPanel footer: constant height and a status caption', () =
   });
 
   it('says the card is in the trash first', () => {
-    showWith({ status: 'deleted', quote_id: 'e1', quote_status: 'accepted', quote_invoiced: true, column: 'done' });
+    // Read-only: with aito:update the footer holds the Restore button instead of a caption.
+    showWith({ status: 'deleted', quote_id: 'e1', quote_status: 'accepted', quote_invoiced: true, column: 'done' }, false);
     expect(caption()).toHaveTextContent('In the trash');
+  });
+
+  it('a trashed card offers Restore alone, never Accept on its declined quote', () => {
+    const { unmount } = showWith({ status: 'deleted', quote_id: 'e1', quote_status: 'declined' });
+    const buttons = within(screen.getByTestId('panel-footer')).getAllByRole('button');
+    expect(buttons).toHaveLength(1);
+    expect(buttons[0]).toHaveAccessibleName(/Restore/);
+    unmount();
+    // Restoring needs aito:update: without it the footer only says where the card is.
+    showWith({ status: 'deleted', quote_id: 'e1', quote_status: 'declined' }, false);
+    expect(caption()).toHaveTextContent('In the trash');
+    expect(within(screen.getByTestId('panel-footer')).queryByRole('button')).not.toBeInTheDocument();
   });
 
   it('says the card is invoiced', () => {

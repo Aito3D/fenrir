@@ -9,6 +9,8 @@ import { offersQuoteAction } from './quoteOffers';
  *  status offers), both behind AITO_UPDATE, and ProjectDoneAction
  *  (canMarkDone), which is not. */
 export function footerHasAction(project: AitoProject, canUpdate: boolean): boolean {
+  // Every other footer action answers 404 on a trashed card: Restore is the one it has.
+  if (project.status === 'deleted') return canUpdate;
   if (canMarkDone(project)) return true;
   if (!canUpdate) return false;
   return canCreateInvoice(project) || offersQuoteAction(project.quote_status);

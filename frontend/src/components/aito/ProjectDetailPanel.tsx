@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { Building2, Check, Copy, ExternalLink, Eye, History, Loader2, Lock, Mail, Pencil, Phone, Plane, RefreshCw, User } from 'lucide-react';
+import { Building2, Check, Copy, ExternalLink, Eye, History, Loader2, Lock, Mail, Pencil, Phone, Plane, RefreshCw, Undo2, User } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { DuplicateReplaceConfirm } from './DuplicateReplaceConfirm';
 import { PanelMenuModals } from './PanelMenuModals';
@@ -23,6 +23,9 @@ import { CardTaxContext } from './cardTax';
 import { CreateInvoiceButton } from './CreateInvoiceButton';
 import { PanelCard } from './PanelCard';
 import { QuoteStatusActions } from './QuoteStatusActions';
+import { HoldButton } from './HoldButton';
+import { restoreHoldDurationMs } from './restoreButton';
+import { useRestoreProject } from './useRestoreProject';
 import { PanelTabs } from './PanelTabs';
 import { PresenceBanner } from './PresenceBanner';
 import { panelTabId, panelTabPanelId } from './panelTabIds';
@@ -890,6 +893,8 @@ export function ProjectDetailPanel({
   onOpenCard,
 }: ProjectDetailPanelProps) {
   const { t } = useTranslation();
+  const restore = useRestoreProject();
+  const live = project.status !== 'deleted';
   const { showToast } = useToast();
   const queryClient = useQueryClient();
   const { resyncIfIdle } = useBoardSync();
@@ -1602,14 +1607,33 @@ export function ProjectDetailPanel({
               footer is where the other commitments already live. Renders
               itself away outside Finish (see canCreateInvoice) and, like
               QuoteStatusActions beside it, rides AITO_UPDATE. */}
-          {canUpdate && <CreateInvoiceButton project={project} />}
+          {live && canUpdate && <CreateInvoiceButton project={project} />}
           {/* POST /{project_id}/quote-status enforces AITO_UPDATE. */}
-          {canUpdate && <QuoteStatusActions project={project} layout="row" />}
+          {live && canUpdate && <QuoteStatusActions project={project} layout="row" />}
           {/* Closes the panel as it commits: the board only flies the card to
               the archive once the modal is out of the way (see AitoPage's
               deferred flights), and a Done that left it open never showed
               the card go. */}
-          <ProjectDoneAction project={project} onDone={onClose} />
+          {live && <ProjectDoneAction project={project} onDone={onClose} />}
+          {/* A trashed card has one action left; the others answer 404 until it is back on the board. */}
+          {!live && canUpdate && (
+            <HoldButton
+              onHold={() => {
+                restore.run(project);
+                onClose();
+              }}
+              durationMs={restoreHoldDurationMs}
+              disabled={restore.isPending}
+              label={t('aito.restore')}
+              hint={t('aito.holdToConfirm')}
+              progress="bar"
+              barClassName="bg-bambu-green/25"
+              className="justify-center border px-2.5 py-1 border-bambu-green/40 text-bambu-green hover:bg-bambu-green/10"
+            >
+              <Undo2 className="w-3.5 h-3.5" aria-hidden="true" />
+              <span className="text-sm">{t('aito.restore')}</span>
+            </HoldButton>
+          )}
         </div>
       </div>
     </div>
