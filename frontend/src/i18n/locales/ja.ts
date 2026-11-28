@@ -386,6 +386,9 @@ export default {
     depositAvailable: '利用可能な前受金',
     unlinkedRetainer: {
       hint: "見積に紐付いていない支払済みの前払金です。この前払金には計上されません。",
+      hintOther: "{{quote}} に紐づいた支払い済みの前受金です。この前受金には含まれません。",
+      confirmTitle: "この前受金を移動しますか?",
+      confirmBody: "{{number}} は {{from}} に紐づいています。{{quote}} に紐づけると {{from}} には計上されなくなります。",
       link: "{{quote}} に紐付ける",
       linked: "前払金を {{quote}} に紐付けました",
     },
@@ -12742,6 +12745,7 @@ export default {
       stockNo: 'いいえ、後で渡します',
       give: '商品をお客様に渡してください',
       handed: 'お客様に渡しました',
+      givenNow: '本日お渡し分(お客様が持ち帰らない商品のチェックを外す)',
       notAttributed: '支払いはまだ請求書に反映されていません',
       noInvoice: 'この注文の請求書を作成できませんでした',
       kept: '支払いは記録済みです。失われたものはありません。',

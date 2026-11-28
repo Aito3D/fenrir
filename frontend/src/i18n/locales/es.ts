@@ -386,6 +386,9 @@ export default {
     depositAvailable: 'Anticipo disponible',
     unlinkedRetainer: {
       hint: "Anticipo pagado sin presupuesto vinculado: no cuenta para este anticipo.",
+      hintOther: "Anticipo pagado vinculado a {{quote}}: no cuenta para este anticipo.",
+      confirmTitle: "¿Mover este anticipo?",
+      confirmBody: "{{number}} está vinculado a {{from}}. Al vincularlo a {{quote}} deja de contar para {{from}}.",
       link: "Vincular a {{quote}}",
       linked: "Anticipo vinculado a {{quote}}",
     },
@@ -12751,6 +12754,7 @@ export default {
       stockNo: 'No, entregar más tarde',
       give: 'Entrega los artículos al cliente',
       handed: 'Entregado al cliente',
+      givenNow: 'Entregado hoy (desmarca lo que el cliente no se lleva)',
       notAttributed: 'El pago aún no está aplicado a la factura',
       noInvoice: 'No se pudo crear ninguna factura para este pedido',
       kept: 'El pago está registrado. No se pierde nada.',

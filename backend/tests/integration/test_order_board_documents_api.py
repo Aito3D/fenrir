@@ -174,6 +174,10 @@ async def test_credit_and_rating_read_the_stored_customer(async_client, tokens, 
     assert body == {"credit": 1234.0} and seen == ["c1"]
     r = await async_client.get("/api/v1/order-board/orders/nope/customer-credit", headers=tokens["read"])
     assert r.status_code == 404
+    # By customer, for the new-order dialog: the caller names the id, so it needs orders:update.
+    url = "/api/v1/order-board/customers/c7/credit"
+    assert (await async_client.get(url, headers=tokens["read"])).status_code == 403
+    assert (await async_client.get(url, headers=tokens["both"])).json() == {"credit": 1234.0} and seen[-1] == "c7"
 
 
 @pytest.mark.asyncio

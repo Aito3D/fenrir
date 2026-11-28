@@ -75,7 +75,7 @@ describe('BillingCard unlinked deposits', () => {
   // RET26-00361), so the panel flags it and offers to link it.
   it('warns about a deposit naming no quote and links it to this quote', async () => {
     vi.spyOn(api, 'getAitoUnlinkedRetainers').mockResolvedValue([
-      { id: 'r9', number: 'RET26-00361', date: '2026-10-29', unused: 10000 },
+      { id: 'r9', number: 'RET26-00361', date: '2026-10-29', unused: 10000, linked_to: null },
     ]);
     const link = vi.spyOn(api, 'linkAitoRetainer').mockResolvedValue(project({ retainer_paid_total: 110100 }));
     renderCard(project({ customer_credit_total: 15500, retainer_paid_total: 5500 }));
@@ -83,6 +83,22 @@ describe('BillingCard unlinked deposits', () => {
     expect(await screen.findByText('RET26-00361')).toBeInTheDocument();
     await userEvent.click(screen.getByRole('button', { name: 'Link to DEV-2026-1234' }));
     await waitFor(() => expect(link).toHaveBeenCalledWith(12, 'r9'));
+  });
+
+  it('a deposit tied to another quote says so and asks before it is moved', async () => {
+    vi.spyOn(api, 'getAitoUnlinkedRetainers').mockResolvedValue([
+      { id: 'r7', number: 'RET26-00431', date: '2026-11-27', unused: 110000, linked_to: 'DEV26-3099' },
+    ]);
+    const link = vi.spyOn(api, 'linkAitoRetainer').mockResolvedValue(project({ retainer_paid_total: 110100 }));
+    renderCard(project({ customer_credit_total: 110000, retainer_paid_total: 0 }));
+
+    expect(await screen.findByText(/tied to DEV26-3099/)).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Link to DEV-2026-1234' }));
+    expect(link).not.toHaveBeenCalled();
+    expect(screen.getByText('Move this deposit?')).toBeInTheDocument();
+    // The dialog's confirm button carries the same wording: the last one is the dialog's.
+    await userEvent.click(screen.getAllByRole('button', { name: 'Link to DEV-2026-1234' }).at(-1) as HTMLElement);
+    await waitFor(() => expect(link).toHaveBeenCalledWith(12, 'r7'));
   });
 
   it('does not ask Books when no deposit is due', () => {

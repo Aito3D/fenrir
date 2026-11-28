@@ -18,6 +18,7 @@ import { NewContactForm } from '../aito/NewContactForm';
 import { focusRingCls } from '../formStyles';
 import { CounterPayFlow } from './CounterPayFlow';
 import { NewOrderLines } from './NewOrderLines';
+import { OrderDepositAvailable } from './OrderDepositAvailable';
 import { lineTotal, normDiscount } from './orderBoard';
 import { OrderClientHistory } from './OrderClientHistory';
 import { OrderContactBlock } from './OrderContactBlock';
@@ -234,11 +235,14 @@ export function NewOrderDraftRow({ currency, open, finished, mode = 'order', quo
                   showReset={!!client && client.id !== defaultId}
                 />
               )}
+              {/* The walk-in client too: its credit is what makes an order read as already paid. */}
+              {client && <OrderDepositAvailable key={client.id} customerId={client.id} currency={currency} />}
               {/* Re-keyed per client: a new pick rises in instead of swapping in place. */}
               {realClient && (
                 <div key={realClient} className="animate-rise space-y-4">
                   {/* Shown once Books answered: a loading card would read "no phone, no email". */}
                   {(contact.data || contact.isError) && (
+                  <div className="fold-open">
                   <OrderContactBlock
                     contact={contact.data ?? { name: client?.name ?? '', email: '', phone: '', mobile: '' }}
                     orderNumber=""
@@ -246,6 +250,7 @@ export function NewOrderDraftRow({ currency, open, finished, mode = 'order', quo
                     customerId={realClient}
                     canEdit={hasPermission('aito:create') && !!contact.data}
                   />
+                  </div>
                   )}
                   <OrderClientHistory customerId={realClient} open={open} finished={finished} currency={currency} />
                 </div>
@@ -270,7 +275,7 @@ export function NewOrderDraftRow({ currency, open, finished, mode = 'order', quo
                 />
               ) : (
                 <>
-                  <dl className="space-y-1.5 text-sm">
+                  <dl className="animate-rise space-y-1.5 text-sm">
                     <div className="flex justify-between text-bambu-gray">
                       <dt>{t('orders.units', { count: units })}</dt>
                       <dd className="tabular-nums">{formatMoney(gross, currency)}</dd>

@@ -13,13 +13,13 @@ import { isTerminalOpen } from '../aito/payment/useTerminalPayment';
 import type { PaymentDocument } from '../aito/payment/paymentDocument';
 import { usePrintBlob } from '../aito/usePrintBlob';
 import { focusRingCls } from '../formStyles';
-import { PAY_STEPS } from './counterPay';
+import { givableLines, PAY_STEPS } from './counterPay';
 import { formatQty } from './orderBoard';
 import { OrderInvoiceEmailModal } from './OrderInvoiceEmailModal';
 import { SplitButton } from './SplitButton';
 import type { useCounterPay } from './useCounterPay';
 
-const PRIMARY = `btn-press inline-flex h-11 w-full items-center justify-center rounded-lg bg-bambu-green px-4 text-sm font-semibold text-white hover:bg-bambu-green-light ${focusRingCls}`;
+const PRIMARY = `btn-press inline-flex h-11 w-full items-center justify-center rounded-lg bg-bambu-green px-4 text-sm font-semibold text-white hover:bg-bambu-green-light disabled:cursor-wait disabled:opacity-70 ${focusRingCls}`;
 const GHOST = `btn-press inline-flex h-11 w-full items-center justify-center rounded-lg border border-bambu-dark-tertiary px-4 text-sm text-white hover:bg-bambu-dark-tertiary ${focusRingCls}`;
 const PANEL = 'animate-rise space-y-3 rounded-lg border border-bambu-dark-tertiary bg-bambu-dark p-3 text-sm';
 
@@ -49,7 +49,7 @@ export function CounterPayFlow({ pay, currency, total, email, isDefaultClient, o
   const failed = !!pay.error;
   const rowState = (i: number) => (i < index || done ? 'done' : i > index ? 'todo' : failed ? 'error' : pay.wait ? 'wait' : 'now');
   return (
-    <div data-testid="counter-pay" className="space-y-4">
+    <div data-testid="counter-pay" className="animate-rise space-y-4">
       <div
         role="progressbar"
         aria-valuemin={0}
@@ -76,7 +76,7 @@ export function CounterPayFlow({ pay, currency, total, email, isDefaultClient, o
             >
               <span
                 aria-hidden="true"
-                className={`grid h-5 w-5 flex-shrink-0 place-items-center rounded-full border-2 text-[11px] ${
+                className={`grid h-5 w-5 flex-shrink-0 place-items-center rounded-full border-2 text-[11px] transition-colors duration-200 ${
                   state === 'done' ? 'border-bambu-green bg-bambu-green text-white' : state === 'todo' ? 'border-bambu-dark-tertiary' : ring
                 }`}
               >
@@ -87,22 +87,23 @@ export function CounterPayFlow({ pay, currency, total, email, isDefaultClient, o
           );
         })}
       </ol>
+      {/* The plain panels are keyed: they share this slot, and a reused div would not replay its rise. */}
       <div ref={panel}>
       {done ? (
         <Final pay={pay} currency={currency} email={email} onNewSale={onNewSale} onOpenOrder={onOpenOrder} />
       ) : failed ? (
-        <div role="alert" className={PANEL}>
+        <div key="error" role="alert" className={PANEL}>
           <p className="font-semibold text-red-400">{pay.error}</p>
           {pay.paid > 0 && <p className="text-bambu-gray">{t('orders.counterPay.kept')}</p>}
           <div className="flex gap-2">
-            <button type="button" disabled={pay.busy} onClick={pay.retry} className={PRIMARY}>{t('orders.counterPay.retry')}</button>
+            <button type="button" disabled={pay.busy} onClick={pay.retry} className={PRIMARY}>{pay.busy && <Loader2 className="mr-2 h-4 w-4 animate-spin" aria-hidden="true" />}{t('orders.counterPay.retry')}</button>
             <button type="button" onClick={() => pay.row && onOpenOrder(pay.row.id)} className={GHOST}>{t('orders.counterPay.openOrder')}</button>
           </div>
         </div>
       ) : pay.wait === 'payment' && pay.row ? (
         <PaymentPanel pay={pay} orderId={pay.row.id} currency={currency} total={total} isDefaultClient={isDefaultClient} onOpenOrder={onOpenOrder} onDialog={onDialog} />
       ) : pay.wait === 'stock' && pay.question ? (
-        <div className={PANEL}>
+        <div key={`stock-${pay.question.name}`} className={PANEL}>
           <p>{t('orders.counterPay.stockAsk', { name: pay.question.name, n: pay.question.remaining - pay.question.packed_waiting, stock: formatQty(pay.question.stock_available ?? 0) })}</p>
           <div className="flex gap-2">
             <button type="button" onClick={() => pay.answer(true)} className={PRIMARY}>{t('orders.counterPay.stockYes')}</button>
@@ -110,10 +111,10 @@ export function CounterPayFlow({ pay, currency, total, email, isDefaultClient, o
           </div>
         </div>
       ) : pay.wait === 'handover' ? (
-        <div className={PANEL}>
+        <div key="handover" className={PANEL}>
           <p>{t('orders.counterPay.give')}</p>
           {pay.handedLate.length > 0 && <p className="text-xs text-amber-400">{t('orders.counterPay.late', { names: pay.handedLate.join(', ') })}</p>}
-          <button type="button" disabled={pay.busy} onClick={pay.handOver} className={PRIMARY}>{t('orders.counterPay.handed')}</button>
+          <button type="button" disabled={pay.busy} onClick={pay.handOver} className={PRIMARY}>{pay.busy && <Loader2 className="mr-2 h-4 w-4 animate-spin" aria-hidden="true" />}{t('orders.counterPay.handed')}</button>
         </div>
       ) : null}
       </div>
@@ -132,6 +133,7 @@ function PaymentPanel({ pay, orderId, currency, total, isDefaultClient, onOpenOr
 }) {
   const { t } = useTranslation();
   const { showToast } = useToast();
+  const givable = pay.row ? givableLines(pay.row) : [];
   const [dialog, setDialog] = useState<Dialog | null>(null);
   const [opening, setOpening] = useState(false);
   const [why, setWhy] = useState<string | null>(null);
@@ -206,6 +208,18 @@ function PaymentPanel({ pay, orderId, currency, total, isDefaultClient, onOpenOr
         {t('orders.counterPay.later')}
       </button>
       {why && <p role="alert" className="text-xs text-amber-400">{why}</p>}
+      {givable.length > 0 && (
+        <fieldset className="space-y-1 border-t border-bambu-dark-tertiary pt-3">
+          <legend className="float-left mb-1 w-full text-xs text-bambu-gray">{t('orders.counterPay.givenNow')}</legend>
+          {givable.map((l) => (
+            <label key={l.id} className="flex min-h-8 cursor-pointer items-center gap-2 text-xs text-white">
+              <input type="checkbox" checked={!pay.held.includes(l.id)} onChange={() => pay.toggleHeld(l.id)} className="h-4 w-4 flex-shrink-0 accent-bambu-green" />
+              <span className={`min-w-0 flex-1 truncate ${pay.held.includes(l.id) ? 'text-bambu-gray line-through' : ''}`}>{l.name}</span>
+              <span className="tabular-nums text-bambu-gray">×{formatQty(l.remaining - l.packed_waiting)}</span>
+            </label>
+          ))}
+        </fieldset>
+      )}
       <button
         type="button"
         onClick={() => {
@@ -276,7 +290,7 @@ function Final({ pay, currency, email, onNewSale, onOpenOrder }: {
   return (
     <div className={PANEL}>
       <div className="text-center">
-        <Check aria-hidden="true" className="mx-auto h-8 w-8 text-bambu-green" />
+        <Check aria-hidden="true" className="animate-slice-done mx-auto h-8 w-8 text-bambu-green" />
         <p className="font-semibold text-white">{t(`orders.counterPay.${title}`, { n: pay.handedLate.length })}</p>
         <p className="mt-1 text-xs text-bambu-gray">
           {[pay.row?.number, invoice?.number].filter(Boolean).join(' · ')}

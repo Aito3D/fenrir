@@ -53,9 +53,14 @@ def books(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_only_unspent_retainers_naming_no_quote_are_unlinked(books):
-    rows = await unlinked_retainers(None, "c1")
-    assert [(r["id"], r["number"], r["unused"]) for r in rows] == [("r-hand", "RET-1", 10000.0)]
+async def test_unspent_retainers_not_naming_this_quote_are_unlinked(books):
+    rows = await unlinked_retainers(None, "c1", "dev-1 ")
+    # r-ref names this quote (any case) and r-spent has nothing left: both out. r-est names another quote.
+    assert [(r["id"], r["number"], r["linked_to"]) for r in rows] == [
+        ("r-hand", "RET-1", None),
+        ("r-est", "RET-3", "DEV-2"),
+    ]
+    assert rows[0]["unused"] == 10000.0
     assert await unlinked_retainers(None, "") == []
 
 
@@ -89,15 +94,19 @@ async def test_link_writes_the_quote_number_and_refuses_any_other_retainer(async
     pid = await _card(async_client)
 
     r = await async_client.get(f"/api/v1/aito/{pid}/unlinked-retainers")
-    assert r.status_code == 200 and [row["number"] for row in r.json()] == ["RET-1"]
+    assert r.status_code == 200 and [row["number"] for row in r.json()] == ["RET-1", "RET-2", "RET-3"]
 
-    r = await async_client.post(f"/api/v1/aito/{pid}/unlinked-retainers/r-ref/link")
+    r = await async_client.post(f"/api/v1/aito/{pid}/unlinked-retainers/r-spent/link")
     assert r.status_code == 409 and r.json()["detail"]["code"] == "not_unlinked"
     assert books == []
 
     r = await async_client.post(f"/api/v1/aito/{pid}/unlinked-retainers/r-hand/link")
     assert r.status_code == 200, r.text
     assert books == [("r-hand", "DEV26-9")] and refreshed == [pid]
+
+    # A deposit raised from another quote of the same customer can be re-pointed to this one.
+    r = await async_client.post(f"/api/v1/aito/{pid}/unlinked-retainers/r-est/link")
+    assert r.status_code == 200 and books[-1] == ("r-est", "DEV26-9")
 
 
 @pytest.mark.asyncio
@@ -111,7 +120,7 @@ async def test_the_listing_is_rate_limited_before_books_is_asked(async_client, b
     calls = []
     real = aito_payments.unlinked_retainers
 
-    async def counted(db, client_id):
+    async def counted(db, client_id, quote_number=None):
         calls.append(client_id)
         return await real(db, client_id)
 

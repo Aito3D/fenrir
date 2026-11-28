@@ -1108,6 +1108,8 @@ class AitoUnlinkedRetainer(BaseModel):
     number: str
     date: str | None
     unused: float
+    # The other quote it names (reference, else the estimate it was raised from); None when it names none.
+    linked_to: str | None = None
 
 
 class AitoInvoiceDepositsInvoice(BaseModel):

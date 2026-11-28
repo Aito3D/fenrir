@@ -282,6 +282,21 @@ describe('TaskStepList', () => {
     it('shows the unit count under a machining step quoted for several parts', () => {
       render(<TaskStepList task={task({ usinageCost: 36000, usinageQuantity: 3 })} onChange={vi.fn()} canTick />);
       expect(screen.getByTestId('step-meta-usinage')).toHaveTextContent('×3');
+      // 36 000 for 3: the price of one piece, beside the count.
+      expect(screen.getByTestId('step-meta-usinage')).toHaveTextContent(/12.000.*per unit/);
+    });
+
+    it('shows the unit price under scan, modeling and printing too', () => {
+      render(
+        <TaskStepList
+          task={task({ scanCost: 9000, scanQuantity: 3, modelisationCost: 10000, modelisationQuantity: 2, impressionCost: 2000, impression: { ...emptyTaskDraft().impression, quantity: 2 } })}
+          onChange={vi.fn()}
+          canTick
+        />,
+      );
+      expect(screen.getByTestId('step-meta-scan')).toHaveTextContent(/3.000.*per unit/);
+      expect(screen.getByTestId('step-meta-modelisation')).toHaveTextContent(/5.000.*per unit/);
+      expect(screen.getByTestId('step-meta-impression')).toHaveTextContent(/1.000.*per unit/);
     });
 
     it('shows no meta line under a one-off machining step', () => {
@@ -298,6 +313,7 @@ describe('TaskStepList', () => {
         />,
       );
       expect(screen.getByTestId('step-meta-impression')).toHaveTextContent('×1');
+      expect(screen.getByTestId('step-meta-impression')).not.toHaveTextContent('per unit');
     });
 
     it('states a machining step at its discounted price', () => {

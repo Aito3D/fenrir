@@ -115,7 +115,7 @@ export function SplitButton({ label, onClick, ariaDisabled, busy, className = ''
         {label}
       </button>
       {open && (
-        <div ref={menu} role="menu" className={`absolute left-0 right-0 z-20 rounded-lg border border-bambu-dark-tertiary bg-bambu-dark-secondary p-1.5 shadow-xl ${menuBelow ? 'top-full mt-2' : 'bottom-full mb-2'}`}>
+        <div ref={menu} role="menu" className={`absolute left-0 right-0 z-20 rounded-lg border border-bambu-dark-tertiary bg-bambu-dark-secondary p-1.5 shadow-xl animate-aito-pop-in ${menuBelow ? 'top-full mt-2 origin-top-left' : 'bottom-full mb-2 origin-bottom-left'}`}>
           {items.map(item => (
             <button
               key={item.key}

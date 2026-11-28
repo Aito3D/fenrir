@@ -386,6 +386,9 @@ export default {
     depositAvailable: 'Kullanılabilir ön ödeme',
     unlinkedRetainer: {
       hint: "Hiçbir teklife bağlı olmayan ödenmiş kapora: bu kaporaya sayılmaz.",
+      hintOther: "Ödenmiş kapora {{quote}} teklifine bağlı: bu kaporaya sayılmaz.",
+      confirmTitle: "Bu kapora taşınsın mı?",
+      confirmBody: "{{number}}, {{from}} teklifine bağlı. {{quote}} teklifine bağlanırsa artık {{from}} için sayılmaz.",
       link: "{{quote}} ile ilişkilendir",
       linked: "Kapora {{quote}} ile ilişkilendirildi",
     },
@@ -12670,6 +12673,7 @@ export default {
       stockNo: 'Hayır, sonra teslim edilecek',
       give: 'Ürünleri müşteriye ver',
       handed: 'Müşteriye teslim edildi',
+      givenNow: 'Bugün teslim edilen (müşterinin almadıklarının işaretini kaldır)',
       notAttributed: 'Ödeme henüz faturaya işlenmedi',
       noInvoice: 'Bu sipariş için fatura oluşturulamadı',
       kept: 'Ödeme kaydedildi. Hiçbir şey kaybolmadı.',

@@ -40,6 +40,10 @@ describe('counterPay', () => {
     expect(pickLines(mixed, [{ line_id: 'ok', quantity: 2 }], new Set())).toEqual({ lines: [{ line_id: 'ok', quantity: 2 }], force: [] });
     expect(pickLines(row([line({ id: 'svc', stock_available: null })]), [], new Set()).lines).toEqual([]);
   });
+  it('leaves a held line out, offered or answered "yes"', () => {
+    const r = pickLines(mixed, [{ line_id: 'ok', quantity: 2 }], new Set(['short']), new Set(['ok', 'short']));
+    expect(r).toEqual({ lines: [], force: [] });
+  });
   it('a full payment is attributed at balance 0', () => {
     expect(attributed({ ...inv, total: 12400, balance: 0 }, 12400)).toBe(true);
     expect(attributed({ ...inv, total: 12400, balance: 12400 }, 12400)).toBe(false);

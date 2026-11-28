@@ -1,13 +1,15 @@
+import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { AlertTriangle, Link2, Loader2 } from 'lucide-react';
-import { api, type AitoProject } from '../../../api/client';
+import { api, type AitoProject, type AitoUnlinkedRetainer } from '../../../api/client';
+import { ConfirmModal } from '../../ConfirmModal';
 import { useToast } from '../../../contexts/ToastContext';
 import { formatMoney } from '../../../utils/pricing';
 import { settleProject } from '../settleProject';
 
 /** Paid deposits of the customer's that name no quote (raised by hand in
- *  Books): they show in "Deposit available" but never reduce this quote's
+ *  Books) or another quote than this one: they show in "Deposit available" but never reduce this quote's
  *  deposit due. Lists them with a button that links one to this quote.
  *  The caller mounts it only while a deposit is due and the customer has
  *  credit, so the live Books read is not made on every panel. */
@@ -19,6 +21,8 @@ export function UnlinkedRetainers({ project, canUpdate, currency }: {
   const { t } = useTranslation();
   const { showToast } = useToast();
   const queryClient = useQueryClient();
+  // A deposit that names another quote is taken from it: asked first.
+  const [asking, setAsking] = useState<AitoUnlinkedRetainer | null>(null);
   const { data } = useQuery({
     queryKey: ['aito-unlinked-retainers', project.id],
     queryFn: () => api.getAitoUnlinkedRetainers(project.id),
@@ -48,11 +52,11 @@ export function UnlinkedRetainers({ project, canUpdate, currency }: {
             </span>
             <span className="text-white">{formatMoney(retainer.unused, currency)}</span>
           </div>
-          <p className="mt-0.5 text-xs text-bambu-gray">{t('aito.unlinkedRetainer.hint')}</p>
+          <p className="mt-0.5 text-xs text-bambu-gray">{retainer.linked_to ? t('aito.unlinkedRetainer.hintOther', { quote: retainer.linked_to }) : t('aito.unlinkedRetainer.hint')}</p>
           {canUpdate && (
             <button
               type="button"
-              onClick={() => link.mutate(retainer.id)}
+              onClick={() => (retainer.linked_to ? setAsking(retainer) : link.mutate(retainer.id))}
               disabled={link.isPending}
               className="mt-1 inline-flex items-center gap-1.5 text-xs text-bambu-green hover:underline disabled:opacity-50"
             >
@@ -66,6 +70,21 @@ export function UnlinkedRetainers({ project, canUpdate, currency }: {
           )}
         </div>
       ))}
+      {asking && (
+        <ConfirmModal
+          title={t('aito.unlinkedRetainer.confirmTitle')}
+          message={t('aito.unlinkedRetainer.confirmBody', { number: asking.number, from: asking.linked_to, quote: project.quote_number })}
+          confirmText={t('aito.unlinkedRetainer.link', { quote: project.quote_number })}
+          variant="warning"
+          // Asked over the detail panel, which closes on Escape too.
+          isolateEscape
+          onConfirm={() => {
+            link.mutate(asking.id);
+            setAsking(null);
+          }}
+          onCancel={() => setAsking(null)}
+        />
+      )}
     </div>
   );
 }

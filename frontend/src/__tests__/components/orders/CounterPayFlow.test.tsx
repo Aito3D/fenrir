@@ -38,8 +38,8 @@ type Pay = ReturnType<typeof useCounterPay>;
 
 const mkPay = (o: Record<string, unknown> = {}) => ({
   step: 'payment', busy: false, wait: 'payment', error: null, row: { id: 'so1', number: 'SO-9', currency: 'XPF' }, paid: 0, later: false,
-  invoice: null, question: null, handedLate: [], forced: [], active: true,
-  start: vi.fn(), settle: vi.fn(), payLater: vi.fn(), cancelPayment: vi.fn(), answer: vi.fn(), handOver: vi.fn(), retry: vi.fn(), reset: vi.fn(),
+  invoice: null, question: null, handedLate: [], forced: [], held: [], active: true,
+  start: vi.fn(), settle: vi.fn(), payLater: vi.fn(), cancelPayment: vi.fn(), answer: vi.fn(), toggleHeld: vi.fn(), handOver: vi.fn(), retry: vi.fn(), reset: vi.fn(),
   ...o,
 }) as unknown as Pay;
 
@@ -134,6 +134,19 @@ describe('CounterPayFlow', () => {
     await vi.waitFor(() => expect(pay.settle).toHaveBeenCalledWith(12400));
     expect(recorded).toMatchObject({ amount: 12400, mode: 'cash' });
     expect(pay.settle).toHaveBeenCalledTimes(1);
+  });
+
+  it('lists the goods ticked while waiting for the payment, and unticking one holds it', async () => {
+    const lines = [
+      { id: 'a', name: 'Vase', stock_available: 5, remaining: 2, packed_waiting: 0 },
+      { id: 'b', name: 'Bol', stock_available: 1, remaining: 1, packed_waiting: 0 },
+      { id: 'svc', name: 'Service', stock_available: null, remaining: 1, packed_waiting: 0 },
+    ];
+    const pay = mkPay({ row: { id: 'so1', number: 'SO-9', currency: 'XPF', lines }, held: ['b'] });
+    flow(pay);
+    expect(screen.getAllByRole('checkbox').map((c) => (c as HTMLInputElement).checked)).toEqual([true, false]);
+    await userEvent.click(screen.getByRole('checkbox', { name: /Vase/ }));
+    expect(pay.toggleHeld).toHaveBeenCalledWith('a');
   });
 
   it('asks the stock question and answers it', async () => {

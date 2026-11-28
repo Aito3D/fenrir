@@ -386,6 +386,9 @@ export default {
     depositAvailable: 'Acconto disponibile',
     unlinkedRetainer: {
       hint: "Acconto pagato non collegato ad alcun preventivo: non conta per questo acconto.",
+      hintOther: "Acconto pagato collegato a {{quote}}: non conta per questo acconto.",
+      confirmTitle: "Spostare questo acconto?",
+      confirmBody: "{{number}} è collegato a {{from}}. Collegandolo a {{quote}} non conterà più per {{from}}.",
       link: "Collega a {{quote}}",
       linked: "Acconto collegato a {{quote}}",
     },
@@ -12728,6 +12731,7 @@ export default {
       stockNo: 'No, da consegnare più tardi',
       give: 'Consegna gli articoli al cliente',
       handed: 'Consegnato al cliente',
+      givenNow: 'Consegnato oggi (deseleziona ciò che il cliente non porta via)',
       notAttributed: 'Il pagamento non è ancora applicato alla fattura',
       noInvoice: 'Non è stato possibile creare una fattura per questo ordine',
       kept: 'Il pagamento è registrato. Non si perde nulla.',

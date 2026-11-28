@@ -386,6 +386,9 @@ export default {
     depositAvailable: 'Verfügbare Anzahlung',
     unlinkedRetainer: {
       hint: "Bezahlte Anzahlung ohne Angebotsbezug: Sie wird auf diese Anzahlung nicht angerechnet.",
+      hintOther: "Bezahlte Anzahlung gehört zu {{quote}}: Sie zählt nicht für diese Anzahlung.",
+      confirmTitle: "Diese Anzahlung verschieben?",
+      confirmBody: "{{number}} gehört zu {{from}}. Wird sie mit {{quote}} verknüpft, zählt sie nicht mehr für {{from}}.",
       link: "Mit {{quote}} verknüpfen",
       linked: "Anzahlung mit {{quote}} verknüpft",
     },
@@ -12743,6 +12746,7 @@ export default {
       stockNo: 'Nein, später übergeben',
       give: 'Gib dem Kunden die Artikel',
       handed: 'Dem Kunden übergeben',
+      givenNow: 'Heute übergeben (abwählen, was der Kunde nicht mitnimmt)',
       notAttributed: 'Die Zahlung ist noch nicht der Rechnung zugeordnet',
       noInvoice: 'Für diese Bestellung konnte keine Rechnung erstellt werden',
       kept: 'Die Zahlung ist verbucht. Es geht nichts verloren.',

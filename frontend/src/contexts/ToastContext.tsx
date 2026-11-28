@@ -403,10 +403,11 @@ export function ToastProvider({ children }: { children: ReactNode }) {
           free of main-app notifications.
           Position is set via safe-area-aware calc() rather than bottom-4/right-20 so an
           installed PWA on a notched phone clears the home indicator / landscape notch
-          (#2612): the 5rem right offset keeps clearance for the bug bubble. */}
+          (#2612): the 5rem right offset keeps clearance for the bug bubble.
+          z-[115]: above the z-[110] dialogs (their backdrop blurred the toast), below AlertModal (z-[120]). */}
       <div
         data-testid="toast-viewport"
-        className={`fixed z-[60] flex flex-col items-end gap-2 ${viewportSuppressed ? 'hidden' : ''}`}
+        className={`fixed z-[115] flex flex-col items-end gap-2 ${viewportSuppressed ? 'hidden' : ''}`}
         style={{
           bottom: 'calc(1rem + env(safe-area-inset-bottom))',
           right: 'calc(5rem + env(safe-area-inset-right))',

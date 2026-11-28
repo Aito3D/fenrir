@@ -38,4 +38,10 @@ describe('OrderDepositAvailable', () => {
     await waitFor(() => expect(bad.n).toBe(1));
     await waitFor(() => expect(screen.queryByTestId('customer-credit')).not.toBeInTheDocument());
   });
+
+  it('reads the credit by customer when no order exists yet', async () => {
+    server.use(http.get('/api/v1/order-board/customers/c9/credit', () => HttpResponse.json({ credit: 1895 })));
+    render(<OrderDepositAvailable customerId="c9" currency="XPF" />);
+    expect((await screen.findByTestId('customer-credit')).textContent).toContain(formatMoney(1895, 'XPF'));
+  });
 });

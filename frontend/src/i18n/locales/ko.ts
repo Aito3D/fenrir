@@ -386,6 +386,9 @@ export default {
     depositAvailable: '사용 가능한 선금',
     unlinkedRetainer: {
       hint: "견적에 연결되지 않은 결제된 선금입니다. 이 선금에 포함되지 않습니다.",
+      hintOther: "{{quote}}에 연결된 결제 완료 선금입니다. 이 선금에는 포함되지 않습니다.",
+      confirmTitle: "이 선금을 옮길까요?",
+      confirmBody: "{{number}}은(는) {{from}}에 연결되어 있습니다. {{quote}}에 연결하면 {{from}}에는 더 이상 반영되지 않습니다.",
       link: "{{quote}}에 연결",
       linked: "선금이 {{quote}}에 연결됨",
     },
@@ -12325,6 +12328,7 @@ export default {
       stockNo: '아니요, 나중에 전달',
       give: '고객에게 물품을 전달하세요',
       handed: '고객에게 전달됨',
+      givenNow: '오늘 전달 (고객이 가져가지 않는 품목은 선택 해제)',
       notAttributed: '결제가 아직 청구서에 반영되지 않았습니다',
       noInvoice: '이 주문의 청구서를 만들 수 없었습니다',
       kept: '결제는 기록되었습니다. 잃어버린 것은 없습니다.',

@@ -244,6 +244,19 @@ describe('useCounterPay', () => {
     });
   });
 
+  it('a line unticked at the payment step is invoiced but left out of the parcel, with no stock question', async () => {
+    arrange(mkRow({ lines: [line({ id: 'a', name: 'A' }), line({ id: 'b', name: 'B', stock_available: 0, shortfall: 2 })] }));
+    const r = setup();
+    await toPayment(r);
+    act(() => r.result.current.toggleHeld('b'));
+    await act(async () => r.result.current.settle(12400));
+    await waitFor(() => expect(r.result.current.step).toBe('handover'));
+    expect(m.createOrderPicklist).toHaveBeenCalledWith('so1', [{ line_id: 'a', quantity: 2 }], []);
+    expect(r.result.current.handedLate).toEqual(['B']);
+    act(() => r.result.current.toggleHeld('a'));
+    expect(r.result.current.held).toEqual(['b']);
+  });
+
   it('two synchronous answers on one short line list its name once', async () => {
     arrange(mkRow({ lines: [line({ id: 'a', name: 'A', stock_available: 0, shortfall: 2 })] }));
     m.getOrderPicklistPreview.mockResolvedValue({ lines: [] } as never);

@@ -22,11 +22,13 @@ export interface CounterPayState {
   question: OrderBoardLine | null;
   handedLate: string[];
   forced: string[];
+  /** Line ids the operator unticked: invoiced, but left to prepare instead of handed over. */
+  held: string[];
   active: boolean;
 }
 
 const INITIAL: CounterPayState = {
-  step: 'order', busy: false, wait: null, error: null, row: null, paid: 0, later: false, invoice: null, question: null, handedLate: [], forced: [], active: false,
+  step: 'order', busy: false, wait: null, error: null, row: null, paid: 0, later: false, invoice: null, question: null, handedLate: [], forced: [], held: [], active: false,
 };
 
 const REPOST_REFUSALS = ['too_many', 'nothing_to_pack'];
@@ -44,7 +46,7 @@ export function useCounterPay(opts?: { onCreateError?: (e: unknown) => void }) {
     orderId: '', row: null as OrderBoardRow | null, paid: 0, invoiceNumber: null as string | null, invoiceId: '',
     queue: [] as OrderBoardLine[], have: new Set<string>(), lines: null as OrderPickLines['lines'] | null, force: [] as string[], picklistPosted: false, parcelPosted: false,
     picklistId: '', packageNumber: '', packageId: '', stage: 'invoice' as Stage,
-    asked: null as OrderBoardLine | null, forcedNames: [] as string[], lateNames: [] as string[],
+    asked: null as OrderBoardLine | null, forcedNames: [] as string[], lateNames: [] as string[], held: new Set<string>(),
   });
   const m = useRef(fresh());
 
@@ -107,7 +109,7 @@ export function useCounterPay(opts?: { onCreateError?: (e: unknown) => void }) {
     if (!c.packageNumber) {
       if (!c.lines) {
         const preview = await api.getOrderPicklistPreview(c.orderId);
-        const picked = pickLines(c.row as OrderBoardRow, preview.lines, c.have);
+        const picked = pickLines(c.row as OrderBoardRow, preview.lines, c.have, c.held);
         c.lines = picked.lines.filter((l) => l.quantity > 0);
         c.force = picked.force;
       }
@@ -162,7 +164,8 @@ export function useCounterPay(opts?: { onCreateError?: (e: unknown) => void }) {
 
   const toParcel = async () => {
     const c = m.current;
-    const shorts = c.row ? shortLines(c.row) : [];
+    // A held line is not asked about, and reads as "stays to prepare" like a line answered "no".
+    const shorts = c.row ? shortLines(c.row).filter((l) => !c.held.has(l.id)) : [];
     if (shorts.length) {
       c.queue = shorts;
       c.asked = shorts[0];
@@ -277,6 +280,15 @@ export function useCounterPay(opts?: { onCreateError?: (e: unknown) => void }) {
       if (state.step === 'payment' && !running.current) patch({ active: false, wait: null });
     },
     answer,
+    /** Tick or untick a line before the payment settles; the parcel is built right after, so not later. */
+    toggleHeld: (lineId: string) => {
+      if (state.step !== 'payment' || running.current) return;
+      const c = m.current;
+      if (!c.held.delete(lineId)) c.held.add(lineId);
+      // No stock answer exists yet at the payment step: the held lines are all that stays so far.
+      c.lateNames = (c.row?.lines ?? []).filter((l) => c.held.has(l.id)).map((l) => l.name);
+      patch({ held: [...c.held], handedLate: [...c.lateNames] });
+    },
     handOver: () => {
       if (state.step === 'handover' && !state.error && !running.current) void run(runHandOver);
     },

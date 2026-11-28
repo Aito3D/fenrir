@@ -1,11 +1,12 @@
 import { useTranslation } from 'react-i18next';
 import { useQuery } from '@tanstack/react-query';
-import { Box, Check, Layers, Palette } from 'lucide-react';
+import { Box, Check, Layers, Palette, Tag } from 'lucide-react';
 import { AITO_SERVICE_LABEL_KEYS, serviceDotCls, taskSteps } from './services';
 import type { ServiceId } from './services';
 import { Money } from '../calculator/shared';
 import { focusRingCls } from '../formStyles';
 import { useCurrency } from '../../hooks/useCurrency';
+import { formatMoney } from '../../utils/pricing';
 import { api } from '../../api/client';
 import type { RevisionStatus, SectionRevisionSummary } from '../../api/client';
 import type { TaskDraft } from '../../utils/taskDraft';
@@ -105,18 +106,23 @@ export function TaskStepList({ task, onChange, canTick, sectionSummaries, printC
   // services state a count only from 2 up — a bare "×1" under a scan step
   // would be the whole line, and it would say nothing the reader did not
   // already assume. 0 is hidden everywhere: that is not a job.
-  const metaFor = (service: ServiceId): { key: string; icon: typeof Layers; label: string; value: string }[] => {
+  const metaFor = (service: ServiceId, cost: number): { key: string; icon: typeof Layers; label: string; value: string }[] => {
+    // The step's price is for the whole count: from 2 up, say what one piece costs.
+    const unit = (quantity: number) =>
+      quantity >= 2 && cost > 0
+        ? [{ key: 'unit', icon: Tag, label: t('calculator.perUnit'), value: `${formatMoney(cost / quantity, currency)} ${t('calculator.perUnit')}` }]
+        : [];
     if (service !== 'impression') {
       // Labour has no count to state — one unit at one price.
       if (service === 'maindoeuvre') return [];
       const quantity = task[QUANTITY_FIELD[service]];
       return quantity >= 2
-        ? [{ key: 'quantity', icon: Layers, label: t('aito.quantity'), value: `×${quantity}` }]
+        ? [{ key: 'quantity', icon: Layers, label: t('aito.quantity'), value: `×${quantity}` }, ...unit(quantity)]
         : [];
     }
     const meta: { key: string; icon: typeof Layers; label: string; value: string }[] = [];
     if (task.impression.quantity >= 1) {
-      meta.push({ key: 'quantity', icon: Layers, label: t('aito.quantity'), value: `×${task.impression.quantity}` });
+      meta.push({ key: 'quantity', icon: Layers, label: t('aito.quantity'), value: `×${task.impression.quantity}` }, ...unit(task.impression.quantity));
     }
     if (material !== '') {
       meta.push({ key: 'material', icon: Box, label: t('aito.material'), value: material });
@@ -139,7 +145,7 @@ export function TaskStepList({ task, onChange, canTick, sectionSummaries, printC
       {steps.map(({ service, cost, done }) => {
         const label = t(AITO_SERVICE_LABEL_KEYS[service]);
         const description = task[DESCRIPTION_FIELD[service]].trim();
-        const meta = metaFor(service);
+        const meta = metaFor(service, cost);
         const files = (sectionSummaries?.[service] ?? [])
           .map((s) => `${s.item_name} R${s.number} · ${t(STATUS_LABEL_KEYS[s.status as RevisionStatus] ?? s.status)}`)
           .join(' · ');

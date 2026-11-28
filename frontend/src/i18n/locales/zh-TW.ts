@@ -386,6 +386,9 @@ export default {
     depositAvailable: '可用訂金',
     unlinkedRetainer: {
       hint: "已付訂金未連結任何報價單：不計入此訂金。",
+      hintOther: "已付訂金連結至 {{quote}}:不計入本次訂金。",
+      confirmTitle: "移動這筆訂金?",
+      confirmBody: "{{number}} 連結至 {{from}}。連結到 {{quote}} 後,將不再計入 {{from}}。",
       link: "連結到 {{quote}}",
       linked: "訂金已連結到 {{quote}}",
     },
@@ -12726,6 +12729,7 @@ export default {
       stockNo: '沒有,稍後交付',
       give: '把商品交給客戶',
       handed: '已交給客戶',
+      givenNow: '今日交付(取消勾選客戶不帶走的商品)',
       notAttributed: '付款尚未計入發票',
       noInvoice: '無法為此訂單建立發票',
       kept: '付款已記錄,沒有任何損失。',

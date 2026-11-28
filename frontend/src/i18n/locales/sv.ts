@@ -10688,6 +10688,9 @@ errors: {
     depositAvailable: 'Förskott tillgängligt',
     unlinkedRetainer: {
       hint: "Betald handpenning utan kopplad offert: räknas inte in i denna handpenning.",
+      hintOther: "Betald handpenning kopplad till {{quote}}: den räknas inte mot denna handpenning.",
+      confirmTitle: "Flytta denna handpenning?",
+      confirmBody: "{{number}} är kopplad till {{from}}. Kopplas den till {{quote}} räknas den inte längre för {{from}}.",
       link: "Koppla till {{quote}}",
       linked: "Handpenning kopplad till {{quote}}",
     },
@@ -12800,6 +12803,7 @@ errors: {
       stockNo: 'Nej, lämna över senare',
       give: 'Ge artiklarna till kunden',
       handed: 'Överlämnad till kunden',
+      givenNow: 'Lämnas ut i dag (avmarkera det kunden inte tar med)',
       notAttributed: 'Betalningen är inte kopplad till fakturan än',
       noInvoice: 'Ingen faktura kunde skapas för den här ordern',
       kept: 'Betalningen är registrerad. Inget går förlorat.',

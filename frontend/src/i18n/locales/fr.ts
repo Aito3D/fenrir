@@ -386,6 +386,9 @@ export default {
     depositAvailable: 'Acompte disponible',
     unlinkedRetainer: {
       hint: "Acompte payé rattaché à aucun devis : il ne compte pas dans cet acompte.",
+      hintOther: "Acompte payé rattaché à {{quote}} : il ne compte pas dans cet acompte.",
+      confirmTitle: "Déplacer cet acompte ?",
+      confirmBody: "{{number}} est rattaché à {{from}}. Le rattacher à {{quote}} fait qu’il ne compte plus pour {{from}}.",
       link: "Rattacher à {{quote}}",
       linked: "Acompte rattaché à {{quote}}",
     },
@@ -12728,6 +12731,7 @@ export default {
       stockNo: 'Non, à remettre plus tard',
       give: 'Donne les articles au client',
       handed: 'Remis au client',
+      givenNow: 'Remis aujourd’hui (décoche ce que le client n’emporte pas)',
       notAttributed: 'Le paiement n\'est pas encore attribué à la facture',
       noInvoice: 'Aucune facture n\'a pu être créée pour cette commande',
       kept: 'Le paiement est bien encaissé. Rien n\'est perdu.',

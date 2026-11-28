@@ -389,6 +389,9 @@ export default {
     depositAvailable: 'Deposit available',
     unlinkedRetainer: {
       hint: "Paid deposit not linked to any quote: it does not count toward this deposit.",
+      hintOther: "Paid deposit tied to {{quote}}: it does not count toward this deposit.",
+      confirmTitle: "Move this deposit?",
+      confirmBody: "{{number}} is tied to {{from}}. Linking it to {{quote}} means it no longer counts for {{from}}.",
       link: "Link to {{quote}}",
       linked: "Deposit linked to {{quote}}",
     },
@@ -12799,6 +12802,7 @@ export default {
       stockNo: 'No, hand it over later',
       give: 'Give the items to the customer',
       handed: 'Handed to the customer',
+      givenNow: 'Given today (untick what the customer does not take)',
       notAttributed: 'The payment is not on the invoice yet',
       noInvoice: 'No invoice could be created for this order',
       kept: 'The payment is recorded. Nothing is lost.',

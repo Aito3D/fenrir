@@ -386,6 +386,9 @@ export default {
     depositAvailable: 'Sinal disponível',
     unlinkedRetainer: {
       hint: "Sinal pago sem orçamento vinculado: não conta para este sinal.",
+      hintOther: "Sinal pago vinculado a {{quote}}: não conta para este sinal.",
+      confirmTitle: "Mover este sinal?",
+      confirmBody: "{{number}} está vinculado a {{from}}. Ao vinculá-lo a {{quote}}, ele deixa de contar para {{from}}.",
       link: "Vincular a {{quote}}",
       linked: "Sinal vinculado a {{quote}}",
     },
@@ -12728,6 +12731,7 @@ export default {
       stockNo: 'Não, entregar depois',
       give: 'Entregue os itens ao cliente',
       handed: 'Entregue ao cliente',
+      givenNow: 'Entregue hoje (desmarque o que o cliente não leva)',
       notAttributed: 'O pagamento ainda não foi aplicado à fatura',
       noInvoice: 'Não foi possível criar uma fatura para este pedido',
       kept: 'O pagamento está registrado. Nada se perde.',

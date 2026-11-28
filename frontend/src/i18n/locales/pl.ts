@@ -10654,6 +10654,9 @@ export default {
     depositAvailable: 'Dostępna zaliczka',
     unlinkedRetainer: {
       hint: "Opłacona zaliczka bez powiązanej oferty: nie wlicza się do tej zaliczki.",
+      hintOther: "Opłacona zaliczka powiązana z {{quote}}: nie liczy się do tej zaliczki.",
+      confirmTitle: "Przenieść tę zaliczkę?",
+      confirmBody: "{{number}} jest powiązana z {{from}}. Po powiązaniu z {{quote}} nie będzie już liczona dla {{from}}.",
       link: "Powiąż z {{quote}}",
       linked: "Zaliczka powiązana z {{quote}}",
     },
@@ -12948,6 +12951,7 @@ export default {
       stockNo: 'Nie, wydać później',
       give: 'Daj artykuły klientowi',
       handed: 'Wydano klientowi',
+      givenNow: 'Wydane dzisiaj (odznacz to, czego klient nie zabiera)',
       notAttributed: 'Płatność nie jest jeszcze przypisana do faktury',
       noInvoice: 'Nie udało się utworzyć faktury dla tego zamówienia',
       kept: 'Płatność jest zapisana. Nic nie zginęło.',

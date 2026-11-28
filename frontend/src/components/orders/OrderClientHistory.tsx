@@ -74,7 +74,7 @@ export function OrderClientHistory({ customerId, open, finished, currency }: { c
                   {e.state && <PaymentPill state={e.state} />}
                   <ChevronDown aria-hidden="true" className={`h-3.5 w-3.5 text-bambu-gray transition-transform ${isOpen ? 'rotate-180' : ''}`} />
                 </button>
-                {isOpen && (e.lines ? <Lines lines={e.lines} currency={e.currency || currency} /> : <FinishedLines id={e.id} currency={e.currency || currency} />)}
+                {isOpen && <div className="fold-open">{e.lines ? <Lines lines={e.lines} currency={e.currency || currency} /> : <FinishedLines id={e.id} currency={e.currency || currency} />}</div>}
               </li>
             );
           })}

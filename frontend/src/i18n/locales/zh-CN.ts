@@ -386,6 +386,9 @@ export default {
     depositAvailable: '可用定金',
     unlinkedRetainer: {
       hint: "已付定金未关联任何报价单：不计入此定金。",
+      hintOther: "已付定金关联到 {{quote}}:不计入本次定金。",
+      confirmTitle: "移动这笔定金?",
+      confirmBody: "{{number}} 关联到 {{from}}。关联到 {{quote}} 后,将不再计入 {{from}}。",
       link: "关联到 {{quote}}",
       linked: "定金已关联到 {{quote}}",
     },
@@ -12726,6 +12729,7 @@ export default {
       stockNo: '没有,稍后交付',
       give: '把商品交给客户',
       handed: '已交给客户',
+      givenNow: '今日交付(取消勾选客户不带走的商品)',
       notAttributed: '付款尚未计入发票',
       noInvoice: '无法为此订单创建发票',
       kept: '付款已记录,没有任何损失。',

@@ -357,7 +357,7 @@ async def cancel_invoice_payment_link(
 
 async def _unlinked_retainers(db: AsyncSession, project) -> list[dict]:
     try:
-        return await unlinked_retainers(db, project.client_id)
+        return await unlinked_retainers(db, project.client_id, project.quote_number)
     except ZohoRateLimited as e:
         aito_quote_sync._arm_rate_limit_throttle(e)
         raise _refuse(429, "rate_limited", str(e)) from e
@@ -395,7 +395,7 @@ async def link_retainer(
     if not project.quote_number:
         raise _refuse(409, "no_quote", "This card has no quote to link a deposit to")
     # Re-read rather than trust the id: only a deposit of THIS customer that
-    # still names no quote may be re-pointed.
+    # does not already name this quote may be re-pointed.
     if retainer_id not in {row["id"] for row in await _unlinked_retainers(db, project)}:
         raise _refuse(409, "not_unlinked", "This deposit is not an unlinked deposit of this customer")
     try:

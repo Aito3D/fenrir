@@ -6,16 +6,22 @@ export const PAY_STEPS: PayStep[] = ['order', 'payment', 'invoice', 'parcel', 'h
 /** Goods lines the stock does not fully cover: one question each. */
 export const shortLines = (row: OrderBoardRow): OrderBoardLine[] => row.lines.filter((l) => l.stock_available !== null && l.shortfall > 0);
 
-/** What the picklist takes: Books' offer, plus the whole remaining units of each line answered "yes". */
+/** Goods lines the operator may hold back from the hand-over: anything still to give. */
+export const givableLines = (row: OrderBoardRow): OrderBoardLine[] =>
+  (row.lines ?? []).filter((l) => l.stock_available !== null && l.remaining - l.packed_waiting > 0);
+
+/** What the picklist takes: Books' offer, plus the whole remaining units of each line answered "yes",
+ *  minus every line the operator held back (`held`: in stock on paper, but not given today). */
 export function pickLines(
   row: OrderBoardRow,
   offered: OrderPickLines['lines'],
   have: ReadonlySet<string>,
+  held: ReadonlySet<string> = new Set(),
 ): { lines: OrderPickLines['lines']; force: string[] } {
-  const forced = shortLines(row).filter((l) => have.has(l.id));
+  const forced = shortLines(row).filter((l) => have.has(l.id) && !held.has(l.id));
   const ids = new Set(forced.map((l) => l.id));
   return {
-    lines: [...offered.filter((o) => !ids.has(o.line_id)), ...forced.map((l) => ({ line_id: l.id, quantity: l.remaining - l.packed_waiting }))],
+    lines: [...offered.filter((o) => !ids.has(o.line_id) && !held.has(o.line_id)), ...forced.map((l) => ({ line_id: l.id, quantity: l.remaining - l.packed_waiting }))],
     force: forced.map((l) => l.id),
   };
 }

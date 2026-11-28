@@ -177,6 +177,17 @@ async def get_customer_credit(
     return {"credit": await read_customer_credit(db, await _customer_id(db, salesorder_id))}
 
 
+@router.get("/customers/{customer_id}/credit")
+async def get_credit_of_customer(
+    customer_id: str,
+    db: AsyncSession = Depends(get_db, scope="function"),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.ORDERS_UPDATE),
+) -> dict:
+    """The same figure for the client picked in the new-order dialog, before any order exists. Gated like creating
+    the order (orders:update): the caller names the customer, so reading is not enough."""
+    return {"credit": await read_customer_credit(db, customer_id)}
+
+
 @router.get("/orders/{salesorder_id}/client-rating", response_model=AitoClientRatingResponse)
 async def get_order_client_rating(
     salesorder_id: str,

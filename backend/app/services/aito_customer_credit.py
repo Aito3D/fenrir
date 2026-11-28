@@ -92,14 +92,16 @@ async def read_customer_credit(
     return total
 
 
-async def unlinked_retainers(db: AsyncSession, customer_id: str | None) -> list[dict]:
-    """The customer's deposits that belong to no quote: paid retainers with
-    money still on account whose ``reference_number`` AND ``estimate_number``
-    are both blank (raised by hand in Books). They count toward "deposit
-    available" but never toward any quote's ``retainer_paid_total``, so the
-    panel offers to link them. A retainer already spent shows nothing unused
-    and is left out. Two list reads; raises like the zoho_service calls do.
+async def unlinked_retainers(db: AsyncSession, customer_id: str | None, quote_number: str | None = None) -> list[dict]:
+    """The customer's deposits that do not belong to quote ``quote_number``:
+    paid retainers with money still on account that name no quote at all
+    (raised by hand in Books), or name ANOTHER one (``linked_to``: the quote
+    was redone and the transfer landed on the old number). They count toward
+    "deposit available" but never toward this quote's ``retainer_paid_total``,
+    so the panel offers to link them. A retainer already spent shows nothing
+    unused and is left out. Two list reads; raises like the zoho_service calls do.
     """
+    mine = (quote_number or "").strip().casefold()
     if not customer_id:
         return []
     unused: dict[str, float] = {}
@@ -114,7 +116,9 @@ async def unlinked_retainers(db: AsyncSession, customer_id: str | None) -> list[
         retainer_id = str(retainer.get("retainerinvoice_id") or "")
         if unused.get(retainer_id, 0.0) <= 0:
             continue
-        if str(retainer.get("reference_number") or "").strip() or str(retainer.get("estimate_number") or "").strip():
+        reference = str(retainer.get("reference_number") or "").strip()
+        estimate = str(retainer.get("estimate_number") or "").strip()
+        if mine and mine in (reference.casefold(), estimate.casefold()):
             continue
         rows.append(
             {
@@ -122,6 +126,7 @@ async def unlinked_retainers(db: AsyncSession, customer_id: str | None) -> list[
                 "number": str(retainer.get("retainerinvoice_number") or retainer_id),
                 "date": str(retainer.get("date") or "") or None,
                 "unused": unused[retainer_id],
+                "linked_to": reference or estimate or None,
             }
         )
     return rows

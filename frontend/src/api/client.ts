@@ -6371,6 +6371,8 @@ export interface AitoUnlinkedRetainer {
   number: string;
   date: string | null;
   unused: number;
+  /** The other quote this deposit names; null when it names none. */
+  linked_to: string | null;
 }
 export interface AitoInvoiceDeposits {
   invoice: { id: string; number: string; balance: number; currency_code: string } | null;
@@ -11032,6 +11034,7 @@ export const api = {
   syncOrder: (id: string) =>
     request<{ changes: OrderSyncChange[]; board: OrderBoardResponse }>(`/order-board/orders/${encodeURIComponent(id)}/sync`, { method: 'POST' }),
   getOrderCustomerCredit: (id: string) => request<{ credit: number | null }>(`/order-board/orders/${encodeURIComponent(id)}/customer-credit`),
+  getCustomerCredit: (customerId: string) => request<{ credit: number | null }>(`/order-board/customers/${encodeURIComponent(customerId)}/credit`),
   getOrderClientRating: (id: string) => request<AitoClientRating>(`/order-board/orders/${encodeURIComponent(id)}/client-rating`),
   editOrderContact: (id: string, body: { email: string; phone: string; phone_field: 'phone' | 'mobile' }) =>
     request<{ board: OrderBoardResponse }>(`/order-board/orders/${encodeURIComponent(id)}/contact`, { method: 'PUT', body: JSON.stringify(body) }),

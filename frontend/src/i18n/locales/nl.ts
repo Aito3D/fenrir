@@ -10655,6 +10655,9 @@ export default {
     depositAvailable: 'Beschikbare aanbetaling',
     unlinkedRetainer: {
       hint: "Betaalde aanbetaling zonder offerte: telt niet mee voor deze aanbetaling.",
+      hintOther: "Betaalde aanbetaling gekoppeld aan {{quote}}: telt niet mee voor deze aanbetaling.",
+      confirmTitle: "Deze aanbetaling verplaatsen?",
+      confirmBody: "{{number}} is gekoppeld aan {{from}}. Na koppeling aan {{quote}} telt deze niet meer mee voor {{from}}.",
       link: "Koppelen aan {{quote}}",
       linked: "Aanbetaling gekoppeld aan {{quote}}",
     },
@@ -12767,6 +12770,7 @@ export default {
       stockNo: 'Nee, later overhandigen',
       give: 'Geef de artikelen aan de klant',
       handed: 'Aan de klant overhandigd',
+      givenNow: 'Vandaag meegegeven (vink uit wat de klant niet meeneemt)',
       notAttributed: 'De betaling is nog niet aan de factuur toegewezen',
       noInvoice: 'Er kon geen factuur voor deze bestelling worden gemaakt',
       kept: 'De betaling is geregistreerd. Er gaat niets verloren.',
