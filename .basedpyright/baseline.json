@@ -942,6 +942,14 @@
             {
                 "code": "reportAttributeAccessIssue",
                 "range": {
+                    "startColumn": 38,
+                    "endColumn": 50,
+                    "lineCount": 1
+                }
+            },
+            {
+                "code": "reportAttributeAccessIssue",
+                "range": {
                     "startColumn": 13,
                     "endColumn": 21,
                     "lineCount": 1
@@ -992,6 +1000,14 @@
                 "range": {
                     "startColumn": 13,
                     "endColumn": 18,
+                    "lineCount": 1
+                }
+            },
+            {
+                "code": "reportAttributeAccessIssue",
+                "range": {
+                    "startColumn": 13,
+                    "endColumn": 25,
                     "lineCount": 1
                 }
             },
@@ -1324,24 +1340,6 @@
                 "range": {
                     "startColumn": 26,
                     "endColumn": 62,
-                    "lineCount": 1
-                }
-            }
-        ],
-        "./backend/app/api/routes/library_variants.py": [
-            {
-                "code": "reportArgumentType",
-                "range": {
-                    "startColumn": 47,
-                    "endColumn": 57,
-                    "lineCount": 1
-                }
-            },
-            {
-                "code": "reportArgumentType",
-                "range": {
-                    "startColumn": 44,
-                    "endColumn": 54,
                     "lineCount": 1
                 }
             }
