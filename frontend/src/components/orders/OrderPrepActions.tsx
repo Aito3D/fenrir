@@ -1,10 +1,14 @@
 import type { ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Check, ClipboardList, Loader2, PackagePlus, Printer } from 'lucide-react';
+import { Check, ClipboardList, Loader2, PackagePlus, Printer, Undo2 } from 'lucide-react';
 import type { OrderPanelRow, OrderPicklist } from '../../api/client';
 import { boxablePicklists, canPick } from './orderBoard';
 import { FIT_VIEWPORT } from './orderStatus';
 import { useAuth } from '../../contexts/AuthContext';
+import { useToast } from '../../contexts/ToastContext';
+import { HoldButton } from '../aito/HoldButton';
+import { errorReason } from './orderErrors';
+import { useOrderActions } from './useOrderActions';
 
 /** Local HH:mm of an ISO timestamp. */
 const clock = (iso: string) => new Date(iso).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
@@ -36,6 +40,14 @@ export function OrderPrepActions({
   const { t } = useTranslation();
   const canUpdate = useAuth().hasPermission('orders:update');
   const printed = row.prep;
+  const { showToast } = useToast();
+  // Cancelling a preparation deletes the picklist in Books: the order is editable again.
+  const { cancelPicklist } = useOrderActions({
+    cancelPicklist: {
+      onSuccess: () => showToast(t('orders.prep.cancelled')),
+      onError: e => showToast(t('orders.prep.cancelFailed', { reason: errorReason(t, e) }), 'error'),
+    },
+  });
   const spin = <Loader2 aria-hidden="true" className="h-3.5 w-3.5 animate-spin" />;
   return (
     <span className={`flex basis-full flex-wrap items-center gap-2 lg:ml-auto lg:basis-auto ${FIT_VIEWPORT}`}>
@@ -54,6 +66,20 @@ export function OrderPrepActions({
               {printing ? spin : <Printer aria-hidden="true" className="h-3.5 w-3.5" />}
               {t(printed ? 'orders.prep.reprint' : 'orders.prep.sheet')}
             </button>
+          )}
+          {canUpdate && (
+            <HoldButton
+              onHold={() => cancelPicklist.mutate({ id: row.id, picklistId: p.id })}
+              disabled={cancelPicklist.isPending}
+              durationMs={1000}
+              label={`${t('orders.prep.cancel')} · ${p.number}`}
+              hint={t('orders.cancel.hint')}
+              progress="bar"
+              className="border border-bambu-dark-tertiary px-2.5 py-1 text-xs text-bambu-gray hover:border-red-400/45 hover:text-red-400 focus-visible:ring-red-400/40 data-[holding=true]:border-red-400 data-[holding=true]:text-red-400"
+            >
+              {cancelPicklist.isPending ? spin : <Undo2 aria-hidden="true" className="relative h-3.5 w-3.5" />}
+              <span className="relative">{t('orders.prep.cancel')}</span>
+            </HoldButton>
           )}
           {canUpdate && (
             <button type="button" data-opens={`pack-${p.id}`} disabled={opening !== null} aria-label={`${t('orders.parcel.create')} · ${p.number}`} onClick={() => onPack(p)} className={STRONG}>

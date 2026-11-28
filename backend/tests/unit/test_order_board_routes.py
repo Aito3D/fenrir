@@ -192,6 +192,7 @@ NEW_ROUTES = [
     ("get", f"{BASE}/orders/so1/picklist", None, False),
     ("post", f"{BASE}/orders/so1/picklists", PICK, True),
     ("get", f"{BASE}/orders/so1/picklists/pl1", None, False),
+    ("delete", f"{BASE}/orders/so1/picklists/pl1", None, True),
     ("post", f"{BASE}/orders/so1/packages", PARCEL, True),
     ("get", f"{BASE}/orders/so1/packages/p1/handover", None, False),
     ("post", f"{BASE}/orders/so1/packages/p1/handover", HAND, True),

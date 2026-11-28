@@ -5,8 +5,8 @@ import type { OrderHandoverOutcome } from '../../api/client';
 /** The order moved under the operator (changed, gone from the board, or being written): its screen is out of date. */
 export const isRefused = (e: unknown): boolean => e instanceof ApiError && (e.status === 400 || e.status === 404 || e.status === 409);
 
-const REASON_CODES = ['version', 'below_floor', 'unknown_item', 'service_line', 'nothing_changed', 'package_shipped', 'package_changed',
-  'picklist_open', 'unknown_line', 'bad_quantity', 'too_many', 'picklist_shared',
+const REASON_CODES = ['version', 'below_floor', 'line_invoiced', 'unknown_item', 'service_line', 'nothing_changed', 'package_shipped', 'package_changed',
+  'picklist_open', 'unknown_line', 'bad_quantity', 'too_many', 'picklist_shared', 'picklist_packed',
   'nothing_to_pack', 'unknown_package', 'unknown_picklist', 'bad_discount', 'create_failed', 'order_invoiced', 'ref_reused',
   'quote_converted', 'quote_not_editable', 'not_declined', 'undo_too_late', 'not_this_quote', 'not_accepted'];
 

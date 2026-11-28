@@ -42,6 +42,7 @@ KINDS: dict[str, str] = {
     **dict.fromkeys(
         (
             "picklist.created",
+            "picklist.cancelled",
             "order.edited",
             "package.edited",
             "invoice.emailed",

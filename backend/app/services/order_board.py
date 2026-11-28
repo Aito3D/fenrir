@@ -102,6 +102,8 @@ def _line(raw: dict, items: dict[str, dict]) -> dict:
         "invoiced": _r(min(remaining, max(0.0, _num(raw.get("quantity_invoiced")) - shipped))),
         "packed_waiting": _r(min(remaining, max(0.0, _num(raw.get("quantity_packed")) - shipped))),
         "rate": float(_num(raw.get("rate"))),
+        # Books' own form: "10.00%" or an amount; None without one.
+        "discount": None if raw.get("discount") in (None, "", 0) else str(raw["discount"]),
         # The item's current catalogue price in Books, to flag a line sold at another price; None when unknown.
         "item_rate": float(_num(item.get("rate"))) if item and item.get("rate") is not None else None,
         # Books' packed/picked/invoiced figures are cumulative, so the lowest quantity the line may be edited to is the largest.

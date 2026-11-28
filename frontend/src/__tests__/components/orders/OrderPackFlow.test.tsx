@@ -93,6 +93,14 @@ describe('the prep band', () => {
     expect(screen.getByRole('button', { name: 'Prepare' })).toBeInTheDocument();
   });
 
+  it('an open picklist offers Cancel preparation, a boxed one does not', () => {
+    const first = render(<OrderLinesPanel row={picking({})} />);
+    expect(screen.getByRole('button', { name: /Cancel preparation · PL-00013/ })).toBeInTheDocument();
+    first.unmount();
+    render(<OrderLinesPanel row={panelRow({ picklists: [picklist('completed')], picked: 0 })} />);
+    expect(screen.queryByRole('button', { name: /Cancel preparation/ })).not.toBeInTheDocument();
+  });
+
   it('a printed order reads Printed at … by … and offers Reprint', () => {
     const at = '2026-11-06T18:30:00+00:00';
     const time = new Date(at).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });

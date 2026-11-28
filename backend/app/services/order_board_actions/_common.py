@@ -32,8 +32,8 @@ class OrderBusy(Exception):
 
 class OrderActionRefused(Exception):
     """args[0] is one of "nothing_to_pack", "unknown_line", "too_many", "bad_quantity", "unknown_package",
-    "picklist_open", "unknown_picklist", "picklist_shared", from a cancel "order_invoiced", from an order edit "version", "service_line",
-    "below_floor", "unknown_item", "nothing_changed", from a parcel edit "package_shipped", "package_changed", and
+    "picklist_open", "unknown_picklist", "picklist_shared", "picklist_packed", from a cancel "order_invoiced", from an order edit "version", "service_line",
+    "below_floor", "unknown_item", "nothing_changed", "line_invoiced", from a parcel edit "package_shipped", "package_changed", and
     from a counter order "bad_discount", "create_failed"."""
 
 

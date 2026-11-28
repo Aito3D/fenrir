@@ -5682,6 +5682,8 @@ export interface OrderBoardLine {
   po_numbers: string[];
   /** Books' price per unit and the least this line may drop to (what already left or is billed). */
   rate: number;
+  /** Books' form ("10.00%" or an amount); null without one. */
+  discount?: string | null;
   floor: number;
   /** The item's current price in Books; null or absent when the item is unknown. */
   item_rate?: number | null;
@@ -5789,11 +5791,13 @@ export interface OrderLastEvent {
 export type OrderEvent = Omit<AitoEvent, 'occurred_until' | 'subject_type' | 'subject_id' | 'subject_label'>;
 
 export interface OrderItemHit { id: string; name: string; sku: string; upc?: string; ean?: string; part_number?: string; reference?: string; rate: number; stock_on_hand: number | null; available?: number | null; product_type: string; filament?: boolean }
-export type OrderEditLine = { line_id: string; quantity: number } | { item_id: string; quantity: number };
+/** `rate` / `discount` only when changed: left out, the line keeps its own; an empty discount clears it. */
+export type OrderEditLine = { line_id: string; quantity: number; rate?: number; discount?: string } | { item_id: string; quantity: number };
 /** `pending`: the parcel matches but its picklist rows are still above it (a failed last step a save finishes). */
 export interface OrderPackageContent { id: string; number: string; version: string; picklist_id: string; lines: { line_id: string; quantity: number; max: number }[]; pending: boolean }
 /** `row` is null when the edit took the order off the board. */
-export type OrderEditResult = { board: OrderBoardResponse; row: OrderBoardRow | null };
+/** `quote`: whether the order's quote took the same lines (null: no quote, or not an edit). */
+export type OrderEditResult = { board: OrderBoardResponse; row: OrderBoardRow | null; quote?: 'updated' | 'skipped' | 'failed' | null };
 export interface CounterOrderLine { item_id: string; quantity: number; discount?: string }
 
 export type QuoteState = 'draft' | 'sent' | 'accepted' | 'expired' | 'declined';
@@ -10951,6 +10955,9 @@ export const api = {
       method: 'POST',
       body: JSON.stringify(force?.length ? { lines, force } : { lines }),
     }),
+  /** Cancel a preparation: the open picklist is deleted in Books and the order is editable again. */
+  cancelOrderPicklist: (id: string, picklistId: string) =>
+    request<{ board: OrderBoardResponse }>(`/order-board/orders/${encodeURIComponent(id)}/picklists/${encodeURIComponent(picklistId)}`, { method: 'DELETE' }),
   getOrderPicklist: (id: string, picklistId: string) =>
     request<OrderPickLines & { id: string; number: string; status: string }>(`/order-board/orders/${encodeURIComponent(id)}/picklists/${encodeURIComponent(picklistId)}`),
   createOrderParcel: (id: string, picklistId: string, lines: OrderPickLines['lines']) =>

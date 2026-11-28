@@ -1,13 +1,17 @@
 import { useTranslation } from 'react-i18next';
 import { AlertTriangle, Check, Package, Trash2, Undo2 } from 'lucide-react';
 import type { OrderBoardLine } from '../../api/client';
-import { formatQty } from './orderBoard';
+import { editedDiscount, editedRate, formatQty, shownDiscount } from './orderBoard';
 import type { OrderCheck, OrderEdit, PanelGroup } from './orderBoard';
 import { TONE } from './orderStatus';
 import { formatMoney } from '../../utils/pricing';
 import { GROUP, LINE_STATE, TRASH, dash } from './orderLinesShared';
 import { OrderQtyStepper } from './OrderQtyStepper';
 import { Tooltip } from '../Tooltip';
+
+const EDIT_INPUT = 'h-7 rounded-md border bg-bambu-dark px-2 text-right text-xs tabular-nums text-white placeholder:text-bambu-gray-dark focus:border-bambu-green focus:outline-none disabled:opacity-50';
+// The same shape the server accepts: empty, "N%" or an amount.
+const DISCOUNT_OK = /^(\d+(?:\.\d+)?%?)?$/;
 
 /** One product row of a band: read-only, or carrying the stepper / trash of an open edit or pick check. */
 export function OrderLineRow({
@@ -23,6 +27,7 @@ export function OrderLineRow({
   saving,
   pending,
   editQty,
+  onEdit,
   setGone,
   setCheck,
   scanTick,
@@ -39,6 +44,8 @@ export function OrderLineRow({
   saving: boolean;
   pending: boolean;
   editQty: (id: string, v: number) => void;
+  /** The edit with one line's price or discount changed. */
+  onEdit?: (next: OrderEdit) => void;
   setGone: (id: string, gone: boolean) => void;
   setCheck: (check: OrderCheck) => void;
   /** Bumped by each scan that lands on this line: the name cell flashes. */
@@ -54,6 +61,7 @@ export function OrderLineRow({
   const priced = line.rate > 0;
   // An item Books prices at 0 has no catalogue price to differ from.
   const priceGap = priced && line.item_rate ? line.rate - line.item_rate : 0;
+  const badDiscount = !!editing && !DISCOUNT_OK.test(editedDiscount(edit, line));
   return (
     <tr className={`max-md:grid max-md:grid-cols-[1fr_auto_auto] max-md:gap-x-3 transition-opacity duration-150 ease-out ${index ? 'border-t border-bambu-dark-tertiary/60' : ''} ${(todo && check && !(check.max[line.id] > 0)) || gone ? 'opacity-40' : ''}`}>
       {/* Keyed by the scan tick so each scan restarts the flash. */}
@@ -75,11 +83,41 @@ export function OrderLineRow({
             </span>
           )}
         </div>
-        {(line.sku || priced) && (
+        {editing && !gone && onEdit ? (
+          // Books has invoiced these units at this price: the server refuses to move it.
+          <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-bambu-gray">
+            {line.sku && <span className="font-mono">{line.sku}</span>}
+            <input
+              type="number"
+              min={0}
+              step="any"
+              inputMode="decimal"
+              disabled={saving || line.invoiced > 0}
+              aria-label={`${t('orders.edit.price')} · ${line.name}`}
+              title={t('orders.edit.price')}
+              value={edit.rate[line.id] ?? line.rate}
+              onChange={e => onEdit({ ...edit, rate: { ...edit.rate, [line.id]: e.target.value === '' ? 0 : Number(e.target.value) } })}
+              className={`${EDIT_INPUT} w-24 ${editedRate(edit, line) !== line.rate ? 'border-bambu-green/50' : 'border-bambu-dark-tertiary'}`}
+            />
+            <input
+              type="text"
+              inputMode="decimal"
+              disabled={saving || line.invoiced > 0}
+              placeholder={t('orders.newOrder.discount')}
+              aria-label={`${t('orders.newOrder.discount')} · ${line.name}`}
+              aria-invalid={badDiscount}
+              title={badDiscount ? t('orders.newOrder.discountInvalid') : t('orders.newOrder.discount')}
+              value={edit.discount[line.id] ?? shownDiscount(line.discount)}
+              onChange={e => onEdit({ ...edit, discount: { ...edit.discount, [line.id]: e.target.value } })}
+              className={`${EDIT_INPUT} w-20 ${badDiscount ? 'border-red-500' : editedDiscount(edit, line) ? 'border-bambu-green/50' : 'border-bambu-dark-tertiary'}`}
+            />
+          </div>
+        ) : (line.sku || priced) && (
           <div className="text-xs text-bambu-gray">
             {line.sku && <span className="font-mono">{line.sku}</span>}
             {line.sku && priced && ' · '}
             {priced && <span className="tabular-nums">{formatMoney(line.rate, currency)}</span>}
+            {line.discount && <span className="tabular-nums text-bambu-green"> · −{shownDiscount(line.discount)}</span>}
           </div>
         )}
       </td>

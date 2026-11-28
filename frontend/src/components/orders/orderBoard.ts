@@ -283,7 +283,8 @@ export const nextStep = (row: Pick<OrderBoardRow, 'lines' | 'packages' | 'pickli
 
 /** An edit of the order's lines: the new ordered quantity of each live line, the lines removed, the items added.
  *  `version` is the order's Books version when the edit opened: a save over a later change is refused, never applied. */
-export interface OrderEdit { version: string; qty: Record<string, number>; gone: Set<string>; added: { item: OrderItemHit; quantity: number }[] }
+/** `rate` and `discount` hold only the lines the operator touched (by line id). */
+export interface OrderEdit { version: string; qty: Record<string, number>; gone: Set<string>; added: { item: OrderItemHit; quantity: number }[]; rate: Record<string, number>; discount: Record<string, string> }
 
 const liveLines = (row: Pick<OrderBoardRow, 'lines'>) => row.lines.filter(l => LIVE.has(l.state));
 
@@ -292,36 +293,56 @@ export const startEdit = (row: Pick<OrderBoardRow, 'lines' | 'version'>): OrderE
   qty: Object.fromEntries(liveLines(row).map(l => [l.id, l.quantity])),
   gone: new Set(),
   added: [],
+  rate: {},
+  discount: {},
 });
 
 const editedQty = (edit: OrderEdit, line: OrderBoardLine) => round2(edit.qty[line.id] ?? line.quantity);
 // A line edited down to 0 is a removal: Books refuses a zero quantity.
+/** Books' "10.00%" or "500.00" as the operator types it: "10%", "500". */
+export const shownDiscount = (raw: string | null | undefined): string =>
+  !raw ? '' : raw.endsWith('%') ? `${Number(raw.slice(0, -1))}%` : `${Number(raw)}`;
+export const editedRate = (edit: OrderEdit, line: OrderBoardLine) => edit.rate[line.id] ?? line.rate;
+export const editedDiscount = (edit: OrderEdit, line: OrderBoardLine) => normDiscount(edit.discount[line.id] ?? shownDiscount(line.discount));
+/** False while a touched line holds a price or a discount the server would refuse. */
+export const editValid = (row: Pick<OrderBoardRow, 'lines'>, edit: OrderEdit): boolean =>
+  liveLines(row).every(l => removed(edit, l) || (editedRate(edit, l) >= 0 && Number.isFinite(editedRate(edit, l))
+    && lineTotal({ item: { rate: editedRate(edit, l) }, quantity: editedQty(edit, l), discount: editedDiscount(edit, l) } as NewOrderDraftLine) !== null));
 const removed = (edit: OrderEdit, line: OrderBoardLine) => edit.gone.has(line.id) || editedQty(edit, line) <= 0;
 
-export interface OrderEditChange { kind: 'qty' | 'gone' | 'add'; line?: OrderBoardLine; item?: OrderItemHit; from?: number; to?: number }
+export interface OrderEditChange { kind: 'qty' | 'gone' | 'add' | 'price' | 'discount'; line?: OrderBoardLine; item?: OrderItemHit; from?: number; to?: number; text?: string }
 
 /** What the edit changes, in the order of the lines, the added items last. */
 export const editChanges = (row: Pick<OrderBoardRow, 'lines'>, edit: OrderEdit): OrderEditChange[] => [
   ...liveLines(row).flatMap((line): OrderEditChange[] =>
     removed(edit, line) ? [{ kind: 'gone', line }]
-    : editedQty(edit, line) !== line.quantity ? [{ kind: 'qty', line, from: line.quantity, to: editedQty(edit, line) }]
-    : []),
+    : [
+      ...(editedQty(edit, line) !== line.quantity ? [{ kind: 'qty' as const, line, from: line.quantity, to: editedQty(edit, line) }] : []),
+      ...(editedRate(edit, line) !== line.rate ? [{ kind: 'price' as const, line, from: line.rate, to: editedRate(edit, line) }] : []),
+      ...(editedDiscount(edit, line) !== shownDiscount(line.discount) ? [{ kind: 'discount' as const, line, text: editedDiscount(edit, line) }] : []),
+    ]),
   ...edit.added.map((a): OrderEditChange => ({ kind: 'add', item: a.item, to: round2(a.quantity) })),
 ];
 
 /** The lines sent: every live line kept at its quantity, then the added items. Service, untracked, cancelled and
  *  fully shipped lines are not sent: the server sends them back to Books unchanged. */
 export const editPayload = (row: Pick<OrderBoardRow, 'lines'>, edit: OrderEdit): OrderEditLine[] => [
-  ...liveLines(row).filter(l => !removed(edit, l)).map(l => ({ line_id: l.id, quantity: editedQty(edit, l) })),
+  ...liveLines(row).filter(l => !removed(edit, l)).map(l => ({
+    line_id: l.id,
+    quantity: editedQty(edit, l),
+    ...(editedRate(edit, l) !== l.rate ? { rate: editedRate(edit, l) } : {}),
+    ...(editedDiscount(edit, l) !== shownDiscount(l.discount) ? { discount: editedDiscount(edit, l) } : {}),
+  })),
   ...edit.added.map(a => ({ item_id: a.item.id, quantity: round2(a.quantity) })),
 ];
 
 /** The order total after the edit, or null when Books' arithmetic cannot be reproduced (discounts, shipping, tax exclusive).
  *  Live lines count at their edited ordered quantity, every other line except a cancelled one at its quantity. */
 export const editTotal = (row: Pick<OrderBoardRow, 'lines' | 'estimable'>, edit: OrderEdit): number | null => {
-  if (!row.estimable) return null;
+  // Books rounds a discounted, tax-inclusive line its own way: with one, the total is Books' to compute.
+  if (!row.estimable || liveLines(row).some(l => !removed(edit, l) && editedDiscount(edit, l))) return null;
   const lines = row.lines.reduce(
-    (n, l) => n + (LIVE.has(l.state) ? (removed(edit, l) ? 0 : editedQty(edit, l)) : l.state === 'cancelled' ? 0 : l.quantity) * l.rate,
+    (n, l) => n + (LIVE.has(l.state) ? (removed(edit, l) ? 0 : editedQty(edit, l) * editedRate(edit, l)) : l.state === 'cancelled' ? 0 : l.quantity * l.rate),
     0,
   );
   return round2(lines + edit.added.reduce((n, a) => n + a.quantity * a.item.rate, 0));

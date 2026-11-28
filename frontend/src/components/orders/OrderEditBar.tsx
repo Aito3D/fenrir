@@ -6,7 +6,7 @@ import { useToast } from '../../contexts/ToastContext';
 import { formatMoney } from '../../utils/pricing';
 import { errorReason } from './orderErrors';
 import { FIT_VIEWPORT } from './orderStatus';
-import { editChanges, editPayload, editTotal, formatQty } from './orderBoard';
+import { editChanges, editPayload, editTotal, editValid, formatQty } from './orderBoard';
 import type { OrderEdit } from './orderBoard';
 import { useOrderActions } from './useOrderActions';
 
@@ -21,7 +21,8 @@ export function OrderEditBar({ row, edit, onClose, onBusy, onSaved }: { row: Ord
     edit: {
       onSuccess: r => {
         const saved = r.row?.total ?? total; // the re-read order's total; the estimate when the order left the board
-        showToast(t('orders.edit.done', { number: row.number, count: changes.length }) + (saved === null ? '' : ` · ${t('orders.edit.total')} ${money(saved)}`));
+        const quote = r.quote === 'updated' ? 'quoteUpdated' : r.quote === 'skipped' ? 'quoteSkipped' : r.quote === 'failed' ? 'quoteFailed' : null;
+        showToast(t('orders.edit.done', { number: row.number, count: changes.length }) + (saved === null ? '' : ` · ${t('orders.edit.total')} ${money(saved)}`) + (quote ? ` · ${t(`orders.edit.${quote}`)}` : ''), r.quote === 'failed' ? 'warning' : 'success');
         onSaved?.();
         onClose();
       },
@@ -29,18 +30,21 @@ export function OrderEditBar({ row, edit, onClose, onBusy, onSaved }: { row: Ord
     },
   });
   const busy = editLines.isPending;
+  const valid = editValid(row, edit);
   useEffect(() => onBusy(busy), [busy, onBusy]);
   const paid = row.payment?.paid ?? 0;
   const shopify = !!(row.facts.shopify_order || row.facts.shopify_url); // the same test as the Shopify chip
 
   const sent = useRef(false); // a ref, so two clicks in one tick send one request
   const save = () => {
-    if (busy || sent.current || !changes.length) return;
+    if (busy || sent.current || !changes.length || !valid) return;
     sent.current = true;
     editLines.mutate({ id: row.id, version: edit.version, lines: editPayload(row, edit) }, { onSettled: () => { sent.current = false; } });
   };
   const words = changes.map(c =>
     c.kind === 'qty' ? t('orders.edit.qtyChange', { name: c.line?.name, from: formatQty(c.from ?? 0), to: formatQty(c.to ?? 0) })
+    : c.kind === 'price' ? t('orders.edit.qtyChange', { name: c.line?.name, from: money(c.from ?? 0), to: money(c.to ?? 0) })
+    : c.kind === 'discount' ? `${c.line?.name}: ${t('orders.newOrder.discount')} ${c.text || '0'}`
     : c.kind === 'gone' ? t('orders.edit.removes', { name: c.line?.name })
     : t('orders.edit.adds', { name: c.item?.name, n: formatQty(c.to ?? 0) }));
 
@@ -80,7 +84,7 @@ export function OrderEditBar({ row, edit, onClose, onBusy, onSaved }: { row: Ord
           </button>
           <button
             type="button"
-            disabled={busy || !changes.length}
+            disabled={busy || !changes.length || !valid}
             onClick={save}
             className="btn-press inline-flex items-center gap-1.5 rounded-md bg-bambu-green px-3 py-1 font-semibold text-black hover:bg-bambu-green-light disabled:opacity-50"
           >

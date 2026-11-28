@@ -328,6 +328,7 @@ export function OrderLinesPanel({
                     saving={saving}
                     pending={pending}
                     editQty={editQty}
+                    onEdit={setEdit}
                     setGone={setGone}
                     setCheck={setCheck}
                     scanTick={scanned?.id === line.id ? scanned.n : undefined}

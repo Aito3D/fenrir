@@ -36,11 +36,12 @@ export function useHandOverPending(orderId: string): boolean {
 export function useOrderActions(callbacks?: {
   parcel?: Callbacks<{ package_number: string }, unknown>;
   picklist?: Callbacks<{ picklist: { id: string; number: string } }, unknown>;
-  edit?: Callbacks<{ row: OrderBoardRow | null }, unknown>;
+  edit?: Callbacks<{ row: OrderBoardRow | null; quote?: 'updated' | 'skipped' | 'failed' | null }, unknown>;
   parcelEdit?: Callbacks<{ row: OrderBoardRow | null }, unknown>;
   handOver?: Callbacks<OrderActionResult, HandOverVars>;
   invoice?: Callbacks<OrderActionResult, InvoiceVars>;
   cancel?: Callbacks<void, string>;
+  cancelPicklist?: Callbacks<void, { id: string; picklistId: string }>;
 }) {
   const queryClient = useQueryClient();
   const { hasPermission } = useAuth();
@@ -80,6 +81,18 @@ export function useOrderActions(callbacks?: {
     onError: (e, v) => {
       refused(v.id, e);
       callbacks?.picklist?.onError?.(e);
+    },
+  });
+  const cancelPicklist = useMutation({
+    mutationFn: ({ id, picklistId }: { id: string; picklistId: string }) => api.cancelOrderPicklist(id, picklistId),
+    onSuccess: async (r, v) => {
+      await take(r.board);
+      dropPreviews(v.id);
+      callbacks?.cancelPicklist?.onSuccess?.(undefined, v);
+    },
+    onError: (e, v) => {
+      refused(v.id, e);
+      callbacks?.cancelPicklist?.onError?.(e);
     },
   });
   const dropPackages = (id: string) => queryClient.removeQueries({ queryKey: ['order-package', id] });
@@ -180,6 +193,7 @@ export function useOrderActions(callbacks?: {
   return {
     canUpdate: hasPermission('orders:update'),
     cancelOrder,
+    cancelPicklist,
     createParcel,
     createPicklist,
     editLines,

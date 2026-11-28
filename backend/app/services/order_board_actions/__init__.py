@@ -32,7 +32,7 @@ from backend.app.services.order_board_actions.invoice import (
 from backend.app.services.order_board_actions.line_edit import edit_lines, search_items
 from backend.app.services.order_board_actions.parcel import create_parcel, picklist_content
 from backend.app.services.order_board_actions.parcel_edit import edit_parcel, package_content
-from backend.app.services.order_board_actions.picklist import create_picklist, picklist_preview
+from backend.app.services.order_board_actions.picklist import cancel_picklist, create_picklist, picklist_preview
 from backend.app.services.order_board_actions.quote_accept import accept_quote, create_order_from_quote, undo_accept
 from backend.app.services.order_board_actions.quotes import (
     QuoteNotStored,
@@ -58,6 +58,7 @@ __all__ = [
     "stamp_contact",
     "picklist_preview",
     "create_picklist",
+    "cancel_picklist",
     "picklist_content",
     "create_parcel",
     "invoice_payload",

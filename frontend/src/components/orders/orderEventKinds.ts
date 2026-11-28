@@ -8,6 +8,7 @@ const LABEL_KEY: Record<string, string> = {
   'order.ready': 'orders.history.orderReady',
   'order.packed': 'orders.history.orderPacked',
   'picklist.created': 'orders.history.picklistCreated',
+  'picklist.cancelled': 'orders.history.picklistCancelled',
   'package.created': 'orders.history.packageCreated',
   'package.edited': 'orders.history.packageEdited',
   'handover.delivered': 'orders.history.handoverDelivered',
@@ -47,6 +48,7 @@ export const SHORT_LABEL_KEY: Record<string, string> = {
   'order.ready': 'orders.history.short.ready',
   'order.packed': 'orders.history.short.packed',
   'picklist.created': 'orders.history.short.picklist',
+  'picklist.cancelled': 'orders.history.short.picklistCancelled',
   'package.created': 'orders.history.short.package',
   'package.edited': 'orders.history.short.packageEdited',
   'handover.delivered': 'orders.history.short.delivered',
@@ -95,6 +97,7 @@ export function orderEventLabel(
     case 'handover.shipped':
       return { key: LABEL_KEY[event.kind], params: { package: text(d.package) } };
     case 'picklist.created':
+    case 'picklist.cancelled':
       return { key: LABEL_KEY[event.kind], params: { picklist: text(d.picklist) } };
     case 'order.cancel_failed':
       return { key: LABEL_KEY[event.kind], params: { packages: list(d.packages), picklists: list(d.picklists) } };

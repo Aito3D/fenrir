@@ -386,6 +386,36 @@ async def test_create_picklist_sends_the_chosen_units_and_shows_on_the_row(db_se
 
 
 @pytest.mark.asyncio
+async def test_cancel_picklist_deletes_it_drops_the_print_stamp_and_frees_the_order(db_session, parcels):
+    await _board(db_session, parcels, order(1, qty=2))
+    picklist = await actions.create_picklist(db_session, "so1", {"l1": 2})
+    await actions.stamp_print(db_session, "so1", "paul", picklist["number"])
+    assert (await sync.read_board(db_session))["rows"][0]["prep"]
+
+    await actions.cancel_picklist(db_session, "so1", picklist["id"], by="paul")
+
+    assert ("delete_picklist", picklist["id"]) in parcels.steps
+    row = (await sync.read_board(db_session))["rows"][0]
+    assert row["picklists"] == [] and row["prep"] is None
+    events = await events_of(db_session, "so1")
+    assert events[-1].kind == "picklist.cancelled" and events[-1].detail == {"picklist": "PL-00001"}
+    # Nothing left to cancel: a second click is refused without a write.
+    with pytest.raises(actions.OrderActionRefused, match="unknown_picklist"):
+        await actions.cancel_picklist(db_session, "so1", picklist["id"])
+
+
+@pytest.mark.asyncio
+async def test_cancel_picklist_is_refused_once_a_parcel_holds_its_units(db_session, parcels):
+    await _board(db_session, parcels, order(1, qty=2))
+    picklist = await actions.create_picklist(db_session, "so1", {"l1": 2})
+    parcels.picklists[picklist["id"]]["line_items"][0]["quantity_packed"] = 1  # boxed in Books from the open picklist
+    writes = len(parcels.steps)
+    with pytest.raises(actions.OrderActionRefused, match="picklist_packed"):
+        await actions.cancel_picklist(db_session, "so1", picklist["id"])
+    assert len(parcels.steps) == writes
+
+
+@pytest.mark.asyncio
 async def test_a_forced_line_ignores_the_shelf(db_session, parcels):
     parcels.stock["A"] = 0
     await _board(db_session, parcels, order(1, qty=2))
@@ -2543,6 +2573,63 @@ async def test_omitted_line_is_removed(db_session, lines_edit):
     assert [e.kind for e in events] == ["order.edited"]
     assert {c["field"] for c in events[0].changes} >= {c["field"] for c in events[0].changes if c["to"] == 0}
     assert any(c["to"] == 0 for c in events[0].changes) and "total_from" in events[0].detail
+
+
+@pytest.mark.asyncio
+async def test_edit_sets_a_price_and_a_discount_and_mirrors_the_lines_on_the_quote(db_session, lines_edit, monkeypatch):
+    doc = _edit_order()
+    doc["estimate_id"] = "est1"
+    await _board(db_session, lines_edit, doc)
+    quote_lines = [
+        {"line_item_id": f"q-{raw['line_item_id']}", "item_id": raw["item_id"], "rate": raw["rate"], "quantity": 9}
+        for raw in doc["line_items"]
+        if raw.get("item_id")
+    ]
+    estimate = {"is_inclusive_tax": True, "discount_type": "item_level", "line_items": quote_lines}
+    sent = {}
+
+    async def get_estimate(db, estimate_id):
+        return estimate
+
+    async def update_estimate_lines(db, estimate_id, lines, **kw):
+        sent[estimate_id] = lines
+
+    monkeypatch.setattr(zoho_service, "get_estimate", get_estimate)
+    monkeypatch.setattr(zoho_service, "update_estimate_lines", update_estimate_lines)
+
+    row = await actions.edit_lines(
+        db_session,
+        "so1",
+        VERSION,
+        [{"line_id": "l1", "quantity": 3, "rate": 1500.0, "discount": "10%"}, {"line_id": "l2", "quantity": 1}],
+    )
+
+    assert row["_quote"] == "updated"
+    body = lines_edit.bodies["lines"]
+    first = next(line for line in body["line_items"] if line.get("line_item_id") == "l1")
+    assert (first["rate"], first["discount"], first["quantity"]) == (1500.0, "10%", 3)
+    assert body["discount_type"] == "item_level"
+    # The quote line of the same item follows; its own line id is kept.
+    mirrored = next(line for line in sent["est1"] if line["line_item_id"] == "q-l1")
+    assert (mirrored["rate"], mirrored["discount"], mirrored["quantity"]) == (1500.0, "10%", 3)
+    detail = (await events_of(db_session, "so1"))[0].detail
+    assert (
+        detail["prices"][0]["to"] == 1500.0 and detail["discounts"][0]["to"] == "10%" and detail["quote"] == "updated"
+    )
+
+
+@pytest.mark.asyncio
+async def test_a_price_change_alone_is_a_change_and_an_invoiced_line_refuses_it(db_session, lines_edit):
+    await _board(db_session, lines_edit, _edit_order(quantity_invoiced=1, quantity=5))
+    same = [{"line_id": "l1", "quantity": 5}, {"line_id": "l2", "quantity": 2}]
+    with pytest.raises(actions.OrderActionRefused, match="line_invoiced"):
+        await actions.edit_lines(db_session, "so1", VERSION, [{**same[0], "rate": 1.0}, same[1]])
+    with pytest.raises(actions.OrderActionRefused, match="bad_discount"):
+        await actions.edit_lines(db_session, "so1", VERSION, [same[0], {**same[1], "discount": "150%"}])
+    assert "lines" not in lines_edit.bodies
+    row = await actions.edit_lines(db_session, "so1", VERSION, [same[0], {**same[1], "rate": 1.0}])
+    assert "_quote" not in row  # no quote behind this order
+    assert next(line for line in row["lines"] if line["id"] == "l2")["rate"] == 1.0
 
 
 def _repricing_update(lines_edit, monkeypatch, *, break_reads=False):

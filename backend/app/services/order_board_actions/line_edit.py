@@ -1,5 +1,6 @@
 """Edit the order's lines in Books."""
 
+import logging
 import math
 import re
 
@@ -20,9 +21,14 @@ from backend.app.services.order_board_actions._common import (
     confirm_stored_copy,
     writing,
 )
+from backend.app.services.order_board_actions.create import _check_discount_fits, _discount
+from backend.app.services.order_board_quotes import editable_here
+from backend.app.services.order_board_sync._quotes import _aito_quote_ids
 from backend.app.services.zoho import ZohoRateLimited, ZohoUpstreamError, zoho_service
 from backend.app.services.zoho_filaments import FILAMENT_CATEGORY
 from backend.app.utils.text import fold_text
+
+logger = logging.getLogger(__name__)
 
 _BARCODE = re.compile(r"\d{8,14}")
 _FILAMENT_DIAMETER = re.compile(r"\b(1[.,]75|2[.,]85)\s?mm\b", re.IGNORECASE)
@@ -84,7 +90,9 @@ def _hit(item: dict) -> dict:
 async def edit_lines(
     db: AsyncSession, salesorder_id: str, version: str, lines: list[dict], *, by: str | None = None
 ) -> dict:
-    """Set the quantities of an order's live goods lines, drop the ones left out and add new items, in Books. The
+    """Set the quantities of an order's live goods lines (and, when given, their unit price and discount), drop the
+    ones left out and add new items, in Books. The order's quote, when it has one the board can write, is then given
+    the same goods lines (``_quote`` on the answer: "updated", "skipped" or "failed"). The
     whole line list is sent back. Only a line the board shows as live (ready, backorder, to order) is editable;
     every other line (service, untracked, cancelled, fully shipped) goes back untouched, and naming one is refused
     ``service_line`` (service or untracked) or ``unknown_line`` (cancelled, shipped). ``version`` is the order's
@@ -110,7 +118,18 @@ async def edit_lines(
         }
         edits: dict[str, float] = {}
         new: dict[str, float] = {}
+        rates: dict[str, float] = {}  # by line id, or by item id for an added item
+        discounts: dict[str, str] = {}  # "" clears
         for entry in lines:
+            key = entry.get("line_id") or entry.get("item_id") or ""
+            if "rate" in entry:
+                rate = entry["rate"]
+                if not isinstance(rate, int | float) or not math.isfinite(rate) or rate < 0:
+                    raise OrderActionRefused("bad_quantity")
+                rates[key] = float(rate)
+            if "discount" in entry:
+                _discount(entry["discount"])  # refuses a malformed one
+                discounts[key] = entry["discount"]
             q = entry.get("quantity")
             if not isinstance(q, int | float) or not math.isfinite(q) or q <= 0 or round(q, 3) != q:
                 raise OrderActionRefused("bad_quantity")
@@ -142,8 +161,25 @@ async def edit_lines(
             items = {item.get("item_id"): item for item in found}
             if any(i not in items or (items[i].get("product_type") or "").endswith("service") for i in new):
                 raise OrderActionRefused("unknown_item")
+        by_id = {raw.get("line_item_id"): raw for raw in raws}
+
+        def _stated(raw: dict) -> str:
+            return "" if raw.get("discount") in (None, "", 0) else str(raw["discount"])
+
+        repriced = {i: r for i, r in rates.items() if i in by_id and r != _num(by_id[i].get("rate"))}
+        rediscounted = {
+            i: d for i, d in discounts.items() if i in by_id and _discount(d) != _discount(_stated(by_id[i]))
+        }
+        # Books has invoiced these units at the old price: the invoice would no longer match the order.
+        if any(_num(by_id[i].get("quantity_invoiced")) > 0 for i in {*repriced, *rediscounted}):
+            raise OrderActionRefused("line_invoiced")
+        # A whole-order discount and line discounts do not mix in Books.
+        if any(discounts.values()) and detail.get("discount_type") not in (None, "", "item_level"):
+            raise OrderActionRefused("bad_discount")
         if (
             not new
+            and not repriced
+            and not rediscounted
             and len(edits) == len(live)
             and all(
                 _num(raw.get("quantity")) == edits[raw["line_item_id"]] for raw in raws if raw["line_item_id"] in live
@@ -158,14 +194,27 @@ async def edit_lines(
             kept = {k: raw[k] for k in _SO_LINE_FIELDS if k in raw}
             if line_id in edits:
                 kept["quantity"] = edits[line_id]
+                if line_id in rates:
+                    kept["rate"] = rates[line_id]
+                if line_id in discounts:
+                    kept["discount"] = discounts[line_id] or 0  # always stated: a removed discount is cleared
+                _check_discount_fits(_discount(_stated(kept)), kept["quantity"], _num(kept.get("rate")))
             body_lines.append(kept)
-        body_lines += [{"item_id": i, "quantity": q, "rate": float(_num(items[i].get("rate")))} for i, q in new.items()]
+        for i, q in new.items():
+            rate = rates.get(i, float(_num(items[i].get("rate"))))
+            _check_discount_fits(_discount(discounts.get(i)), q, rate)
+            body_lines.append(
+                {"item_id": i, "quantity": q, "rate": rate, **({"discount": discounts[i]} if discounts.get(i) else {})}
+            )
+        body: dict = {"line_items": body_lines}
+        if any(discounts.values()):  # what the board's own orders carry: line discounts, taken before tax
+            body |= {"discount_type": "item_level", "is_discount_before_tax": True}
         try:
             await _write(
                 salesorder_id,
                 number,
                 "lines",
-                zoho_service.update_salesorder(db, salesorder_id, {"line_items": body_lines}),
+                zoho_service.update_salesorder(db, salesorder_id, body),
             )
         except ZohoUpstreamError:
             await _best_effort_refresh(db, salesorder_id, number)  # a timeout can mean Books saved it
@@ -180,6 +229,11 @@ async def edit_lines(
             for i in live
             if was.get(i, 0.0) != edits.get(i, 0.0)
         ] + [{"field": items[i].get("name") or i, "from": 0, "to": q} for i, q in new.items()]
+        prices = [
+            {"name": names.get(i) or i, "from": float(_num(by_id[i].get("rate"))), "to": r} for i, r in repriced.items()
+        ]
+        rebates = [{"name": names.get(i) or i, "from": _stated(by_id[i]), "to": d} for i, d in rediscounted.items()]
+        quote = await _mirror_on_quote(db, detail, body_lines, raws, live)
         total_from = detail.get("total")
         refreshed = await _best_effort_refresh(db, salesorder_id, number)
         stored = await sync.find_stored(db, salesorder_id)
@@ -191,8 +245,83 @@ async def edit_lines(
             changes=changes,
             total_from=total_from,
             total_to=((stored.detail or {}).get("total") if refreshed and stored is not None else None),
+            **({"prices": prices} if prices else {}),
+            **({"discounts": rebates} if rebates else {}),
+            **({"quote": quote} if quote else {}),
         )
     try:
-        return await _row(db, salesorder_id)
+        row = await _row(db, salesorder_id)
     except OrderNotOnBoard:
-        return {}  # the edit took it off the board; the write is done
+        row = {}  # the edit took it off the board; the write is done
+    return {**row, "_quote": quote} if quote else row
+
+
+async def _mirror_on_quote(
+    db: AsyncSession, order: dict, sent: list[dict], raws: list[dict], live: set[str]
+) -> str | None:
+    """Give the order's quote the goods lines just saved on the order: matched by item, the quote line takes the
+    order line's quantity, price and discount; an item dropped from the order leaves the quote; a new one joins it.
+    Every other quote line stays as it is. The order is already saved, so nothing here raises: the answer is
+    "updated", "skipped" (no quote the board can write: other tax or discount mode, a free-text line, an item on two
+    lines) or "failed" (Books refused or was unreachable; the quote keeps its old lines). None without a quote."""
+    estimate_id = str(order.get("estimate_id") or "")
+    if not estimate_id:
+        return None
+    try:
+        if estimate_id in await _aito_quote_ids(db):  # an Aito card owns it and writes its own lines
+            return "skipped"
+        estimate = await zoho_service.get_estimate(db, estimate_id)
+        if not editable_here(estimate):
+            return "skipped"
+        goods = {raw.get("item_id") for raw in raws if raw.get("line_item_id") in live}  # before the edit
+        now = {
+            line.get("item_id"): line for line in sent if line.get("line_item_id") in live or "line_item_id" not in line
+        }
+        lines: list[dict] = []
+        on_quote: set = set()
+        for q_line in estimate.get("line_items") or []:
+            item_id = q_line.get("item_id")
+            kept = {
+                k: q_line[k]
+                for k in (
+                    "line_item_id",
+                    "item_id",
+                    "name",
+                    "description",
+                    "rate",
+                    "tax_id",
+                    "unit",
+                    "quantity",
+                    "discount",
+                )
+                if k in q_line
+            }
+            if item_id in now:
+                on_quote.add(item_id)
+                kept |= {
+                    "quantity": now[item_id]["quantity"],
+                    "rate": now[item_id]["rate"],
+                    "discount": now[item_id].get("discount") or 0,
+                }
+            elif item_id in goods:
+                continue  # dropped from the order
+            lines.append(kept)
+        lines += [
+            {k: line[k] for k in ("item_id", "quantity", "rate", "discount") if k in line}
+            for item_id, line in now.items()
+            if item_id not in on_quote
+        ]
+        sync.note_write(estimate_id)
+        await zoho_service.update_estimate_lines(db, estimate_id, lines)
+        logger.info(
+            "Order board write: quote=%s step=lines (from order %s)", estimate_id, order.get("salesorder_number")
+        )
+        return "updated"
+    except Exception as e:
+        logger.warning(
+            "Order board: mirroring order %s on quote %s failed (%s)",
+            order.get("salesorder_number"),
+            estimate_id,
+            type(e).__name__,
+        )
+        return "failed"

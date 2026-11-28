@@ -61,6 +61,9 @@ class EditLine(BaseModel):
     line_id: str | None = Field(default=None, min_length=1, max_length=64)
     item_id: str | None = Field(default=None, min_length=1, max_length=64)
     quantity: float = Field(gt=0, allow_inf_nan=False)
+    # Left out: the line keeps its price / its discount. An empty discount clears it.
+    rate: float | None = Field(default=None, ge=0, allow_inf_nan=False)
+    discount: str | None = Field(default=None, max_length=20)
 
     @model_validator(mode="after")
     def _one_target(self) -> "EditLine":
@@ -152,6 +155,19 @@ async def create_picklist(
     return {"board": await order_board_sync.read_board(db), "picklist": picklist}
 
 
+@router.delete("/orders/{salesorder_id}/picklists/{picklist_id}")
+async def cancel_picklist(
+    salesorder_id: str,
+    picklist_id: str,
+    db: AsyncSession = Depends(get_db, scope="function"),
+    user: User | None = RequirePermissionIfAuthEnabled(Permission.ORDERS_UPDATE),
+) -> dict:
+    """Cancel a preparation: delete the open picklist in Books so the order can be edited again."""
+    await _run(order_board_actions.cancel_picklist(db, salesorder_id, picklist_id, by=_by(user)))
+    _logged(user, salesorder_id, "cancel_picklist")
+    return {"board": await order_board_sync.read_board(db)}
+
+
 @router.get("/orders/{salesorder_id}/picklists/{picklist_id}")
 async def get_picklist_content(
     salesorder_id: str,
@@ -202,7 +218,9 @@ async def edit_order_lines(
         )
     )
     _logged(user, salesorder_id, "edit_lines")
-    return {"board": await order_board_sync.read_board(db), "row": row or None}
+    # "updated", "skipped" (the quote is not one the board can write) or "failed"; None for an order without a quote.
+    quote = row.pop("_quote", None)
+    return {"board": await order_board_sync.read_board(db), "row": row or None, "quote": quote}
 
 
 @router.post("/orders", status_code=201)

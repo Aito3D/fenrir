@@ -3,8 +3,10 @@
 from datetime import date
 from typing import Any
 
+from sqlalchemy import delete
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from backend.app.models.order_board_doc import OrderBoardDoc
 from backend.app.services import order_board_sync as sync
 from backend.app.services.order_board import picked_waiting
 from backend.app.services.order_board_actions._common import (
@@ -14,6 +16,8 @@ from backend.app.services.order_board_actions._common import (
     _log,
     _num,
     _open_picklists,
+    _picklist,
+    _reread,
     _row,
     _stored_order,
     _wanted,
@@ -110,3 +114,31 @@ async def create_picklist(
         )
         await _best_effort_refresh(db, salesorder_id, number)
     return {"id": picklist.get("picklist_id") or "", "number": picklist.get("picklist_number") or ""}
+
+
+async def cancel_picklist(db: AsyncSession, salesorder_id: str, picklist_id: str, *, by: str | None = None) -> None:
+    """Delete an open picklist of this order in Books and drop the "sheet printed" stamp, so the order can be edited
+    and prepared again. Refused once a parcel holds some of its units (``picklist_packed``: edit or delete the parcel
+    first) and for a picklist that also holds another order's lines (``picklist_shared``)."""
+    with writing(salesorder_id):
+        doc = await confirm_stored_copy(db, salesorder_id)
+        number = doc.header.get("salesorder_number") or ""
+        order = await _reread(db, salesorder_id)  # Books may have boxed or completed it since the stored copy
+        if not any(p.get("picklist_id") == picklist_id for p in _open_picklists(order)):
+            raise OrderActionRefused("unknown_picklist")
+        picklist = await _picklist(db, order, picklist_id)
+        rows = picklist.get("line_items") or []
+        if any(r.get("salesorder_id") != salesorder_id for r in rows):
+            raise OrderActionRefused("picklist_shared")
+        if any(_num(r.get("quantity_packed")) > 0 for r in rows):
+            raise OrderActionRefused("picklist_packed")
+        try:
+            await _write(salesorder_id, number, "delete_picklist", zoho_service.delete_picklist(db, picklist_id))
+        except ZohoUpstreamError:
+            await _best_effort_refresh(db, salesorder_id, number)  # a timeout can mean Books did delete it
+            raise
+        await db.execute(
+            delete(OrderBoardDoc).where(OrderBoardDoc.kind == "prep", OrderBoardDoc.zoho_id == salesorder_id)
+        )
+        await _log(db, salesorder_id, "picklist.cancelled", by, picklist=picklist.get("picklist_number") or "")
+        await _best_effort_refresh(db, salesorder_id, number)

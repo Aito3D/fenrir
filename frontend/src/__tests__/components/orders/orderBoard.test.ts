@@ -29,6 +29,7 @@ import {
   scanCheck,
   editChanges,
   editPayload,
+  editValid,
   parcelDiff,
   parcelLines,
   parcelWas,
@@ -391,7 +392,7 @@ describe('editing the order', () => {
   });
 
   it('editChanges lists quantities, removals and additions in order', () => {
-    const e = { version: 'v1', qty: { l1: 3, l2: 5 }, gone: new Set(['l2']), added: [{ item, quantity: 2 }] };
+    const e = { version: 'v1', qty: { l1: 3, l2: 5 }, gone: new Set(['l2']), added: [{ item, quantity: 2 }], rate: {}, discount: {} };
     expect(editChanges(r, e).map(c => [c.kind, c.line?.id ?? c.item?.id, c.from, c.to])).toEqual([
       ['qty', 'l1', 2, 3],
       ['gone', 'l2', undefined, undefined],
@@ -399,20 +400,33 @@ describe('editing the order', () => {
     ]);
   });
 
+  it('a changed price or discount is a change and rides the payload; an untouched one does not', () => {
+    const e = { ...startEdit(r), rate: { l1: 3000 }, discount: { l1: '10 %', l2: '' } };
+    expect(editChanges(r, e).map(c => [c.kind, c.line?.id, c.from, c.to, c.text])).toEqual([
+      ['price', 'l1', 3400, 3000, undefined],
+      ['discount', 'l1', undefined, undefined, '10%'],
+    ]);
+    expect(editPayload(r, e)[0]).toEqual({ line_id: 'l1', quantity: 2, rate: 3000, discount: '10%' });
+    expect(editPayload(r, e)[1]).toEqual({ line_id: 'l2', quantity: 5 });
+    expect(editTotal(r, e)).toBeNull(); // a discounted line: the total is Books' to compute
+    expect(editValid(r, e)).toBe(true);
+    expect(editValid(r, { ...e, discount: { l1: '150%' } })).toBe(false);
+  });
+
   it('editPayload sends the kept live lines and the added items, nothing else', () => {
-    const e = { version: 'v1', qty: { l1: 3, l2: 5 }, gone: new Set(['l2']), added: [{ item, quantity: 1 }] };
+    const e = { version: 'v1', qty: { l1: 3, l2: 5 }, gone: new Set(['l2']), added: [{ item, quantity: 1 }], rate: {}, discount: {} };
     expect(editPayload(r, e)).toEqual([{ line_id: 'l1', quantity: 3 }, { item_id: 'B', quantity: 1 }]);
   });
 
   it('editTotal sums the kept lines, services, shipped lines and added items; null when not estimable', () => {
     expect(editTotal(r, startEdit(r))).toBe(2 * 3400 + 5 * 1000 + 2000 + 500);
-    const e = { version: 'v1', qty: { l1: 3, l2: 5 }, gone: new Set(['l2']), added: [{ item, quantity: 2 }] };
+    const e = { version: 'v1', qty: { l1: 3, l2: 5 }, gone: new Set(['l2']), added: [{ item, quantity: 2 }], rate: {}, discount: {} };
     expect(editTotal(r, e)).toBe(3 * 3400 + 2000 + 500 + 2 * 1500);
     expect(editTotal(row({ lines, estimable: false }), e)).toBeNull();
   });
 
   it('a line edited down to 0 is a removal: reported as gone, left out of the payload and the total', () => {
-    const e = { version: 'v1', qty: { l1: 0, l2: 5 }, gone: new Set<string>(), added: [] };
+    const e = { version: 'v1', qty: { l1: 0, l2: 5 }, gone: new Set<string>(), added: [], rate: {}, discount: {} };
     expect(editChanges(r, e).map(c => [c.kind, c.line?.id])).toEqual([['gone', 'l1']]);
     expect(editPayload(r, e)).toEqual([{ line_id: 'l2', quantity: 5 }]);
     expect(editTotal(r, e)).toBe(5 * 1000 + 2000 + 500);
